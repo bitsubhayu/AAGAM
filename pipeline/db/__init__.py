@@ -1,0 +1,1 @@
+"""AAGAM — Database setup utilities."""

@@ -1,0 +1,405 @@
+{
+  "count": 40,
+  "locations": [
+    {
+      "slug": "kolkata",
+      "name": "Kolkata",
+      "state": "West Bengal",
+      "region": "EAST_NE",
+      "terrain": "coastal",
+      "latitude": 22.56263,
+      "longitude": 88.36304,
+      "elevation": 11.0
+    },
+    {
+      "slug": "basirhat",
+      "name": "Basirhat",
+      "state": "West Bengal",
+      "region": "EAST_NE",
+      "terrain": "coastal",
+      "latitude": 22.66142,
+      "longitude": 88.85477,
+      "elevation": 6.0
+    },
+    {
+      "slug": "bhubaneswar",
+      "name": "Bhubaneswar",
+      "state": "Odisha",
+      "region": "EAST_NE",
+      "terrain": "coastal",
+      "latitude": 20.27241,
+      "longitude": 85.83385,
+      "elevation": 62.0
+    },
+    {
+      "slug": "guwahati",
+      "name": "Guwahati",
+      "state": "Assam",
+      "region": "EAST_NE",
+      "terrain": "plains",
+      "latitude": 26.1844,
+      "longitude": 91.7458,
+      "elevation": 59.0
+    },
+    {
+      "slug": "siliguri",
+      "name": "Siliguri",
+      "state": "West Bengal",
+      "region": "EAST_NE",
+      "terrain": "plains",
+      "latitude": 26.71004,
+      "longitude": 88.42851,
+      "elevation": 124.0
+    },
+    {
+      "slug": "patna",
+      "name": "Patna",
+      "state": "Bihar",
+      "region": "EAST_NE",
+      "terrain": "plains",
+      "latitude": 25.59408,
+      "longitude": 85.13563,
+      "elevation": 53.0
+    },
+    {
+      "slug": "ranchi",
+      "name": "Ranchi",
+      "state": "Jharkhand",
+      "region": "EAST_NE",
+      "terrain": "plains",
+      "latitude": 23.34316,
+      "longitude": 85.3094,
+      "elevation": 643.0
+    },
+    {
+      "slug": "shillong",
+      "name": "Shillong",
+      "state": "Meghalaya",
+      "region": "EAST_NE",
+      "terrain": "hills",
+      "latitude": 25.56892,
+      "longitude": 91.88313,
+      "elevation": 1507.0
+    },
+    {
+      "slug": "dibrugarh",
+      "name": "Dibrugarh",
+      "state": "Assam",
+      "region": "EAST_NE",
+      "terrain": "plains",
+      "latitude": 27.47989,
+      "longitude": 94.90837,
+      "elevation": 110.0
+    },
+    {
+      "slug": "agartala",
+      "name": "Agartala",
+      "state": "Tripura",
+      "region": "EAST_NE",
+      "terrain": "plains",
+      "latitude": 23.83605,
+      "longitude": 91.27939,
+      "elevation": 15.0
+    },
+    {
+      "slug": "chennai",
+      "name": "Chennai",
+      "state": "Tamil Nadu",
+      "region": "SOUTH",
+      "terrain": "coastal",
+      "latitude": 13.08784,
+      "longitude": 80.27847,
+      "elevation": 14.0
+    },
+    {
+      "slug": "kochi",
+      "name": "Kochi",
+      "state": "Kerala",
+      "region": "SOUTH",
+      "terrain": "coastal",
+      "latitude": 9.93988,
+      "longitude": 76.26022,
+      "elevation": 9.0
+    },
+    {
+      "slug": "thiruvananthapuram",
+      "name": "Thiruvananthapuram",
+      "state": "Kerala",
+      "region": "SOUTH",
+      "terrain": "coastal",
+      "latitude": 8.4855,
+      "longitude": 76.94924,
+      "elevation": 18.0
+    },
+    {
+      "slug": "visakhapatnam",
+      "name": "Visakhapatnam",
+      "state": "Andhra Pradesh",
+      "region": "SOUTH",
+      "terrain": "coastal",
+      "latitude": 17.68009,
+      "longitude": 83.20161,
+      "elevation": 24.0
+    },
+    {
+      "slug": "hyderabad",
+      "name": "Hyderabad",
+      "state": "Telangana",
+      "region": "SOUTH",
+      "terrain": "plains",
+      "latitude": 17.38405,
+      "longitude": 78.45636,
+      "elevation": 515.0
+    },
+    {
+      "slug": "bengaluru",
+      "name": "Bengaluru",
+      "state": "Karnataka",
+      "region": "SOUTH",
+      "terrain": "plains",
+      "latitude": 12.97194,
+      "longitude": 77.59369,
+      "elevation": 920.0
+    },
+    {
+      "slug": "mangaluru",
+      "name": "Mangaluru",
+      "state": "Karnataka",
+      "region": "SOUTH",
+      "terrain": "coastal",
+      "latitude": 12.91723,
+      "longitude": 74.85603,
+      "elevation": 27.0
+    },
+    {
+      "slug": "madurai",
+      "name": "Madurai",
+      "state": "Tamil Nadu",
+      "region": "SOUTH",
+      "terrain": "plains",
+      "latitude": 9.919,
+      "longitude": 78.11953,
+      "elevation": 139.0
+    },
+    {
+      "slug": "mumbai",
+      "name": "Mumbai",
+      "state": "Maharashtra",
+      "region": "CENTRAL",
+      "terrain": "coastal",
+      "latitude": 19.07283,
+      "longitude": 72.88261,
+      "elevation": 8.0
+    },
+    {
+      "slug": "nagpur",
+      "name": "Nagpur",
+      "state": "Maharashtra",
+      "region": "CENTRAL",
+      "terrain": "plains",
+      "latitude": 21.14631,
+      "longitude": 79.08491,
+      "elevation": 319.0
+    },
+    {
+      "slug": "pune",
+      "name": "Pune",
+      "state": "Maharashtra",
+      "region": "CENTRAL",
+      "terrain": "plains",
+      "latitude": 18.51957,
+      "longitude": 73.85535,
+      "elevation": 554.0
+    },
+    {
+      "slug": "panaji",
+      "name": "Panaji",
+      "state": "Goa",
+      "region": "CENTRAL",
+      "terrain": "coastal",
+      "latitude": 15.49574,
+      "longitude": 73.82624,
+      "elevation": 16.0
+    },
+    {
+      "slug": "bhopal",
+      "name": "Bhopal",
+      "state": "Madhya Pradesh",
+      "region": "CENTRAL",
+      "terrain": "plains",
+      "latitude": 23.25469,
+      "longitude": 77.40289,
+      "elevation": 523.0
+    },
+    {
+      "slug": "indore",
+      "name": "Indore",
+      "state": "Madhya Pradesh",
+      "region": "CENTRAL",
+      "terrain": "plains",
+      "latitude": 22.71792,
+      "longitude": 75.8333,
+      "elevation": 550.0
+    },
+    {
+      "slug": "raipur",
+      "name": "Raipur",
+      "state": "Chhattisgarh",
+      "region": "CENTRAL",
+      "terrain": "plains",
+      "latitude": 21.23333,
+      "longitude": 81.63333,
+      "elevation": 296.0
+    },
+    {
+      "slug": "delhi",
+      "name": "Delhi",
+      "state": "Delhi",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 28.65195,
+      "longitude": 77.23149,
+      "elevation": 227.0
+    },
+    {
+      "slug": "ahmedabad",
+      "name": "Ahmedabad",
+      "state": "Gujarat",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 23.02579,
+      "longitude": 72.58727,
+      "elevation": 56.0
+    },
+    {
+      "slug": "surat",
+      "name": "Surat",
+      "state": "Gujarat",
+      "region": "NW",
+      "terrain": "coastal",
+      "latitude": 21.19594,
+      "longitude": 72.83023,
+      "elevation": 20.0
+    },
+    {
+      "slug": "jaipur",
+      "name": "Jaipur",
+      "state": "Rajasthan",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 26.91962,
+      "longitude": 75.78781,
+      "elevation": 435.0
+    },
+    {
+      "slug": "jodhpur",
+      "name": "Jodhpur",
+      "state": "Rajasthan",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 26.26841,
+      "longitude": 73.00594,
+      "elevation": 237.0
+    },
+    {
+      "slug": "lucknow",
+      "name": "Lucknow",
+      "state": "Uttar Pradesh",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 26.83928,
+      "longitude": 80.92313,
+      "elevation": 126.0
+    },
+    {
+      "slug": "varanasi",
+      "name": "Varanasi",
+      "state": "Uttar Pradesh",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 25.31668,
+      "longitude": 83.01041,
+      "elevation": 86.0
+    },
+    {
+      "slug": "chandigarh",
+      "name": "Chandigarh",
+      "state": "Chandigarh",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 30.73629,
+      "longitude": 76.7884,
+      "elevation": 351.0
+    },
+    {
+      "slug": "amritsar",
+      "name": "Amritsar",
+      "state": "Punjab",
+      "region": "NW",
+      "terrain": "plains",
+      "latitude": 31.62234,
+      "longitude": 74.87534,
+      "elevation": 244.0
+    },
+    {
+      "slug": "dehradun",
+      "name": "Dehradun",
+      "state": "Uttarakhand",
+      "region": "HIMALAYAN",
+      "terrain": "hills",
+      "latitude": 30.32443,
+      "longitude": 78.03392,
+      "elevation": 664.0
+    },
+    {
+      "slug": "nainital",
+      "name": "Nainital",
+      "state": "Uttarakhand",
+      "region": "HIMALAYAN",
+      "terrain": "hills",
+      "latitude": 29.39743,
+      "longitude": 79.44686,
+      "elevation": 2077.0
+    },
+    {
+      "slug": "shimla",
+      "name": "Shimla",
+      "state": "Himachal Pradesh",
+      "region": "HIMALAYAN",
+      "terrain": "hills",
+      "latitude": 31.10442,
+      "longitude": 77.16662,
+      "elevation": 2073.0
+    },
+    {
+      "slug": "srinagar",
+      "name": "Srinagar",
+      "state": "Jammu & Kashmir",
+      "region": "HIMALAYAN",
+      "terrain": "hills",
+      "latitude": 34.08565,
+      "longitude": 74.80555,
+      "elevation": 1589.0
+    },
+    {
+      "slug": "gangtok",
+      "name": "Gangtok",
+      "state": "Sikkim",
+      "region": "HIMALAYAN",
+      "terrain": "hills",
+      "latitude": 27.32574,
+      "longitude": 88.61216,
+      "elevation": 1654.0
+    },
+    {
+      "slug": "jammu",
+      "name": "Jammu",
+      "state": "Jammu & Kashmir",
+      "region": "HIMALAYAN",
+      "terrain": "plains",
+      "latitude": 32.73528,
+      "longitude": 74.86167,
+      "elevation": 357.0
+    }
+  ]
+}
