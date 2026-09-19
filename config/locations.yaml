@@ -1,373 +1,294 @@
 # ==============================================================================
-# AAGAM — 40 Representative Locations Configuration
+# AAGAM — 40 Representative Locations Configuration (locations.yaml)
 # ==============================================================================
-# 40 representative Indian points across 5 regions.
-# Coordinates retrieved and verified via Open-Meteo Geocoding API.
-# Terrains: plains, coastal, hills (used in heatwave threshold evaluation).
+# Authoritative 40 locations explicitly specified for SIH 2026 PS 26081.
+# Regions: EAST_NE (10), SOUTH (8), CENTRAL (7), NW (9), HIMALAYAN (6)
+# Terrains: plains, coastal, hills (feeds IMD heatwave & extreme criteria)
+# Coordinates: To be obtained via Open-Meteo Geocoding in Phase 1 (no invented coordinates).
 # ==============================================================================
 
 locations:
-  # --- Region 1: North-West ---
-  - slug: "delhi"
-    name: "New Delhi"
-    state: "Delhi"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 28.6139
-    longitude: 77.2090
-    elevation: 216
-
-  - slug: "jaipur"
-    name: "Jaipur"
-    state: "Rajasthan"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 26.9124
-    longitude: 75.7873
-    elevation: 431
-
-  - slug: "jodhpur"
-    name: "Jodhpur"
-    state: "Rajasthan"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 26.2389
-    longitude: 73.0243
-    elevation: 231
-
-  - slug: "amritsar"
-    name: "Amritsar"
-    state: "Punjab"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 31.6340
-    longitude: 74.8723
-    elevation: 234
-
-  - slug: "lucknow"
-    name: "Lucknow"
-    state: "Uttar Pradesh"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 26.8467
-    longitude: 80.9462
-    elevation: 123
-
-  - slug: "varanasi"
-    name: "Varanasi"
-    state: "Uttar Pradesh"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 25.3176
-    longitude: 82.9739
-    elevation: 81
-
-  - slug: "chandigarh"
-    name: "Chandigarh"
-    state: "Chandigarh"
-    region: "NORTH_WEST"
-    terrain: "plains"
-    latitude: 30.7333
-    longitude: 76.7794
-    elevation: 321
-
-  - slug: "dehradun"
-    name: "Dehradun"
-    state: "Uttarakhand"
-    region: "HIMALAYAN_HILLY"
-    terrain: "hills"
-    latitude: 30.3165
-    longitude: 78.0322
-    elevation: 640
-
-  # --- Region 2: Himalayan / Hilly ---
-  - slug: "shimla"
-    name: "Shimla"
-    state: "Himachal Pradesh"
-    region: "HIMALAYAN_HILLY"
-    terrain: "hills"
-    latitude: 31.1048
-    longitude: 77.1734
-    elevation: 2206
-
-  - slug: "dharamshala"
-    name: "Dharamshala"
-    state: "Himachal Pradesh"
-    region: "HIMALAYAN_HILLY"
-    terrain: "hills"
-    latitude: 32.2190
-    longitude: 76.3234
-    elevation: 1457
-
-  - slug: "srinagar"
-    name: "Srinagar"
-    state: "Jammu & Kashmir"
-    region: "HIMALAYAN_HILLY"
-    terrain: "hills"
-    latitude: 34.0837
-    longitude: 74.7973
-    elevation: 1585
-
-  - slug: "leh"
-    name: "Leh"
-    state: "Ladakh"
-    region: "HIMALAYAN_HILLY"
-    terrain: "hills"
-    latitude: 34.1526
-    longitude: 77.5771
-    elevation: 3524
-
-  - slug: "gangtok"
-    name: "Gangtok"
-    state: "Sikkim"
-    region: "HIMALAYAN_HILLY"
-    terrain: "hills"
-    latitude: 27.3389
-    longitude: 88.6065
-    elevation: 1650
-
-  # --- Region 3: Central India ---
-  - slug: "bhopal"
-    name: "Bhopal"
-    state: "Madhya Pradesh"
-    region: "CENTRAL"
-    terrain: "plains"
-    latitude: 23.2599
-    longitude: 77.4126
-    elevation: 527
-
-  - slug: "indore"
-    name: "Indore"
-    state: "Madhya Pradesh"
-    region: "CENTRAL"
-    terrain: "plains"
-    latitude: 22.7196
-    longitude: 75.8577
-    elevation: 553
-
-  - slug: "nagpur"
-    name: "Nagpur"
-    state: "Maharashtra"
-    region: "CENTRAL"
-    terrain: "plains"
-    latitude: 21.1458
-    longitude: 79.0882
-    elevation: 310
-
-  - slug: "raipur"
-    name: "Raipur"
-    state: "Chhattisgarh"
-    region: "CENTRAL"
-    terrain: "plains"
-    latitude: 21.2514
-    longitude: 81.6296
-    elevation: 298
-
-  - slug: "ahmedabad"
-    name: "Ahmedabad"
-    state: "Gujarat"
-    region: "CENTRAL"
-    terrain: "plains"
-    latitude: 23.0225
-    longitude: 72.5714
-    elevation: 53
-
-  - slug: "surat"
-    name: "Surat"
-    state: "Gujarat"
-    region: "CENTRAL"
-    terrain: "coastal"
-    latitude: 21.1702
-    longitude: 72.8311
-    elevation: 13
-
-  # --- Region 4: East & North-East ---
+  # ---------------- EAST & NORTH-EAST (10) ----------------
   - slug: "kolkata"
     name: "Kolkata"
     state: "West Bengal"
     region: "EAST_NE"
     terrain: "coastal"
-    latitude: 22.5726
-    longitude: 88.3639
-    elevation: 9
+    # Major eastern coastal metro, vulnerable to Bay of Bengal depressions & cyclones
+
+  - slug: "basirhat"
+    name: "Basirhat"
+    state: "West Bengal"
+    region: "EAST_NE"
+    terrain: "coastal"
+    # Sundarbans mangrove border zone, severe coastal flooding risk
 
   - slug: "bhubaneswar"
     name: "Bhubaneswar"
     state: "Odisha"
     region: "EAST_NE"
     terrain: "coastal"
-    latitude: 20.2961
-    longitude: 85.8245
-    elevation: 45
-
-  - slug: "digha"
-    name: "Digha"
-    state: "West Bengal"
-    region: "EAST_NE"
-    terrain: "coastal"
-    latitude: 21.6266
-    longitude: 87.5074
-    elevation: 6
-
-  - slug: "patna"
-    name: "Patna"
-    state: "Bihar"
-    region: "EAST_NE"
-    terrain: "plains"
-    latitude: 25.5941
-    longitude: 85.1376
-    elevation: 53
-
-  - slug: "ranchi"
-    name: "Ranchi"
-    state: "Jharkhand"
-    region: "EAST_NE"
-    terrain: "plains"
-    latitude: 23.3441
-    longitude: 85.3096
-    elevation: 651
+    # Odisha capital, high cyclone & extreme monsoonal rainfall frequency
 
   - slug: "guwahati"
     name: "Guwahati"
     state: "Assam"
     region: "EAST_NE"
     terrain: "plains"
-    latitude: 26.1445
-    longitude: 91.7362
-    elevation: 55
+    # Brahmaputra valley commercial hub, recurring annual riverine flooding
+
+  - slug: "siliguri"
+    name: "Siliguri"
+    state: "West Bengal"
+    region: "EAST_NE"
+    terrain: "plains"
+    # North Bengal corridor / foothills plain, heavy monsoon runoff
+
+  - slug: "patna"
+    name: "Patna"
+    state: "Bihar"
+    region: "EAST_NE"
+    terrain: "plains"
+    # Middle Gangetic plain, intense pre-monsoon heat and flood dynamics
+
+  - slug: "ranchi"
+    name: "Ranchi"
+    state: "Jharkhand"
+    region: "EAST_NE"
+    terrain: "plains"
+    # Chota Nagpur plateau, lightning and thunderstorm hotspot
 
   - slug: "shillong"
     name: "Shillong"
     state: "Meghalaya"
     region: "EAST_NE"
     terrain: "hills"
-    latitude: 25.5788
-    longitude: 91.8933
-    elevation: 1525
+    # Meghalaya plateau, extreme orographic rainfall regime
 
-  - slug: "cherrapunji"
-    name: "Sohra (Cherrapunji)"
-    state: "Meghalaya"
+  - slug: "dibrugarh"
+    name: "Dibrugarh"
+    state: "Assam"
     region: "EAST_NE"
-    terrain: "hills"
-    latitude: 25.2702
-    longitude: 91.7323
-    elevation: 1430
+    terrain: "plains"
+    # Upper Assam Brahmaputra basin, flood vulnerability
 
   - slug: "agartala"
     name: "Agartala"
     state: "Tripura"
     region: "EAST_NE"
     terrain: "plains"
-    latitude: 23.8315
-    longitude: 91.2868
-    elevation: 16
+    # South of NE corridor, flash floods and transboundary river inundation
 
-  - slug: "itanagar"
-    name: "Itanagar"
-    state: "Arunachal Pradesh"
-    region: "EAST_NE"
-    terrain: "hills"
-    latitude: 27.0844
-    longitude: 93.6053
-    elevation: 750
-
-  # --- Region 5: South Peninsula ---
-  - slug: "mumbai"
-    name: "Mumbai"
-    state: "Maharashtra"
-    region: "SOUTH_PENINSULA"
-    terrain: "coastal"
-    latitude: 18.9220
-    longitude: 72.8347
-    elevation: 14
-
-  - slug: "pune"
-    name: "Pune"
-    state: "Maharashtra"
-    region: "SOUTH_PENINSULA"
-    terrain: "plains"
-    latitude: 18.5204
-    longitude: 73.8567
-    elevation: 560
-
-  - slug: "panaji"
-    name: "Panaji"
-    state: "Goa"
-    region: "SOUTH_PENINSULA"
-    terrain: "coastal"
-    latitude: 15.4909
-    longitude: 73.8278
-    elevation: 7
-
-  - slug: "bengaluru"
-    name: "Bengaluru"
-    state: "Karnataka"
-    region: "SOUTH_PENINSULA"
-    terrain: "plains"
-    latitude: 12.9716
-    longitude: 77.5946
-    elevation: 920
-
-  - slug: "mangaluru"
-    name: "Mangaluru"
-    state: "Karnataka"
-    region: "SOUTH_PENINSULA"
-    terrain: "coastal"
-    latitude: 12.9141
-    longitude: 74.8560
-    elevation: 22
-
+  # ---------------- SOUTH PENINSULA (8) ----------------
   - slug: "chennai"
     name: "Chennai"
     state: "Tamil Nadu"
-    region: "SOUTH_PENINSULA"
+    region: "SOUTH"
     terrain: "coastal"
-    latitude: 13.0827
-    longitude: 80.2707
-    elevation: 6
-
-  - slug: "coimbatore"
-    name: "Coimbatore"
-    state: "Tamil Nadu"
-    region: "SOUTH_PENINSULA"
-    terrain: "plains"
-    latitude: 11.0168
-    longitude: 76.9558
-    elevation: 411
+    # Coromandel coast metro, Northeast monsoon (Oct-Dec) extreme rainfall & cyclones
 
   - slug: "kochi"
     name: "Kochi"
     state: "Kerala"
-    region: "SOUTH_PENINSULA"
+    region: "SOUTH"
     terrain: "coastal"
-    latitude: 9.9312
-    longitude: 76.2673
-    elevation: 3
+    # Arabian Sea gateway, Southwest monsoon onset & heavy coastal inundation
 
   - slug: "thiruvananthapuram"
     name: "Thiruvananthapuram"
     state: "Kerala"
-    region: "SOUTH_PENINSULA"
+    region: "SOUTH"
     terrain: "coastal"
-    latitude: 8.5241
-    longitude: 76.9366
-    elevation: 10
-
-  - slug: "hyderabad"
-    name: "Hyderabad"
-    state: "Telangana"
-    region: "SOUTH_PENINSULA"
-    terrain: "plains"
-    latitude: 17.3850
-    longitude: 78.4867
-    elevation: 542
+    # Southern tip, early monsoon onset indicators
 
   - slug: "visakhapatnam"
     name: "Visakhapatnam"
     state: "Andhra Pradesh"
-    region: "SOUTH_PENINSULA"
+    region: "SOUTH"
     terrain: "coastal"
-    latitude: 17.6868
-    longitude: 83.2185
-    elevation: 4
+    # Coastal Andhra industrial port, high cyclone landfall exposure
+
+  - slug: "hyderabad"
+    name: "Hyderabad"
+    state: "Telangana"
+    region: "SOUTH"
+    terrain: "plains"
+    # Deccan plateau metro, urban flash floods and extreme summer heat
+
+  - slug: "bengaluru"
+    name: "Bengaluru"
+    state: "Karnataka"
+    region: "SOUTH"
+    terrain: "plains"
+    # South interior Karnataka plateau, convective storms & urban flooding
+
+  - slug: "mangaluru"
+    name: "Mangaluru"
+    state: "Karnataka"
+    region: "SOUTH"
+    terrain: "coastal"
+    # Western coastal belt, intense orographic monsoon rainfall against Western Ghats
+
+  - slug: "madurai"
+    name: "Madurai"
+    state: "Tamil Nadu"
+    region: "SOUTH"
+    terrain: "plains"
+    # Rain-shadow southern plains, high temperature extremes
+
+  # ---------------- CENTRAL & WEST COAST (7) ----------------
+  - slug: "mumbai"
+    name: "Mumbai"
+    state: "Maharashtra"
+    region: "CENTRAL"
+    terrain: "coastal"
+    # Megacity west coast, extreme 24h rainfall events & coastal surges
+
+  - slug: "nagpur"
+    name: "Nagpur"
+    state: "Maharashtra"
+    region: "CENTRAL"
+    terrain: "plains"
+    # Vidarbha central plains, severe heatwave epicenter (>45°C)
+
+  - slug: "pune"
+    name: "Pune"
+    state: "Maharashtra"
+    region: "CENTRAL"
+    terrain: "plains"
+    # Leeward Western Ghats, transition zone weather
+
+  - slug: "panaji"
+    name: "Panaji"
+    state: "Goa"
+    region: "CENTRAL"
+    terrain: "coastal"
+    # Konkan coast, heavy monsoon downpours and maritime winds
+
+  - slug: "bhopal"
+    name: "Bhopal"
+    state: "Madhya Pradesh"
+    region: "CENTRAL"
+    terrain: "plains"
+    # Malwa plateau central hub, monsoon low-pressure track
+
+  - slug: "indore"
+    name: "Indore"
+    state: "Madhya Pradesh"
+    region: "CENTRAL"
+    terrain: "plains"
+    # Western MP plains, heatwave and agricultural climate monitoring
+
+  - slug: "raipur"
+    name: "Raipur"
+    state: "Chhattisgarh"
+    region: "CENTRAL"
+    terrain: "plains"
+    # Mahanadi basin, thunderstorm and monsoon depression corridor
+
+  # ---------------- NORTH-WEST (9) ----------------
+  - slug: "delhi"
+    name: "Delhi"
+    state: "Delhi"
+    region: "NW"
+    terrain: "plains"
+    # National capital, heatwave, coldwave, monsoon break/active spells
+
+  - slug: "ahmedabad"
+    name: "Ahmedabad"
+    state: "Gujarat"
+    region: "NW"
+    terrain: "plains"
+    # Semi-arid western plain, severe heatwave risk
+
+  - slug: "surat"
+    name: "Surat"
+    state: "Gujarat"
+    region: "NW"
+    terrain: "coastal"
+    # Tapi river estuary & Gulf of Khambhat, coastal flooding
+
+  - slug: "jaipur"
+    name: "Jaipur"
+    state: "Rajasthan"
+    region: "NW"
+    terrain: "plains"
+    # Eastern Rajasthan, intense summer heat and western disturbance rainfall
+
+  - slug: "jodhpur"
+    name: "Jodhpur"
+    state: "Rajasthan"
+    region: "NW"
+    terrain: "plains"
+    # Thar desert margin, arid climate and extreme temperature anomalies
+
+  - slug: "lucknow"
+    name: "Lucknow"
+    state: "Uttar Pradesh"
+    region: "NW"
+    terrain: "plains"
+    # Central Gangetic plains, fog, coldwave and heatwave monitoring
+
+  - slug: "varanasi"
+    name: "Varanasi"
+    state: "Uttar Pradesh"
+    region: "NW"
+    terrain: "plains"
+    # Eastern UP plain, monsoon trough variations
+
+  - slug: "chandigarh"
+    name: "Chandigarh"
+    state: "Chandigarh"
+    region: "NW"
+    terrain: "plains"
+    # Shivalik foothills plain, transition to mountain meteorology
+
+  - slug: "amritsar"
+    name: "Amritsar"
+    state: "Punjab"
+    region: "NW"
+    terrain: "plains"
+    # Northwest border plains, intense winter cold waves and dust storms
+
+  # ---------------- HIMALAYAN (6) ----------------
+  - slug: "dehradun"
+    name: "Dehradun"
+    state: "Uttarakhand"
+    region: "HIMALAYAN"
+    terrain: "hills"
+    # Doon valley foothills, high annual rainfall and cloudburst risk
+
+  - slug: "nainital"
+    name: "Nainital"
+    state: "Uttarakhand"
+    region: "HIMALAYAN"
+    terrain: "hills"
+    # Kumaon Himalayas, landslide and intense orographic precipitation
+
+  - slug: "shimla"
+    name: "Shimla"
+    state: "Himachal Pradesh"
+    region: "HIMALAYAN"
+    terrain: "hills"
+    # Western Himalayan ridge, western disturbances, snow and cloudbursts
+
+  - slug: "srinagar"
+    name: "Srinagar"
+    state: "Jammu & Kashmir"
+    region: "HIMALAYAN"
+    terrain: "hills"
+    # Kashmir valley, winter precipitation and Jhelum flood risks
+
+  - slug: "gangtok"
+    name: "Gangtok"
+    state: "Sikkim"
+    region: "HIMALAYAN"
+    terrain: "hills"
+    # Eastern Himalayas, heavy monsoon rainfall and glacial lake outburst proximity
+
+  - slug: "jammu"
+    name: "Jammu"
+    state: "Jammu & Kashmir"
+    region: "HIMALAYAN"
+    terrain: "plains"
+    # Himalayan foothill plains, subtropical climate adjacent to mountains

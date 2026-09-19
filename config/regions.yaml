@@ -1,25 +1,25 @@
 # ==============================================================================
-# AAGAM — Regions and Seasons Configuration
+# AAGAM — Regions and Seasons Configuration (regions.yaml)
 # ==============================================================================
-# Maps project regions and standard IMD seasons for stratified skill scoring.
+# Maps the 5 authoritative project regions and 4 IMD meteorological seasons.
 # ==============================================================================
 
 regions:
-  NORTH_WEST:
-    name: "North-West India"
-    description: "Punjab, Haryana, Delhi, Rajasthan, Uttar Pradesh (west), Chandigarh"
-  HIMALAYAN_HILLY:
-    name: "Himalayan & Hilly Region"
-    description: "Jammu & Kashmir, Ladakh, Himachal Pradesh, Uttarakhand, Sikkim, Arunachal Pradesh"
-  CENTRAL:
-    name: "Central India"
-    description: "Madhya Pradesh, Chhattisgarh, Gujarat, Maharashtra (Vidarbha/Marathwada)"
   EAST_NE:
     name: "East & North-East India"
     description: "West Bengal, Odisha, Bihar, Jharkhand, Assam, Meghalaya, Tripura"
-  SOUTH_PENINSULA:
+  SOUTH:
     name: "South Peninsula"
-    description: "Maharashtra (Konkan/Desh), Goa, Karnataka, Kerala, Tamil Nadu, Andhra Pradesh, Telangana"
+    description: "Tamil Nadu, Kerala, Karnataka, Andhra Pradesh, Telangana"
+  CENTRAL:
+    name: "Central & West Coast"
+    description: "Maharashtra, Goa, Madhya Pradesh, Chhattisgarh"
+  NW:
+    name: "North-West India"
+    description: "Delhi, Gujarat, Rajasthan, Uttar Pradesh, Punjab, Chandigarh"
+  HIMALAYAN:
+    name: "Himalayan Region"
+    description: "Uttarakhand, Himachal Pradesh, Jammu & Kashmir, Sikkim"
 
 seasons:
   WINTER:

@@ -21,10 +21,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS Middleware to allow frontend on Vercel / localhost
+# CORS Middleware with environment-driven allowed origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,12 +48,12 @@ async def health_check() -> HealthResponse:
     """Liveness probe returning server status and Supabase connectivity."""
     client = get_supabase_client()
     connected = False
-    details = "Supabase client not initialized"
+    details = "Supabase client not initialized (credentials pending)"
 
     if client:
         try:
-            ok, _, msg = read_setup_row()
-            connected = ok
+            status, _, msg = read_setup_row()
+            connected = (status == "PASS")
             details = msg
         except Exception as e:
             details = f"Connection error: {e}"
@@ -75,34 +75,45 @@ async def hello_world() -> HelloResponse:
     Phase 0 Hello-World Endpoint.
     Directly fulfills the PRD Phase 0 acceptance condition:
     'hello-world API on Render reads a row from Supabase'
-    """
-    success, row_data, message = read_setup_row()
 
-    if success and row_data:
+    Distinguishes:
+    - PASS: actual remote Supabase read
+    - BLOCKED: credentials or database migration not yet populated
+    - FAIL: implementation or connection error
+    """
+    status, row_data, message = read_setup_row()
+
+    if status == "PASS" and row_data:
         return HelloResponse(
             message="Hello from AAGAM! Successfully read row from Supabase.",
             project="AAGAM (Adaptive AI-Grid Assimilation Model)",
             phase="Phase 0 — Setup",
+            verification_status="PASS",
             supabase_status="connected",
             data_source="supabase:_aagam_setup_check",
             read_row=row_data,
             server_time=datetime.now(timezone.utc),
         )
-    else:
-        # Graceful response if environment variables are not yet populated on Render
+    elif status == "BLOCKED":
         return HelloResponse(
-            message="Hello from AAGAM Backend API (Phase 0 Setup).",
+            message=f"Supabase read blocked: {message}",
             project="AAGAM (Adaptive AI-Grid Assimilation Model)",
             phase="Phase 0 — Setup",
-            supabase_status="pending_credentials" if not settings.SUPABASE_URL else "not_connected",
-            data_source="local_config_fallback",
-            read_row={
-                "status": "pending_credentials",
-                "message": message,
-                "locations_loaded": len(get_locations()),
-                "models_configured": len(get_models().get("models", {})),
-                "notice": "Set SUPABASE_URL and SUPABASE_ANON_KEY to read live rows.",
-            },
+            verification_status="BLOCKED",
+            supabase_status="blocked",
+            data_source="none",
+            read_row=None,
+            server_time=datetime.now(timezone.utc),
+        )
+    else:
+        return HelloResponse(
+            message=f"Supabase read failed: {message}",
+            project="AAGAM (Adaptive AI-Grid Assimilation Model)",
+            phase="Phase 0 — Setup",
+            verification_status="FAIL",
+            supabase_status="failed",
+            data_source="none",
+            read_row=None,
             server_time=datetime.now(timezone.utc),
         )
 

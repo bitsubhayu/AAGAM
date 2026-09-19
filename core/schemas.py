@@ -30,7 +30,8 @@ class HelloResponse(BaseModel):
     message: str
     project: str = "AAGAM (Adaptive AI-Grid Assimilation Model)"
     phase: str = "Phase 0 — Setup"
-    supabase_status: str
-    data_source: str
+    verification_status: str = Field(default="BLOCKED", description="Explicit status: PASS, BLOCKED, or FAIL")
+    supabase_status: str = Field(description="Database connectivity: connected, blocked, or failed")
+    data_source: str = Field(description="Remote table or none")
     read_row: Optional[Dict[str, Any]] = None
     server_time: datetime = Field(default_factory=utc_now)

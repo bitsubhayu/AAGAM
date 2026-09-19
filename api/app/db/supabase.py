@@ -31,29 +31,33 @@ def get_supabase_client() -> Optional[Client]:
         return None
 
 
-def read_setup_row() -> Tuple[bool, Optional[Dict[str, Any]], str]:
+def read_setup_row() -> Tuple[str, Optional[Dict[str, Any]], str]:
     """
     Reads a real row from Supabase to fulfill PRD Phase 0 condition:
     'hello-world API on Render reads a row from Supabase'
+
+    Returns:
+        (status, row_data, message)
+        status: "PASS" (real DB read), "BLOCKED" (credentials/migration missing), or "FAIL" (broken/error)
     """
     client = get_supabase_client()
     if client is None:
-        return False, None, "Supabase client not configured (SUPABASE_URL/KEY missing in environment)"
+        return "BLOCKED", None, "Supabase client not configured (SUPABASE_URL or API key missing in environment)"
 
     try:
         # 1. Attempt reading from Phase 0 setup verification table
         res = client.table("_aagam_setup_check").select("*").limit(1).execute()
         if res.data and len(res.data) > 0:
-            return True, res.data[0], "Read from _aagam_setup_check table successfully"
+            return "PASS", res.data[0], "Read from _aagam_setup_check table successfully"
+        else:
+            return "BLOCKED", None, "Table _aagam_setup_check exists but has no rows; apply migration 20260919000001_phase0_setup.sql"
     except Exception as e:
-        logger.info(f"_aagam_setup_check query failed, trying fallback: {e}")
-
-    try:
-        # 2. Fallback: try locations table if already created
-        res = client.table("locations").select("*").limit(1).execute()
-        if res.data and len(res.data) > 0:
-            return True, res.data[0], "Read from locations table successfully"
-    except Exception as e:
-        logger.warning(f"locations table query failed: {e}")
-
-    return False, None, "Database reachable or connected, but setup table has not been populated yet"
+        err_msg = str(e)
+        logger.warning(f"_aagam_setup_check query failed: {err_msg}")
+        # Distinguish between unapplied migration / table missing (BLOCKED) vs broken connection (FAIL)
+        if "relation" in err_msg.lower() or "not found" in err_msg.lower() or "404" in err_msg or "PGRST204" in err_msg:
+            return "BLOCKED", None, f"Table _aagam_setup_check not yet created; apply migration 20260919000001_phase0_setup.sql ({err_msg})"
+        elif "jwt" in err_msg.lower() or "auth" in err_msg.lower() or "invalid api key" in err_msg.lower() or "401" in err_msg:
+            return "FAIL", None, f"Supabase authentication failure: {err_msg}"
+        else:
+            return "FAIL", None, f"Supabase query error: {err_msg}"

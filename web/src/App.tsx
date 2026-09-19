@@ -26,6 +26,7 @@ interface HelloData {
   message: string;
   project: string;
   phase: string;
+  verification_status: "PASS" | "BLOCKED" | "FAIL" | string;
   supabase_status: string;
   data_source: string;
   read_row: any;
@@ -133,10 +134,14 @@ export function App() {
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#21262d] border border-[#30363d] rounded-md">
               <Database className="w-3.5 h-3.5 text-slate-400" />
               <span>Supabase:</span>
-              {hello?.supabase_status === "connected" ? (
-                <span className="text-emerald-400">Connected</span>
+              {hello?.verification_status === "PASS" ? (
+                <span className="text-emerald-400">Connected (PASS)</span>
+              ) : hello?.verification_status === "BLOCKED" ? (
+                <span className="text-amber-400">Blocked (Setup Pending)</span>
+              ) : hello?.verification_status === "FAIL" ? (
+                <span className="text-red-400">Failed</span>
               ) : (
-                <span className="text-amber-400">Configured</span>
+                <span className="text-slate-400">Pending</span>
               )}
             </div>
           </div>
@@ -277,15 +282,17 @@ export function App() {
               {hello ? (
                 <div className="space-y-3 font-mono text-xs">
                   <div className="flex items-center justify-between py-1 border-b border-[#21262d]">
-                    <span className="text-[#8b949e]">DB Status:</span>
+                    <span className="text-[#8b949e]">Verification Result:</span>
                     <span
-                      className={`font-semibold ${
-                        hello.supabase_status === "connected"
-                          ? "text-emerald-400"
-                          : "text-amber-400"
+                      className={`font-semibold px-2 py-0.5 rounded text-[11px] ${
+                        hello.verification_status === "PASS"
+                          ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
+                          : hello.verification_status === "BLOCKED"
+                          ? "bg-amber-950/60 text-amber-300 border border-amber-800/60"
+                          : "bg-red-950/60 text-red-300 border border-red-800/60"
                       }`}
                     >
-                      {hello.supabase_status}
+                      {hello.verification_status || "PENDING"}
                     </span>
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-[#21262d]">
@@ -293,10 +300,18 @@ export function App() {
                     <span className="text-blue-300">{hello.data_source}</span>
                   </div>
                   <div className="py-2">
-                    <span className="text-[#8b949e] block mb-1">Returned Record:</span>
-                    <pre className="p-3 bg-[#0d1117] border border-[#30363d] rounded text-[11px] overflow-x-auto text-emerald-300">
-                      {JSON.stringify(hello.read_row, null, 2)}
-                    </pre>
+                    <span className="text-[#8b949e] block mb-1">
+                      {hello.verification_status === "PASS" ? "Returned Database Record:" : "Endpoint Message:"}
+                    </span>
+                    {hello.read_row ? (
+                      <pre className="p-3 bg-[#0d1117] border border-[#30363d] rounded text-[11px] overflow-x-auto text-emerald-300">
+                        {JSON.stringify(hello.read_row, null, 2)}
+                      </pre>
+                    ) : (
+                      <div className="p-3 bg-[#0d1117] border border-[#30363d] rounded text-[11px] text-amber-300/90 leading-relaxed">
+                        {hello.message}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

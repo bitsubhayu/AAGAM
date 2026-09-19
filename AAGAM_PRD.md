@@ -169,14 +169,17 @@ Login: Supabase Auth (email magic link; optionally Google). A shared **demo view
 - **FR-WEIGHT-2** Forecaster override creates a separate **adjusted blend** = Σ wᵢ·modelᵢ with normalised weights, mandatory reason, optional expiry, audit row. It never overwrites the official blend.
 
 ### 6.7 Verification — `FR-VER`
-- **FR-VER-1** Daily job verifies every forecast whose valid date now has truth; updates `skill_scores` for `gfs, ecmwf_ifs, icon, aifs, equal_mean, ridge, lgbm, blend`.
+- **FR-VER-1** Daily job verifies every forecast whose valid date now has truth; updates `skill_scores` for `gfs, ecmwf_ifs, icon, aifs, equal_mean, ridge, lgbm, blend`. Each daily run deletes the previous non-weekly rows and inserts the new 'latest' snapshot; the Sunday run also inserts a copy with `is_weekly = true`.
 - **FR-VER-2** Categorical scores (POD, FAR, CSI) for rain at 2.5, 15.6, 64.5, 115.6 mm/day (IMD classes ⚠️ confirm the two lower cut-offs).
 
 ### 6.8 Model lifecycle — `FR-OPS`
 - **FR-OPS-1** Weekly retrain on data up to *today − truth lag*; save to Storage as `models/{yyyymmdd}/`; register in `model_versions` with metrics.
 - **FR-OPS-2** New version becomes active **only if** validation MAE is not worse than the active one by more than a tolerance (default 2 %). Admin can roll back with one action.
 - **FR-OPS-3** Nightly Parquet export of key tables to the `backups` bucket.
-- **FR-OPS-4** Retention: `blended_forecasts` 90 days; `chat_audit` 30 days.
+- **FR-OPS-4** Retention:
+  - `blended_forecasts`: keep 180 days, storing only the 00Z run. Older rows are exported to Parquet in the nightly backup job.
+  - `skill_scores`: delete `is_weekly = false` rows with `computed_at` before today; delete `is_weekly = true` rows older than 26 weeks.
+  - `chat_audit`: 30 days.
 
 ### 6.9 Auth & security — `FR-AUTH`
 - **FR-AUTH-1** JWT verification on every API call except `/health`. **FR-AUTH-2** RLS on all tables. **FR-AUTH-3** Service-role key never shipped to the browser. **FR-AUTH-4** Rate limits per user (chat stricter).
@@ -603,7 +606,8 @@ create table skill_scores (
   mae real, rmse real, bias real, n int,
   pod real, far real, csi real,      -- categorical scores use one row per rain threshold
   threshold_mm real not null default 0,   -- 0 = not applicable (continuous metrics)
-  primary key (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm)
+  is_weekly boolean not null default false,
+  primary key (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly)
 );
 
 create table alerts (
@@ -654,7 +658,7 @@ create table chat_audit (
 
 **Row Level Security (RLS) outline:** `enable row level security` on every table. Read policies: `authenticated` can `select` forecast/skill/weights/alerts/locations/pipeline tables. Write policies: **no client writes** except `weight_overrides` (role `forecaster`/`admin`, `created_by = auth.uid()`), `alerts.status` acknowledge (via API), and own `chat_audit.feedback`. Pipeline uses the service role (bypasses RLS). `profiles`: user reads own row; admin reads all.
 
-**Retention jobs:** delete `blended_forecasts` older than 90 days; `chat_audit` older than 30 days; expire overrides past `expires_at`.
+**Retention jobs:** keep `blended_forecasts` for 180 days, storing only the 00Z run (older rows exported to Parquet in the nightly backup job); for `skill_scores`: delete `is_weekly = false` rows with `computed_at` before today, and delete `is_weekly = true` rows older than 26 weeks; delete `chat_audit` older than 30 days; expire overrides past `expires_at`.
 
 ---
 

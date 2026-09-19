@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000)
     HOST: str = Field(default="0.0.0.0")
 
+    # CORS Configuration (environment-driven, comma-separated)
+    CORS_ALLOWED_ORIGINS: str = Field(
+        default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
+    )
+
+    @property
+    def cors_origins(self) -> List[str]:
+        if not self.CORS_ALLOWED_ORIGINS:
+            return ["http://localhost:5173", "http://localhost:3000"]
+        return [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+
 
 settings = Settings()
 

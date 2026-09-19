@@ -3,7 +3,7 @@ name = "aagam"
 version = "0.1.0"
 description = "Adaptive AI-Grid Assimilation Model — SIH 2026 PS 26081 (MoES / NCMRWF)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12,<3.13"
 authors = [
     { name = "AAGAM Team" }
 ]

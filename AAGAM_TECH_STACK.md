@@ -200,7 +200,7 @@ Optional stretch (not MVP): Open-Meteo **Ensemble API** (ECMWF/GEFS members) for
 ### 6.2 What lives where (keeps us far below 500 MB)
 | Where | What | Approx. size |
 |---|---|---|
-| Postgres | `locations`, current `model_forecasts` (latest run only, upsert), `blended_forecasts` (rolling 90 days, 00Z cycle kept), `weights`, `skill_scores`, `alerts`, `model_versions`, `pipeline_runs`, `profiles`, `weight_overrides`, `chat_audit` | ~ tens of MB |
+| Postgres | `locations`, current `model_forecasts` (latest run only, upsert), `blended_forecasts` (rolling 180 days, 00Z run only), `weights`, `skill_scores` (latest plus 26 weekly snapshots), `alerts`, `model_versions`, `pipeline_runs`, `profiles`, `weight_overrides`, `chat_audit` | ~ tens of MB |
 | Storage bucket `training-data` | Parquet: joined (forecasts × truth) table, Jan 2024 → today (~830k rows for 40 loc × 7 leads × 3 vars × ~990 days) | ~ 30–60 MB |
 | Storage bucket `models` | `models/{yyyymmdd}/ridge.joblib`, `lgbm_*.txt`, `metrics.json` | few MB per version |
 | Storage bucket `backups` | Nightly Parquet export of key tables (free plan has no backups) | small |
@@ -208,7 +208,7 @@ Optional stretch (not MVP): Open-Meteo **Ensemble API** (ECMWF/GEFS members) for
 > **Correction to the earlier report:** the "<100 MB" estimate assumed 3 models and no per-lead detail. The new numbers above are the ones to plan on.
 
 ### 6.3 Tables (summary — full SQL in PRD §11)
-`locations(id, name, state, region, geom geography(Point))` · `model_forecasts(issue_time, valid_date, lead_days, location_id, model, variable, value)` · `blended_forecasts(… blended, ridge, lgbm, spread, n_models_exceed, confidence, version_id)` · `weights(version_id, region, season, lead_days, variable, model, weight, method)` · `skill_scores(…mae, rmse, bias, n)` · `alerts(…hazard, severity, threshold_rule, agreement, status)` · `model_versions(id, created_at, metrics jsonb, is_active)` · `weight_overrides(user_id, …, reason, expires_at)`.
+`locations(id, name, state, region, geom geography(Point))` · `model_forecasts(issue_time, valid_date, lead_days, location_id, model, variable, value)` · `blended_forecasts(… blended, ridge, lgbm, spread, n_models_exceed, confidence, version_id)` · `weights(version_id, region, season, lead_days, variable, model, weight, method)` · `skill_scores(…mae, rmse, bias, n, is_weekly)` · `alerts(…hazard, severity, threshold_rule, agreement, status)` · `model_versions(id, created_at, metrics jsonb, is_active)` · `weight_overrides(user_id, …, reason, expires_at)`.
 
 ### 6.4 Security
 Row Level Security (RLS = per-row permission rules) on every table. **Service-role key only in GitHub Actions secrets and Render env — never in the browser.** Frontend uses the anon key + user JWT.
