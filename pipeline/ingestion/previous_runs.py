@@ -325,6 +325,7 @@ def run_previous_runs_backfill(
         duration_sec = (finished_at - started_at).total_seconds()
 
         # Log execution to pipeline_runs per FR-DATA-5
+        total_api_calls = len(completed_set)
         try:
             conn = psycopg2.connect(settings.DATABASE_URL)
             with conn.cursor() as cur:
@@ -339,8 +340,8 @@ def run_previous_runs_backfill(
                         finished_at,
                         run_status,
                         total_rows,
-                        calls_made_this_run,
-                        f"Backfill {run_status}: {calls_made_this_run} API calls, {total_rows} total rows, {len(completed_set)} chunks in {duration_sec:.1f}s. {error_msg}",
+                        total_api_calls,
+                        f"Backfill {run_status}: {calls_made_this_run} session API calls ({total_api_calls} cumulative API calls across {len(completed_set)} chunks), {total_rows} total rows in {duration_sec:.1f}s. {error_msg}",
                     ),
                 )
             conn.commit()
