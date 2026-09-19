@@ -16,8 +16,8 @@ def get_supabase_client() -> Optional[Client]:
         return _supabase_client
 
     url = settings.SUPABASE_URL
-    # Prefer service role key on backend if present, else anon key
-    key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_ANON_KEY
+    # Prefer service role key on backend if present, else anon / publishable key
+    key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_ANON_KEY or settings.SUPABASE_PUBLISHABLE_KEY
 
     if not url or not key:
         logger.warning("SUPABASE_URL or API key not set in environment.")

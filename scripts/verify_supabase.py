@@ -28,7 +28,7 @@ def verify_supabase() -> int:
     print("=" * 70)
 
     url = settings.SUPABASE_URL
-    anon = settings.SUPABASE_ANON_KEY
+    anon = settings.SUPABASE_ANON_KEY or settings.SUPABASE_PUBLISHABLE_KEY
     service = settings.SUPABASE_SERVICE_ROLE_KEY
     db_url = settings.DATABASE_URL
 

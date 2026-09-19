@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Supabase
     SUPABASE_URL: Optional[str] = Field(default=None)
     SUPABASE_ANON_KEY: Optional[str] = Field(default=None)
+    SUPABASE_PUBLISHABLE_KEY: Optional[str] = Field(default=None)
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = Field(default=None)
     DATABASE_URL: Optional[str] = Field(default=None)
 
