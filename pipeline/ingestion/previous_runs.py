@@ -113,9 +113,9 @@ def generate_date_chunks(start_date: date, end_date: date, chunk_days: int = 14)
 
 
 def run_previous_runs_backfill(
-    start_date_str: str = "2024-06-01",
-    end_date_str: str = "2024-06-30",
-    chunk_days: int = 14,
+    start_date_str: str = "2024-01-01",
+    end_date_str: str = "2026-09-18",
+    chunk_days: int = 30,
     dry_run: bool = False,
     force_reset: bool = False,
 ) -> Dict[str, Any]:
@@ -176,6 +176,8 @@ def run_previous_runs_backfill(
 
     calls_made_this_run = 0
     started_at = datetime.now(timezone.utc)
+    new_chunks_list: List[pd.DataFrame] = []
+    completed_chunks_in_batch: List[str] = []
 
     try:
         for loc_idx, loc in enumerate(locations, 1):
@@ -194,11 +196,14 @@ def run_previous_runs_backfill(
                     f"({c_start} to {c_end})..."
                 )
 
+                fetch_start = (c_start - timedelta(days=1)).isoformat()
+                fetch_end = (c_end + timedelta(days=1)).isoformat()
+
                 data = client.fetch_previous_runs(
                     latitude=lat,
                     longitude=lon,
-                    start_date=c_start.isoformat(),
-                    end_date=c_end.isoformat(),
+                    start_date=fetch_start,
+                    end_date=fetch_end,
                     models=model_keys,
                     lead_days=lead_days,
                 )
@@ -254,60 +259,97 @@ def run_previous_runs_backfill(
                                 "f_wind_max_kmh": row["wind_max"],
                             })
 
-                # Atomically update Parquet and checkpoint
                 if chunk_records:
-                    df_chunk = pd.DataFrame(chunk_records)
-                    if existing_df is not None and not existing_df.empty:
-                        existing_df = pd.concat([existing_df, df_chunk], ignore_index=True)
-                    else:
-                        existing_df = df_chunk
+                    new_chunks_list.append(pd.DataFrame(chunk_records))
+                completed_chunks_in_batch.append(chunk_id)
 
-                    dedup_keys = ["location_id", "model", "valid_date", "lead_days"]
-                    existing_df = existing_df.drop_duplicates(subset=dedup_keys, keep="last").sort_values(
-                        dedup_keys
-                    ).reset_index(drop=True)
+                # Batch commit to Parquet and checkpoint every 10 chunks or on final chunk
+                is_final = (loc_idx == len(locations) and chunk_idx == len(chunks))
+                if len(new_chunks_list) >= 10 or is_final:
+                    if new_chunks_list:
+                        df_new_batch = pd.concat(new_chunks_list, ignore_index=True)
+                        if existing_df is not None and not existing_df.empty:
+                            existing_df = pd.concat([existing_df, df_new_batch], ignore_index=True)
+                        else:
+                            existing_df = df_new_batch
 
-                    OUTPUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
-                    existing_df.to_parquet(OUTPUT_PARQUET, index=False, engine="pyarrow", compression="snappy")
+                        dedup_keys = ["location_id", "model", "valid_date", "lead_days"]
+                        existing_df = existing_df.drop_duplicates(subset=dedup_keys, keep="last").sort_values(
+                            dedup_keys
+                        ).reset_index(drop=True)
 
-                completed_set.add(chunk_id)
-                state["completed_chunks"] = list(completed_set)
-                state["total_calls_made"] = state.get("total_calls_made", 0) + 1
-                save_checkpoint(state)
+                        OUTPUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
+                        existing_df.to_parquet(OUTPUT_PARQUET, index=False, engine="pyarrow", compression="snappy")
+                        new_chunks_list = []
 
+                    for cid in completed_chunks_in_batch:
+                        completed_set.add(cid)
+                    completed_chunks_in_batch = []
+                    state["completed_chunks"] = list(completed_set)
+                    state["total_calls_made"] = len(completed_set)
+                    save_checkpoint(state)
+
+    except Exception as exc:
+        is_429 = "429" in str(exc) or "limit exceeded" in str(exc).lower()
+        run_status = "HALTED_ON_429" if is_429 else "FAILED"
+        logger.warning(f"Backfill execution stopped: {exc}. Telemetry recorded with status={run_status}.")
+        error_msg = f"Halted: {exc}"
+    else:
+        run_status = "SUCCESS"
+        error_msg = "Completed successfully."
     finally:
         client.close()
+        if new_chunks_list:
+            try:
+                df_new_batch = pd.concat(new_chunks_list, ignore_index=True)
+                if existing_df is not None and not existing_df.empty:
+                    existing_df = pd.concat([existing_df, df_new_batch], ignore_index=True)
+                else:
+                    existing_df = df_new_batch
+                dedup_keys = ["location_id", "model", "valid_date", "lead_days"]
+                existing_df = existing_df.drop_duplicates(subset=dedup_keys, keep="last").sort_values(
+                    dedup_keys
+                ).reset_index(drop=True)
+                OUTPUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
+                existing_df.to_parquet(OUTPUT_PARQUET, index=False, engine="pyarrow", compression="snappy")
+                for cid in completed_chunks_in_batch:
+                    completed_set.add(cid)
+                state["completed_chunks"] = list(completed_set)
+                state["total_calls_made"] = len(completed_set)
+                save_checkpoint(state)
+            except Exception as e:
+                logger.warning(f"Failed to flush pending chunks on exit: {e}")
 
-    total_rows = len(existing_df) if existing_df is not None else 0
-    finished_at = datetime.now(timezone.utc)
-    duration_sec = (finished_at - started_at).total_seconds()
+        total_rows = len(existing_df) if existing_df is not None else 0
+        finished_at = datetime.now(timezone.utc)
+        duration_sec = (finished_at - started_at).total_seconds()
 
-    # Log execution to pipeline_runs per FR-DATA-5
-    try:
-        conn = psycopg2.connect(settings.DATABASE_URL)
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
-                VALUES (%s, %s, %s, %s, %s, %s, %s);
-                """,
-                (
-                    "previous_runs_backfill",
-                    started_at,
-                    finished_at,
-                    "SUCCESS",
-                    total_rows,
-                    calls_made_this_run,
-                    f"Backfill completed with {calls_made_this_run} API calls, {total_rows} total rows across {len(locations)} locations in {duration_sec:.1f}s. Chunks: {len(completed_set)}.",
-                ),
-            )
-        conn.commit()
-        conn.close()
-        logger.info("Logged backfill execution to pipeline_runs table.")
-    except Exception as e:
-        logger.warning(f"Failed to log backfill to pipeline_runs: {e}")
+        # Log execution to pipeline_runs per FR-DATA-5
+        try:
+            conn = psycopg2.connect(settings.DATABASE_URL)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s);
+                    """,
+                    (
+                        "previous_runs_backfill",
+                        started_at,
+                        finished_at,
+                        run_status,
+                        total_rows,
+                        calls_made_this_run,
+                        f"Backfill {run_status}: {calls_made_this_run} API calls, {total_rows} total rows, {len(completed_set)} chunks in {duration_sec:.1f}s. {error_msg}",
+                    ),
+                )
+            conn.commit()
+            conn.close()
+            logger.info(f"Logged backfill run ({run_status}) to pipeline_runs table.")
+        except Exception as e:
+            logger.warning(f"Failed to log backfill to pipeline_runs: {e}")
 
-    logger.info(f"Backfill complete. Parquet contains {total_rows} rows at {OUTPUT_PARQUET}.")
+    logger.info(f"Backfill complete/checkpointed. Parquet contains {total_rows} rows at {OUTPUT_PARQUET}.")
 
     return {
         "status": "SUCCESS",
@@ -319,9 +361,9 @@ def run_previous_runs_backfill(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AAGAM Previous Runs Backfill Pipeline")
-    parser.add_argument("--start-date", default="2024-06-01", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end-date", default="2024-06-30", help="End date (YYYY-MM-DD)")
-    parser.add_argument("--chunk-days", type=int, default=5, help="Chunk size in days")
+    parser.add_argument("--start-date", default="2024-01-01", help="Start date (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default="2026-09-18", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--chunk-days", type=int, default=30, help="Chunk size in days")
     parser.add_argument("--dry-run", action="store_true", help="Estimate calls without executing")
     parser.add_argument("--force-reset", action="store_true", help="Reset checkpoint and overwrite")
     args = parser.parse_args()

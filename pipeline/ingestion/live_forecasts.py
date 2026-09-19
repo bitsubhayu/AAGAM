@@ -100,7 +100,7 @@ def run_live_forecast_ingestion() -> Dict[str, Any]:
             latitude=lat,
             longitude=lon,
             models=model_keys,
-            forecast_days=8,
+            forecast_days=10,
         )
 
         hourly = data.get("hourly", {})
@@ -131,7 +131,7 @@ def run_live_forecast_ingestion() -> Dict[str, Any]:
             for _, row in df_daily.iterrows():
                 val_date = row["valid_date"]
                 lead_days = (val_date - issue_date).days
-                if lead_days < 0 or lead_days > 8:
+                if lead_days < 0 or lead_days > 10:
                     continue
 
                 # Add 3 variables: rain_mm, tmax_c, wind_max_kmh

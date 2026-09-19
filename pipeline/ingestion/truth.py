@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -105,11 +105,16 @@ def fetch_era5_truth_chunk(
     end_date: str,
 ) -> pd.DataFrame:
     """Fetches hourly ERA5 reanalysis and aggregates to daily IST metrics."""
+    s_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+    e_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+    fetch_start = (s_dt - timedelta(days=1)).isoformat()
+    fetch_end = (e_dt + timedelta(days=1)).isoformat()
+
     data = client.fetch_era5_archive(
         latitude=lat,
         longitude=lon,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=fetch_start,
+        end_date=fetch_end,
         variables=["precipitation", "temperature_2m", "wind_speed_10m"],
     )
 
@@ -279,8 +284,8 @@ def run_truth_ingestion(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AAGAM Truth Ingestion Pipeline")
-    parser.add_argument("--start-date", default="2024-06-01", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end-date", default="2024-06-30", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--start-date", default="2024-01-01", help="Start date (YYYY-MM-DD)")
+    parser.add_argument("--end-date", default="2026-09-18", help="End date (YYYY-MM-DD)")
     parser.add_argument("--force-reset", action="store_true", help="Overwrite existing parquet")
     args = parser.parse_args()
 
