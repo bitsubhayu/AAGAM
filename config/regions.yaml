@@ -1,0 +1,40 @@
+# ==============================================================================
+# AAGAM — Regions and Seasons Configuration
+# ==============================================================================
+# Maps project regions and standard IMD seasons for stratified skill scoring.
+# ==============================================================================
+
+regions:
+  NORTH_WEST:
+    name: "North-West India"
+    description: "Punjab, Haryana, Delhi, Rajasthan, Uttar Pradesh (west), Chandigarh"
+  HIMALAYAN_HILLY:
+    name: "Himalayan & Hilly Region"
+    description: "Jammu & Kashmir, Ladakh, Himachal Pradesh, Uttarakhand, Sikkim, Arunachal Pradesh"
+  CENTRAL:
+    name: "Central India"
+    description: "Madhya Pradesh, Chhattisgarh, Gujarat, Maharashtra (Vidarbha/Marathwada)"
+  EAST_NE:
+    name: "East & North-East India"
+    description: "West Bengal, Odisha, Bihar, Jharkhand, Assam, Meghalaya, Tripura"
+  SOUTH_PENINSULA:
+    name: "South Peninsula"
+    description: "Maharashtra (Konkan/Desh), Goa, Karnataka, Kerala, Tamil Nadu, Andhra Pradesh, Telangana"
+
+seasons:
+  WINTER:
+    name: "Winter"
+    months: [1, 2] # January, February
+    description: "Cold wave monitoring, western disturbances"
+  PRE_MONSOON:
+    name: "Pre-Monsoon"
+    months: [3, 4, 5] # March, April, May
+    description: "Heatwave and convective storms"
+  MONSOON:
+    name: "Southwest Monsoon"
+    months: [6, 7, 8, 9] # June, July, August, September
+    description: "Primary rainfall season across India"
+  POST_MONSOON:
+    name: "Post-Monsoon"
+    months: [10, 11, 12] # October, November, December
+    description: "Northeast monsoon (Tamil Nadu) and cyclonic activity"

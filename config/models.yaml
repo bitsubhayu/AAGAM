@@ -1,0 +1,61 @@
+# ==============================================================================
+# AAGAM — 4 Core Forecast Sources Configuration (models.yaml)
+# ==============================================================================
+# Exact Open-Meteo model identifiers verified on 19 Sep 2026.
+# 3 Physics (NWP) + 1 AI/ML model directly fulfilling SIH PS 26081.
+# ==============================================================================
+
+models:
+  gfs:
+    id: "gfs_seamless"
+    name: "Global Forecast System (GFS)"
+    provider: "NOAA / NCEP"
+    type: "physics_nwp"
+    resolution_deg: 0.25
+    update_interval_hours: 6
+    lead_time_days: 7
+    previous_runs_verified: true
+
+  ecmwf_ifs:
+    id: "ecmwf_ifs025"
+    name: "ECMWF Integrated Forecasting System (IFS)"
+    provider: "ECMWF"
+    type: "physics_nwp"
+    resolution_deg: 0.25
+    update_interval_hours: 6
+    lead_time_days: 7
+    previous_runs_verified: true
+
+  icon:
+    id: "icon_global"
+    name: "DWD ICON Global"
+    provider: "Deutscher Wetterdienst (DWD)"
+    type: "physics_nwp"
+    resolution_deg: 0.25
+    update_interval_hours: 6
+    lead_time_days: 7
+    previous_runs_verified: true
+
+  ecmwf_aifs:
+    id: "ecmwf_aifs025_single"
+    name: "ECMWF Artificial Intelligence Forecasting System (AIFS)"
+    provider: "ECMWF"
+    type: "ai_ml"
+    resolution_deg: 0.25
+    update_interval_hours: 6
+    lead_time_days: 7
+    previous_runs_verified: true
+
+variables:
+  - id: "precipitation"
+    name: "Total Precipitation"
+    unit: "mm/24h"
+    aggregation: "sum_0830_ist" # 03:00 UTC to 03:00 UTC
+  - id: "temperature_2m"
+    name: "Daily Maximum Temperature (Tmax)"
+    unit: "degC"
+    aggregation: "max_ist_day" # Max across 00:00 to 24:00 IST
+  - id: "wind_speed_10m"
+    name: "Daily Maximum Wind Speed"
+    unit: "km/h"
+    aggregation: "max_ist_day" # Max 10m wind speed across IST calendar day

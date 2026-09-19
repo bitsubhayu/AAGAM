@@ -1,0 +1,26 @@
+{
+  "theme": "dark",
+  "palette": {
+    "background": "#0d1117",
+    "surface": "#161b22",
+    "surfaceRaised": "#21262d",
+    "border": "#30363d",
+    "textPrimary": "#f0f6fc",
+    "textSecondary": "#c9d1d9",
+    "textMuted": "#8b949e",
+    "accentBlue": "#388bfd",
+    "successGreen": "#2ea043",
+    "warningAmber": "#d29922",
+    "dangerRed": "#f85149"
+  },
+  "typography": {
+    "sans": "IBM Plex Sans",
+    "mono": "IBM Plex Mono",
+    "tabularNumerals": true
+  },
+  "layout": {
+    "sidebar": "fixed-left",
+    "cardGrid": "modular",
+    "kpiTiles": "top-row"
+  }
+}

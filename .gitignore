@@ -1,0 +1,69 @@
+# Environment variables (NEVER COMMIT SECRETS)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Node / Frontend
+node_modules/
+web/node_modules/
+web/dist/
+.vite/
+web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Impeccable (preserve config.json and design.json, ignore caches/screenshots)
+.impeccable/caches/
+.impeccable/workspaces/
+.impeccable/screenshots/
+.impeccable/*.log
+
+# Operating System & IDEs
+*.exe
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local scratch / test outputs
+scratch/
+*.grd
+*.GRD

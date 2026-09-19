@@ -1,0 +1,36 @@
+# ==============================================================================
+# AAGAM — Render Deployment Configuration (render.yaml)
+# ==============================================================================
+# Free web service deployment for FastAPI backend.
+# Web server does NOT run heavy ML training (kept lightweight < 512 MB RAM).
+# ==============================================================================
+
+services:
+  - type: web
+    name: aagam-api
+    runtime: python
+    region: singapore # Closest free region to India (or oregon/frankfurt)
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_TZ_DISPLAY
+        value: Asia/Kolkata
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: GROQ_FALLBACK_MODEL
+        value: openai/gpt-oss-20b

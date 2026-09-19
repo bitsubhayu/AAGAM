@@ -1,0 +1,59 @@
+# ==============================================================================
+# AAGAM — Extreme Weather Rules Configuration (thresholds.yaml)
+# ==============================================================================
+# Strictly uses official IMD threshold numbers for hazard classifications.
+# AAGAM issues decision-support flags, NOT official warnings.
+# ==============================================================================
+
+rain:
+  categories:
+    light: [0.1, 2.4]
+    moderate: [2.5, 15.5]
+    rather_heavy: [15.6, 64.4]
+    heavy: [64.5, 115.5]
+    very_heavy: [115.6, 204.4]
+    extremely_heavy: 204.5 # >= 204.5 mm/24h
+
+  alert_levels:
+    advisory:
+      condition: "any model >= 64.5 or blended >= 51.6"
+      min_single_model: 64.5
+      blended_ratio: 0.8
+    watch:
+      condition: "blended >= 64.5 or at least 2 models >= 64.5"
+      blended_threshold: 64.5
+      min_agreeing_models: 2
+    alert:
+      condition: "blended >= 64.5 and at least 3 models >= 64.5"
+      blended_threshold: 64.5
+      min_agreeing_models: 3
+
+heatwave:
+  min_consecutive_days: 2 # IMD criteria requires condition for 2 consecutive days
+  thresholds_by_terrain:
+    plains:
+      absolute_min_tmax: 40.0
+      normal_departure_heatwave: 4.5
+      normal_departure_severe: 6.5
+    coastal:
+      absolute_min_tmax: 37.0
+      normal_departure_heatwave: 4.5
+      normal_departure_severe: 6.5
+    hills:
+      absolute_min_tmax: 30.0
+      normal_departure_heatwave: 4.5
+      normal_departure_severe: 6.5
+  standalone_criteria:
+    heatwave_anywhere: 45.0 # >= 45.0°C irrespective of normal
+    severe_heatwave_anywhere: 47.0 # >= 47.0°C irrespective of normal
+
+wind:
+  # Configurable Beaufort scale defaults
+  units: "km/h"
+  advisory: 50.0 # Moderate gale
+  watch: 62.0    # Gale (Beaufort 8)
+  alert: 75.0    # Strong gale (Beaufort 9)
+  storm: 89.0    # Storm (Beaufort 10)
+
+uncertainty:
+  percentile_trigger: 90 # High uncertainty flag if model spread > P90 historical spread
