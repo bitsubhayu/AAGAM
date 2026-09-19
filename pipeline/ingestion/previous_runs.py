@@ -175,6 +175,7 @@ def run_previous_runs_backfill(
     lead_days = list(range(1, 8))
 
     calls_made_this_run = 0
+    started_at = datetime.now(timezone.utc)
 
     try:
         for loc_idx, loc in enumerate(locations, 1):
@@ -278,6 +279,34 @@ def run_previous_runs_backfill(
         client.close()
 
     total_rows = len(existing_df) if existing_df is not None else 0
+    finished_at = datetime.now(timezone.utc)
+    duration_sec = (finished_at - started_at).total_seconds()
+
+    # Log execution to pipeline_runs per FR-DATA-5
+    try:
+        conn = psycopg2.connect(settings.DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
+                """,
+                (
+                    "previous_runs_backfill",
+                    started_at,
+                    finished_at,
+                    "SUCCESS",
+                    total_rows,
+                    calls_made_this_run,
+                    f"Backfill completed with {calls_made_this_run} API calls, {total_rows} total rows across {len(locations)} locations in {duration_sec:.1f}s. Chunks: {len(completed_set)}.",
+                ),
+            )
+        conn.commit()
+        conn.close()
+        logger.info("Logged backfill execution to pipeline_runs table.")
+    except Exception as e:
+        logger.warning(f"Failed to log backfill to pipeline_runs: {e}")
+
     logger.info(f"Backfill complete. Parquet contains {total_rows} rows at {OUTPUT_PARQUET}.")
 
     return {

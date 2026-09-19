@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -137,6 +137,7 @@ def run_truth_ingestion(
     """Runs truth ingestion pipeline across 40 locations."""
     start_dt = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     end_dt = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    started_at = datetime.now(timezone.utc)
 
     locations = get_locations_from_db()
     logger.info("=" * 60)
@@ -233,6 +234,34 @@ def run_truth_ingestion(
         logger.info(f"  - Temp Sources: {temp_sources}")
         logger.info(f"  - Wind Sources: {wind_sources}")
         logger.info(f"  - Output Parquet: {TRUTH_PARQUET}")
+
+        finished_at = datetime.now(timezone.utc)
+        duration_sec = (finished_at - started_at).total_seconds()
+
+        # Log run to pipeline_runs per FR-DATA-5
+        try:
+            conn = psycopg2.connect(settings.DATABASE_URL)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s);
+                    """,
+                    (
+                        "truth_ingestion",
+                        started_at,
+                        finished_at,
+                        "SUCCESS",
+                        len(df_final),
+                        len(locations),
+                        f"Truth ingestion completed {len(df_final)} rows across {len(locations)} locations in {duration_sec:.1f}s. IMD probe: {imd_status['status']}. Fallback: ERA5.",
+                    ),
+                )
+            conn.commit()
+            conn.close()
+            logger.info("Logged truth ingestion to pipeline_runs table.")
+        except Exception as e:
+            logger.warning(f"Failed to log truth ingestion to pipeline_runs: {e}")
 
         return {
             "status": "SUCCESS",
