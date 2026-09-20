@@ -353,7 +353,7 @@ def run_previous_runs_backfill(
     logger.info(f"Backfill complete/checkpointed. Parquet contains {total_rows} rows at {OUTPUT_PARQUET}.")
 
     return {
-        "status": "SUCCESS",
+        "status": run_status,
         "calls_made": calls_made_this_run,
         "total_rows": total_rows,
         "parquet_path": str(OUTPUT_PARQUET),
