@@ -71,7 +71,7 @@ class TmaxClimatologyEngine:
                 "ERA5 historical reanalysis truth (IMD Pune server connection timed out; "
                 "fallback to ERA5 climatology per PRD §8.4)"
             ),
-            training_period_start="2024-01-20",
+            training_period_start="2024-01-01",
             training_period_end="2026-03-22",
             num_locations=40,
             smoothing_window_days=7,
