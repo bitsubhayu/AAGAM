@@ -1,0 +1,292 @@
+{
+  "training_period": {
+    "start": "2024-01-20",
+    "end": "2026-03-22",
+    "rows": 663600
+  },
+  "validation_period": {
+    "start": "2026-03-23",
+    "end": "2026-06-20",
+    "rows": 75600
+  },
+  "test_period": {
+    "start": "2026-06-21",
+    "end": "2026-09-18",
+    "rows": 75600
+  },
+  "lightgbm_validation_mae": {
+    "rain_mm": 1.9826,
+    "tmax_c": 1.0236,
+    "wind_max_kmh": 2.0672
+  },
+  "lightgbm_best_iterations": {
+    "rain_mm": 196,
+    "tmax_c": 598,
+    "wind_max_kmh": 596
+  },
+  "selection_decisions": {
+    "rain_mm_lead_1": "lgbm",
+    "rain_mm_lead_2": "lgbm",
+    "rain_mm_lead_3": "lgbm",
+    "rain_mm_lead_4": "lgbm",
+    "rain_mm_lead_5": "lgbm",
+    "rain_mm_lead_6": "lgbm",
+    "rain_mm_lead_7": "lgbm",
+    "tmax_c_lead_1": "lgbm",
+    "tmax_c_lead_2": "lgbm",
+    "tmax_c_lead_3": "lgbm",
+    "tmax_c_lead_4": "lgbm",
+    "tmax_c_lead_5": "lgbm",
+    "tmax_c_lead_6": "lgbm",
+    "tmax_c_lead_7": "lgbm",
+    "wind_max_kmh_lead_1": "lgbm",
+    "wind_max_kmh_lead_2": "lgbm",
+    "wind_max_kmh_lead_3": "lgbm",
+    "wind_max_kmh_lead_4": "lgbm",
+    "wind_max_kmh_lead_5": "lgbm",
+    "wind_max_kmh_lead_6": "lgbm",
+    "wind_max_kmh_lead_7": "lgbm"
+  },
+  "test_overall_metrics": [
+    {
+      "variable": "rain_mm",
+      "candidate": "GFS",
+      "mae": 8.3864,
+      "rmse": 15.8559,
+      "bias": -2.3335,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "ECMWF IFS",
+      "mae": 7.4875,
+      "rmse": 14.3556,
+      "bias": 0.7331,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "ICON",
+      "mae": 8.071,
+      "rmse": 16.7871,
+      "bias": -0.6665,
+      "n": 21600,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "AIFS",
+      "mae": 6.4712,
+      "rmse": 11.6996,
+      "bias": 2.0377,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "Equal-Weight Mean",
+      "mae": 6.2757,
+      "rmse": 11.8461,
+      "bias": -0.0425,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "Ridge",
+      "mae": 6.2493,
+      "rmse": 11.7537,
+      "bias": 0.2093,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "LightGBM",
+      "mae": 5.4926,
+      "rmse": 11.456,
+      "bias": -2.5206,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "rain_mm",
+      "candidate": "Adaptive Blend",
+      "mae": 5.4926,
+      "rmse": 11.456,
+      "bias": -2.5206,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "GFS",
+      "mae": 2.284,
+      "rmse": 3.0777,
+      "bias": 0.9345,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "ECMWF IFS",
+      "mae": 1.2781,
+      "rmse": 1.6636,
+      "bias": -0.5594,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "ICON",
+      "mae": 1.4273,
+      "rmse": 1.8778,
+      "bias": -0.3546,
+      "n": 21600,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "AIFS",
+      "mae": 1.1634,
+      "rmse": 1.5007,
+      "bias": -0.6479,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "Equal-Weight Mean",
+      "mae": 1.1035,
+      "rmse": 1.4617,
+      "bias": -0.1516,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "Ridge",
+      "mae": 1.0153,
+      "rmse": 1.3268,
+      "bias": -0.4091,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "LightGBM",
+      "mae": 0.9002,
+      "rmse": 1.2137,
+      "bias": 0.1701,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "tmax_c",
+      "candidate": "Adaptive Blend",
+      "mae": 0.9002,
+      "rmse": 1.2137,
+      "bias": 0.1701,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "GFS",
+      "mae": 6.2103,
+      "rmse": 7.8935,
+      "bias": 5.0689,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "ECMWF IFS",
+      "mae": 3.1491,
+      "rmse": 4.1864,
+      "bias": -0.9964,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "ICON",
+      "mae": 3.5407,
+      "rmse": 4.5229,
+      "bias": -2.4868,
+      "n": 21600,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "AIFS",
+      "mae": 4.0587,
+      "rmse": 5.1049,
+      "bias": -2.6405,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "Equal-Weight Mean",
+      "mae": 2.7803,
+      "rmse": 3.5983,
+      "bias": -0.1624,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "Ridge",
+      "mae": 2.6328,
+      "rmse": 3.4979,
+      "bias": -0.8474,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "LightGBM",
+      "mae": 2.0816,
+      "rmse": 2.7634,
+      "bias": 0.066,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    },
+    {
+      "variable": "wind_max_kmh",
+      "candidate": "Adaptive Blend",
+      "mae": 2.0816,
+      "rmse": 2.7634,
+      "bias": 0.066,
+      "n": 25200,
+      "slice_type": "overall",
+      "slice_value": "all"
+    }
+  ]
+}
