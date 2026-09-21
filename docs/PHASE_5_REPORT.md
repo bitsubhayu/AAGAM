@@ -153,7 +153,7 @@ All 4 production workflows are created with exact non-round cron schedules speci
 
 ## 7. Manual Dry-Run Execution Results
 
-Each stage was manually executed in dry-run mode to verify operational stability, row throughput, and telemetry logging:
+Each stage was manually executed in dry-run mode to verify operational stability and pipeline execution flow without mutating production database tables:
 
 ### Stage 1: Ingest & Blend
 - **Command:** `python -m pipeline ingest-live --dry-run`
@@ -165,7 +165,7 @@ Each stage was manually executed in dry-run mode to verify operational stability
 - **API Calls Estimated:** 0 (dry-run mode; ~160 in live)
 - **Status:** **SUCCESS**
 - **Duration:** 2.34s
-- **Output Artifact:** Records written to `model_forecasts`, `blended_forecasts`, `alerts`, and `pipeline_runs`.
+- **Output Artifact:** Records were processed/simulated for validation; no live database mutation was performed.
 
 ### Stage 2: Daily Verification
 - **Command:** `python -m pipeline verify --dry-run`
@@ -174,7 +174,7 @@ Each stage was manually executed in dry-run mode to verify operational stability
 - **Skill Scores Produced:** 980 metric rows
 - **Status:** **SUCCESS**
 - **Duration:** 0.64s
-- **Output Artifact:** Records written to `skill_scores` and `pipeline_runs`.
+- **Output Artifact:** Trailing verification metrics simulated for validation; no live database mutation was performed.
 
 ### Stage 3: Weekly Retraining & Quality Gate
 - **Command:** `python -m pipeline train --dry-run`
@@ -182,7 +182,7 @@ Each stage was manually executed in dry-run mode to verify operational stability
 - **Quality Gate Result:** **PASSED** (MAE `1.6911` $\le$ threshold `1.7250`)
 - **Status:** **SUCCESS**
 - **Duration:** 0.33s
-- **Output Artifact:** Verified quality gate evaluation in `pipeline_runs`.
+- **Output Artifact:** Candidate quality gate evaluated; no live model registry mutation was performed.
 
 ### Stage 4: Nightly Backup & Retention
 - **Command:** `python -m pipeline backup --dry-run`
@@ -191,7 +191,8 @@ Each stage was manually executed in dry-run mode to verify operational stability
 - **Total Rows Backed Up:** 7,911 rows
 - **Status:** **SUCCESS**
 - **Duration:** 2.59s
-- **Output Artifact:** Local exports in `data/backups/20260921/` and retention cleanup check.
+- **Output Artifact:** Local Parquet export simulated in `data/backups/20260921/`; no live storage upload or retention database purge was performed.
+
 
 ---
 
@@ -213,23 +214,53 @@ Each stage was manually executed in dry-run mode to verify operational stability
 ============================= test session starts =============================
 platform win32 -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
 rootdir: C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM
-collected 77 items
+configfile: pyproject.toml
+testpaths: api/tests, pipeline/tests, tests
+plugins: anyio-4.15.1, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 83 items
 
-api/tests/test_api.py .......                                            [  9%]
-tests/test_aggregation.py ...                                            [ 12%]
-tests/test_backfill_resumability.py ..                                   [ 15%]
-tests/test_blend.py .............                                        [ 32%]
-tests/test_data_integrity.py ..                                          [ 35%]
-tests/test_extremes.py .............                                     [ 51%]
-tests/test_locations.py ..                                               [ 54%]
-tests/test_openmeteo_client.py ....                                      [ 59%]
-tests/test_phase5_pipeline.py ..............                             [ 77%]
-tests/test_skill.py ................                                     [ 98%]
-tests/test_training_dataset.py .                                         [100%]
+api\tests\test_api.py .......                                            [  8%]
+tests\test_aggregation.py ...                                            [ 12%]
+tests\test_backfill_resumability.py ..                                   [ 14%]
+tests\test_blend.py .............                                        [ 30%]
+tests\test_data_integrity.py ..                                          [ 32%]
+tests\test_extremes.py .............                                     [ 48%]
+tests\test_locations.py ..                                               [ 50%]
+tests\test_openmeteo_client.py ....                                      [ 55%]
+tests\test_phase5_pipeline.py ....................                       [ 79%]
+tests\test_skill.py ................                                     [ 98%]
+tests\test_training_dataset.py .                                         [100%]
 
-======================= 77 passed, 6 warnings in 22.12s =======================
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv\Lib\site-packages\starlette\testclient.py:53
+  C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+api/tests/test_api.py::test_health_endpoint
+  C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'timeout' parameter is deprecated. Please configure it in the http client instead.
+    return SyncPostgrestClient(
+
+api/tests/test_api.py::test_health_endpoint
+  C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM\.venv\Lib\site-packages\supabase\_sync\client.py:309: DeprecationWarning: The 'verify' parameter is deprecated. Please configure it in the http client instead.
+    return SyncPostgrestClient(
+
+tests/test_phase5_pipeline.py::test_required_storage_buckets_exist
+  C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM\.venv\Lib\site-packages\supabase\_sync\client.py:264: DeprecationWarning: The 'timeout' parameter is deprecated. Please configure it in the http client instead.
+    return SyncStorageClient(
+
+tests/test_phase5_pipeline.py::test_required_storage_buckets_exist
+  C:\Users\subha\OneDrive\Documents\Antigravity_Workspace\AAGAM\.venv\Lib\site-packages\supabase\_sync\client.py:264: DeprecationWarning: The 'verify' parameter is deprecated. Please configure it in the http client instead.
+    return SyncStorageClient(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 83 passed, 6 warnings in 30.62s =======================
 ```
-- **Total Passed:** 77 / 77 (100%)
+- **Total Passed:** 83 / 83 (100%)
 - **Zero Failures, Zero Skips.**
 
 ### Command: `ruff check .`
@@ -270,7 +301,7 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 
 ### 11.2 Acceptance Criteria Evaluation:
 1. **Zero Cloud Run Fabrication:** In strict adherence to the project guidelines, no scheduled cycle results have been fabricated.
-2. **Local vs Cloud Telemetry Disambiguation:** While local CLI executions (`python -m pipeline ingest-live --dry-run`, `verify --dry-run`, etc.) and automated test runs logged `SUCCESS` in `pipeline_runs`, these are strictly designated as test telemetry and are **not** counted toward the 3 scheduled cloud execution criterion.
+2. **Local vs Cloud Telemetry Disambiguation:** While local verification commands and automated integration tests were executed for pipeline validation, dry-run executions did not mutate production database tables, and local test runs are **not** counted toward the 3 scheduled cloud execution criterion.
 3. **Trigger Dependency:** GitHub Actions scheduled workflows execute only from the repository's default branch. The Phase 5 workflow files currently exist on phase-5/live-pipeline, so genuine scheduled acceptance cycles have not yet occurred on the default branch.
 4. **Conclusion:** Because fewer than 3 consecutive scheduled cloud cycles have elapsed, Phase 5 acceptance remains explicitly **PENDING**.
 
@@ -298,6 +329,7 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 
 - **Branch:** `phase-5/live-pipeline`
 - **Recent Commits:**
+  - `c228e9f`: `fix(phase-5): enforce nightly backup safety aborting retention cleanup on upload failure`
   - `439c5ee`: `fix(phase-5): enforce profile role immutability and chat_audit field protection`
   - `cdea8b2`: `fix(phase-5): enforce strict rls on all 11 tables and remove anonymous read access`
   - `b899dd5`: `docs(phase-5): clarify default branch trigger rule for scheduled workflows`
@@ -305,5 +337,6 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
   - `9efe91c`: `fix(phase-5): align retention policies with PRD and set pending acceptance status`
   - `2230787`: `feat(phase-5): implement live pipeline database scheduler and registry`
 - **Working Tree:** Clean.
+
 
 
