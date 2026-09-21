@@ -12,7 +12,7 @@
 
 Phase 5 transitions AAGAM from an offline backtested research pipeline into a fully automated, observable, cloud-backed operational forecasting engine. All database schemas, Row-Level Security policies, cloud storage buckets, model registry quality gates, retention cleanups, and GitHub Actions scheduled workflows have been implemented and verified against `AAGAM_PRD.md` and `AAGAM_TECH_STACK.md`.
 
-All 82 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
+All 83 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
 
 ---
 
@@ -29,7 +29,8 @@ All 11 core tables specified in PRD §11 were created and verified directly in S
 | 3 | `model_versions` | ML model registry metadata | `id` (SERIAL PK), UNIQUE partial on `(is_active) WHERE is_active = true` | **YES** |
 | 4 | `blended_forecasts` | Blended predictions & ensemble metrics | `(location_id, variable, valid_date, issue_time)` | **YES** |
 | 5 | `weights` | Dynamic regime/seasonal model weights | `(version_id, variable, region, season, lead_days, model, method)` | **YES** |
-| 6 | `skill_scores` | Trailing 60-day operational metrics | `(computed_at, window_days, variable, region, season, lead_days, model)` | **YES** |
+| 6 | `skill_scores` | Trailing 60-day operational metrics | `(computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly)` | **YES** |
+
 | 7 | `alerts` | Extreme hazard warnings | `(issue_time, location_id, hazard, valid_date, lead_days)` | **YES** |
 | 8 | `profiles` | User roles & organizations | `user_id` (UUID PK references auth.users) | **YES** |
 | 9 | `weight_overrides` | Forecaster/Admin manual interventions | `id` (BIGSERIAL PK) | **YES** |
@@ -126,8 +127,11 @@ In strict accordance with authoritative `AAGAM_PRD.md` requirements:
 2. **`chat_audit` Retention (30 Days):**
    - Assistant conversation logs and user feedback older than 30 days (`created_at < NOW() - INTERVAL '30 days'`) are purged.
 3. **Weight Override Expiry:**
-   - Overrides where `expires_at < NOW()` and `is_active = true` are automatically deactivated (`is_active = false`).
-4. **Nightly Parquet Export:**
+   - Overrides where `expires_at < NOW()` and `active = true` are automatically deactivated (`active = false`).
+4. **Nightly Backup Failure Safety (PRD §11 Data Protection):**
+   - Every table in `BACKUP_TABLES` (`model_forecasts`, `blended_forecasts`, `alerts`, `skill_scores`, `weights`, `pipeline_runs`) must successfully export and upload to Supabase storage before retention cleanup is permitted.
+   - If ANY upload returns `False` or raises an exception, the backup operation is marked `FAILED`, retention cleanup is strictly ABORTED to protect historical data, no database rows are deleted, and a `FAILED` `pipeline_runs` telemetry row is recorded identifying the affected table (verified by automated test `test_nightly_backup_failure_aborts_retention_cleanup`).
+5. **Nightly Parquet Export:**
    - Prior to deletion, operational data is preserved in the `backups` bucket organized by date.
 
 *(Note: Unsupported retention rules such as 180-day forecast retention or 365-day skill score retention have been removed to strictly adhere to the authoritative PRD).*
@@ -294,10 +298,12 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 
 - **Branch:** `phase-5/live-pipeline`
 - **Recent Commits:**
+  - `439c5ee`: `fix(phase-5): enforce profile role immutability and chat_audit field protection`
   - `cdea8b2`: `fix(phase-5): enforce strict rls on all 11 tables and remove anonymous read access`
   - `b899dd5`: `docs(phase-5): clarify default branch trigger rule for scheduled workflows`
   - `2f8b2fe`: `docs(phase-5): record operational acceptance observation audit and pending 3-cycle status`
   - `9efe91c`: `fix(phase-5): align retention policies with PRD and set pending acceptance status`
   - `2230787`: `feat(phase-5): implement live pipeline database scheduler and registry`
 - **Working Tree:** Clean.
+
 

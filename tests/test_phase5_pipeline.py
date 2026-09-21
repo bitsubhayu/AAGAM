@@ -143,19 +143,33 @@ def test_auth_helper_functions_exist():
 
 
 def test_anonymous_reads_blocked_on_operational_tables():
-    """Verify that anonymous role (anon) is blocked from reading operational tables."""
+    """Verify that anonymous role (anon) is blocked from reading all 11 core tables under RLS."""
     conn = get_db_connection()
+    all_11_tables = [
+        "locations",
+        "model_forecasts",
+        "model_versions",
+        "blended_forecasts",
+        "weights",
+        "skill_scores",
+        "alerts",
+        "profiles",
+        "weight_overrides",
+        "pipeline_runs",
+        "chat_audit",
+    ]
     try:
         with conn.cursor() as cur:
             cur.execute("BEGIN; SET LOCAL ROLE anon;")
-            # Operational tables must return 0 rows for anonymous queries under RLS
-            for table in ["blended_forecasts", "locations", "model_forecasts", "alerts", "weights"]:
+            # All 11 core tables must return 0 rows for anonymous queries under RLS
+            for table in all_11_tables:
                 cur.execute(f"SELECT COUNT(*) FROM {table};")
                 count = cur.fetchone()[0]
                 assert count == 0, f"Table '{table}' should not return data to anonymous users (got {count} rows)"
             cur.execute("ROLLBACK;")
     finally:
         conn.close()
+
 
 
 def test_authenticated_reads_allowed_on_operational_tables():
@@ -410,6 +424,55 @@ def test_retention_cleanup_execution():
     assert "chat_audit_purged" in stats
 
 
+def test_nightly_backup_failure_aborts_retention_cleanup(tmp_path):
+    """Verify that if any table upload fails during nightly backup, retention cleanup is aborted,
+    telemetry records FAILED status identifying the failed table, and no data is purged."""
+    engine = RetentionEngine()
+
+    # Mock storage_manager.upload_file so that 'blended_forecasts' fails (returns False)
+    def mock_upload(bucket, source_path, target_path, **kwargs):
+        if "blended_forecasts" in str(source_path):
+            return False
+        return True
+
+    with patch.object(storage_manager, "upload_file", side_effect=mock_upload):
+        with patch.object(engine, "run_cleanup") as mock_cleanup:
+            result = engine.run_nightly_backup(
+                backup_date="20990101",
+                dry_run=False,
+                local_dir=tmp_path,
+            )
+
+            # 1. Verify returned status is FAILED
+            assert result["status"] == "FAILED"
+            assert "failed_uploads" in result
+            assert "blended_forecasts" in result["failed_uploads"]
+            assert "blended_forecasts" in result["error"]
+
+            # 2. Verify retention cleanup is NOT executed
+            mock_cleanup.assert_not_called()
+
+    # 3. Verify a FAILED backup_nightly telemetry record is created in pipeline_runs
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT job, status, message
+                FROM pipeline_runs
+                WHERE job = 'backup_nightly'
+                ORDER BY id DESC
+                LIMIT 1;
+            """)
+            last_run = cur.fetchone()
+            assert last_run is not None
+            assert last_run[0] == "backup_nightly"
+            assert last_run[1] == "FAILED"
+            assert "blended_forecasts" in last_run[2]
+    finally:
+        conn.close()
+
+
+
 # =====================================================================
 # 6. IDEMPOTENCY & DUPLICATE PROTECTION
 # =====================================================================
@@ -509,7 +572,17 @@ def test_pipeline_runs_telemetry_fields():
             rows = cur.fetchall()
             assert len(rows) > 0, "No pipeline_runs telemetry records found"
             for row in rows:
-                assert row[1] in ("ingest-blend", "ingest-live", "verify", "train", "backup", "historical_backfill")
+                assert row[1] in (
+                    "ingest-blend",
+                    "ingest-live",
+                    "verify",
+                    "train",
+                    "backup",
+                    "backup_nightly",
+                    "retention_cleanup",
+                    "historical_backfill",
+                )
+
                 assert row[2] is not None  # started_at
                 assert row[4] in ("SUCCESS", "FAILED", "HALTED", "RUNNING")  # status
     finally:

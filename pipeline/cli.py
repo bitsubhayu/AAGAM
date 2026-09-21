@@ -82,7 +82,11 @@ def backup_cmd(
 
     result = retention_engine.run_nightly_backup(backup_date=backup_date, dry_run=dry_run)
     console.print(f"[bold]Result:[/bold] {result}")
-    raise typer.Exit(code=0)
+    if result.get("status") == "SUCCESS":
+        raise typer.Exit(code=0)
+    raise typer.Exit(code=1)
+
+
 
 
 @app.command("migrate")

@@ -155,6 +155,7 @@ class RetentionEngine:
         conn = self.get_connection()
         table_stats: Dict[str, int] = {}
         uploaded_files: List[str] = []
+        failed_uploads: Dict[str, str] = {}
 
         try:
             for table in BACKUP_TABLES:
@@ -174,17 +175,63 @@ class RetentionEngine:
                 if not dry_run:
                     remote_path = f"backups/{backup_date}/{table}.parquet"
                     try:
-                        storage_manager.upload_file("backups", parquet_path, remote_path)
-                        uploaded_files.append(remote_path)
+                        upload_ok = storage_manager.upload_file("backups", parquet_path, remote_path)
+                        if upload_ok:
+                            uploaded_files.append(remote_path)
+                        else:
+                            err = f"upload_file returned False for {table}"
+                            logger.error(f"Backup upload failed: {err}")
+                            failed_uploads[table] = err
                     except Exception as e:
-                        logger.warning(f"Could not upload {table}.parquet to backups storage: {e}")
-
-            # Execute retention cleanup after backup
-            cleanup_stats = self.run_cleanup(dry_run=dry_run)
+                        err = f"upload_file raised exception for {table}: {e}"
+                        logger.error(f"Backup upload exception: {err}")
+                        failed_uploads[table] = err
 
             finished_at = datetime.now(timezone.utc)
             duration_sec = (finished_at - started_at).total_seconds()
             total_rows_backed_up = sum(table_stats.values())
+
+            # Fail-safe check: If ANY upload failed, abort retention cleanup immediately!
+            if failed_uploads and not dry_run:
+                failed_msg = (
+                    f"Nightly backup FAILED for {len(failed_uploads)} table(s): {failed_uploads}. "
+                    f"Retention cleanup ABORTED to prevent data loss. "
+                    f"Exported {total_rows_backed_up} rows across {len(BACKUP_TABLES)} tables in {duration_sec:.2f}s."
+                )
+                logger.error(failed_msg)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s);
+                        """,
+                        (
+                            "backup_nightly",
+                            started_at,
+                            finished_at,
+                            "FAILED",
+                            total_rows_backed_up,
+                            0,
+                            failed_msg,
+                        ),
+                    )
+                return {
+                    "status": "FAILED",
+                    "backup_date": backup_date,
+                    "table_rows": table_stats,
+                    "total_rows": total_rows_backed_up,
+                    "uploaded_files": uploaded_files,
+                    "failed_uploads": failed_uploads,
+                    "cleanup_stats": None,
+                    "duration_seconds": duration_sec,
+                    "error": failed_msg,
+                }
+
+            # Execute retention cleanup ONLY after all table uploads successfully succeed
+            cleanup_stats = self.run_cleanup(dry_run=dry_run)
+
+            finished_at = datetime.now(timezone.utc)
+            duration_sec = (finished_at - started_at).total_seconds()
 
             if not dry_run:
                 with conn.cursor() as cur:
