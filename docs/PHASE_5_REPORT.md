@@ -259,7 +259,7 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 ### 11.2 Acceptance Criteria Evaluation:
 1. **Zero Cloud Run Fabrication:** In strict adherence to the project guidelines, no scheduled cycle results have been fabricated.
 2. **Local vs Cloud Telemetry Disambiguation:** While local CLI executions (`python -m pipeline ingest-live --dry-run`, `verify --dry-run`, etc.) and automated test runs logged `SUCCESS` in `pipeline_runs`, these are strictly designated as test telemetry and are **not** counted toward the 3 scheduled cloud execution criterion.
-3. **Trigger Dependency:** Scheduled workflows run exclusively within GitHub Actions cloud runners after `phase-5/live-pipeline` is pushed to GitHub.
+3. **Trigger Dependency:** GitHub Actions scheduled workflows execute only from the repository's default branch. The Phase 5 workflow files currently exist on phase-5/live-pipeline, so genuine scheduled acceptance cycles have not yet occurred on the default branch.
 4. **Conclusion:** Because fewer than 3 consecutive scheduled cloud cycles have elapsed, Phase 5 acceptance remains explicitly **PENDING**.
 
 | Scheduled Cycle # | Scheduled Target | Actual Cloud Run | Telemetry ID | Rows Written | Fresh Forecasts | Alerts Generated | Cycle Status |
@@ -286,6 +286,7 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 
 - **Branch:** `phase-5/live-pipeline`
 - **Latest Commits:**
+  - `2f8b2fe`: `docs(phase-5): record operational acceptance observation audit and pending 3-cycle status`
   - `9efe91c`: `fix(phase-5): align retention policies with PRD and set pending acceptance status`
   - `2230787`: `feat(phase-5): implement live pipeline database scheduler and registry`
 - **Working Tree:** Clean.
