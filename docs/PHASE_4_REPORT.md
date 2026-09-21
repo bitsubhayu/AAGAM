@@ -22,7 +22,7 @@ All requirements have been met, verified by automated test suites, and audited a
 4. **2-Consecutive-Day Heatwave Requirement:** Enforced across valid date forecast sequences: consecutive days trigger confirmed Watch/Alert, while isolated single days meeting heat criteria are downgraded to Advisory.
 5. **High Uncertainty Calibration (FR-EXT-3):** Historical ensemble spread distribution ($P_{90}$) calculated across 1,094 fallback buckets on historical training data.
 6. **Accessible Alert Schema (FR-EXT-2):** Standardized, multi-attribute `Alert` object conforming to the Postgres `alerts` schema, featuring model agreement counts ($k$ of 4), spread, rule audit trails, auto-expiration, and accessible textual severity labels that never rely on color alone.
-7. **Historical Test Replay (PRD §8.5):** Replayed across the entire held-out 2026 monsoon test block (`2026-06-21` to `2026-09-18`, 75,600 rows), generating 9,431 historical alerts, with exact stratification into Advisory, Watch, and Alert detections.
+7. **Historical Test Replay (PRD §8.5):** Replayed across the entire held-out 90-day 2026 monsoon test block (`2026-06-21` to `2026-09-18`, 75,600 total forecast rows; 25,200 per variable), generating 9,431 historical alerts, with exact stratification into Advisory, Watch, and Alert detections.
 8. **Categorical Scorecard (FR-VER-2):** Hits ($H$), False Alarms ($F$), Misses ($M$), Correct Negatives ($C$), POD, FAR, CSI, and Frequency Bias computed at 2.5 mm, 15.6 mm (both labeled `pending confirmation`), 64.5 mm, and 115.6 mm across all NWP models, baselines, and Adaptive Blend.
 9. **Code Quality & Security:** 63/63 passing unit tests in `pytest`, 0 `ruff` linting errors, 0 duplicate keys, 0 secrets in git history.
 10. **Strict Scope Boundary:** Phase 4 only. Phase 5 production scheduler, weekly retraining, API, and frontend were **NOT** started.
@@ -82,8 +82,8 @@ where indices wrap circularly around Day 1 and Day 366 (incorporating end-of-yea
    The ground truth temperature series in AAGAM (`truth.parquet`) is sourced directly from ERA5 reanalysis (`era5_historical`) at the exact 40 IMD coordinates. Calculating the multi-year empirical day-of-year mean from this authoritative ERA5 dataset directly implements the PRD's fallback requirement without inventing alternative sources.
 2. **Exact Source Period:**
    The source period spans `2024-01-01` to `2026-03-22` (exactly 812 calendar days per station across all 40 monitored locations, yielding 32,480 total station-day observations).
-3. **Why 7-Day Smoothing Does Not Alter the PRD Definition:**
-   In standard meteorological practice (WMO-No. 1203 *Guidelines on the Calculation of Climate Normals*), calculating daily normals from empirical records requires smoothing (such as a 7-day to 11-day moving window or Fourier harmonics). Without smoothing, day-to-day noise from isolated, transient synoptic anomalies (e.g. an unseasonal rain shower on May 10th) causes spurious micro-fluctuations in the baseline, triggering false heatwave departures. The 7-day circular filter preserves the macro seasonal cycle while stabilizing day-to-day departures into physically meaningful anomalies.
+3. **7-Day Circular Smoothing (AAGAM Implementation Choice):**
+   The 7-day circular centered smoothing is an AAGAM implementation choice applied to stabilize the day-of-year climatological normal series. Without smoothing, empirical multi-year day-of-year means from a 2-to-3 year baseline record can be distorted by transient synoptic weather anomalies (e.g. an unseasonal rain shower or temporary cool spell on a specific calendar day), causing jagged day-to-day jumps in baseline temperatures and generating spurious heatwave departures ($\text{Departure} = T_{\max} - T_{\text{normal}}$). The centered 7-day circular window dampens these high-frequency synoptic micro-fluctuations and stabilizes the normal series, while strictly preserving the PRD's required ERA5 climatology fallback and guaranteeing zero test data leakage.
 4. **Exact Sample Counts Contributing to Each Normal:**
    - For Days 1 to 81 (Jan 1 to Mar 22): Present in 2024, 2025, and 2026 ($|\mathcal{Y}_d| = 3$). With the 7-day window, each normal is supported by $3 \times 7 = 21$ station-day observations.
    - For Days 82 to 366 (Mar 23 to Dec 31): Present in 2024 and 2025 ($|\mathcal{Y}_d| = 2$). With the 7-day window, each normal is supported by $2 \times 7 = 14$ station-day observations.
@@ -142,7 +142,7 @@ In accordance with WCAG 2.1 AA guidelines, severity is **never communicated by c
 
 ## 6. Historical Test Replay Results & Rainfall Replay Clarification
 
-The historical replay was executed over all 75,600 test rows (`2026-06-21` to `2026-09-18`):
+The historical replay was executed over all 75,600 test rows across the full 90-day test block (`2026-06-21` to `2026-09-18`, 40 locations $\times$ 7 leads $\times$ 3 variables $\times$ 90 days):
 - Total alerts emitted: **9,431 alerts**
 - Artifact: [`data/historical_alerts_replay.parquet`](file:///c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/data/historical_alerts_replay.parquet)
 
@@ -166,7 +166,7 @@ The historical replay produced **777 total `heavy_rain` hazard alerts**, strictl
 
 ## 7. Categorical Rainfall Verification Scorecard (FR-VER-2)
 
-Evaluated across the 25,200 rainfall test observations:
+Evaluated across all 25,200 rainfall test observations spanning the full 90-day test block (`2026-06-21` to `2026-09-18`, 40 locations $\times$ 7 lead days $\times$ 90 days):
 - **Artifact:** [`data/rainfall_categorical_verification.parquet`](file:///c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/data/rainfall_categorical_verification.parquet) and [`.json`](file:///c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/data/rainfall_categorical_verification.json)
 
 ### 7.1 Overall Categorical Contingency Metrics
