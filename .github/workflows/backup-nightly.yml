@@ -1,0 +1,36 @@
+name: AAGAM Nightly Parquet Backup & Retention
+
+on:
+  schedule:
+    # Daily at 03:41 UTC (09:11 IST)
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: Nightly Database Export & Storage Retention
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Nightly Backup & Retention Pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m pipeline backup
