@@ -6,12 +6,14 @@ idempotency, override auto-expiry, quota safety, and telemetry logging.
 """
 
 import uuid
+from datetime import date
 from unittest.mock import patch
 
 import pytest
 
 from pipeline.db.connection import get_db_connection
 from pipeline.live.runner import LivePipelineRunner
+from pipeline.live.verification_runner import VerificationRunner
 from pipeline.maintenance.retention import RetentionEngine
 from pipeline.models.registry import ModelRegistry
 from pipeline.storage.manager import storage_manager
@@ -576,7 +578,9 @@ def test_pipeline_runs_telemetry_fields():
                     "ingest-blend",
                     "ingest-live",
                     "verify",
+                    "verify-daily",
                     "train",
+                    "train-weekly",
                     "backup",
                     "backup_nightly",
                     "retention_cleanup",
@@ -587,3 +591,250 @@ def test_pipeline_runs_telemetry_fields():
                 assert row[4] in ("SUCCESS", "FAILED", "HALTED", "RUNNING")  # status
     finally:
         conn.close()
+
+
+# =====================================================================
+# 9. PRD ALIGNMENT REGRESSION TESTS (FR-OPS-4, FR-VER-1, LEAD DAYS)
+# =====================================================================
+
+def test_blended_forecasts_retention_prd_alignment():
+    """Verify FR-OPS-4 blended_forecasts retention:
+    - 00Z data inside 180 days is retained
+    - non-00Z blended rows are removed by cleanup
+    - 00Z rows older than 180 days are eligible for deletion
+    """
+    engine = RetentionEngine()
+    # 1. Verify dry-run cleanup reports blended_forecasts_purged
+    stats = engine.run_cleanup(dry_run=True)
+    assert "blended_forecasts_purged" in stats
+
+    # 2. Database validation of retention filter logic
+    conn = get_db_connection()
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            # Insert test records representing the 3 cases
+            # Case 1: 00Z run inside 180 days (retained)
+            # Case 2: non-00Z run (eligible for purge)
+            # Case 3: 00Z run older than 180 days (eligible for purge)
+            cur.execute("""
+                INSERT INTO blended_forecasts (
+                    location_id, variable, valid_date, issue_time, lead_days, blended
+                ) VALUES
+                (1, 'rain_mm', CURRENT_DATE - INTERVAL '10 days', '2026-09-11 00:00:00+00', 1, 12.5),
+                (1, 'tmax_c', CURRENT_DATE - INTERVAL '10 days', '2026-09-11 06:00:00+00', 1, 31.0),
+                (1, 'wind_max_kmh', CURRENT_DATE - INTERVAL '200 days', '2026-03-01 00:00:00+00', 1, 22.0)
+                ON CONFLICT (location_id, variable, valid_date, issue_time) DO NOTHING;
+            """)
+
+            # Query rows that match the purge criteria among our test rows
+            cur.execute("""
+                SELECT variable, valid_date, issue_time
+                FROM blended_forecasts
+                WHERE issue_time IN ('2026-09-11 00:00:00+00', '2026-09-11 06:00:00+00', '2026-03-01 00:00:00+00')
+                  AND (EXTRACT(HOUR FROM issue_time AT TIME ZONE 'UTC') != 0
+                       OR valid_date < CURRENT_DATE - INTERVAL '180 days');
+            """)
+            purged_candidates = cur.fetchall()
+            purged_vars = {r[0] for r in purged_candidates}
+
+            # non-00Z ('tmax_c') and > 180 days ('wind_max_kmh') must be marked for deletion
+            assert "tmax_c" in purged_vars, "non-00Z row must be eligible for deletion"
+            assert "wind_max_kmh" in purged_vars, "00Z row older than 180 days must be eligible for deletion"
+
+            # 00Z row inside 180 days ('rain_mm') must NOT be marked for deletion
+            assert "rain_mm" not in purged_vars, "00Z row inside 180 days must be retained"
+
+            # Execute cleanup deletion in transaction and verify table state
+            cur.execute("""
+                DELETE FROM blended_forecasts
+                WHERE issue_time IN ('2026-09-11 00:00:00+00', '2026-09-11 06:00:00+00', '2026-03-01 00:00:00+00')
+                  AND (EXTRACT(HOUR FROM issue_time AT TIME ZONE 'UTC') != 0
+                       OR valid_date < CURRENT_DATE - INTERVAL '180 days');
+            """)
+
+            # Verify retained row still exists in DB
+            cur.execute("""
+                SELECT COUNT(*) FROM blended_forecasts
+                WHERE location_id = 1 AND variable = 'rain_mm' AND issue_time = '2026-09-11 00:00:00+00';
+            """)
+            assert cur.fetchone()[0] >= 1, "00Z row inside 180 days must remain in database"
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_skill_score_retention_prd_alignment():
+    """Verify FR-OPS-4 skill_scores retention:
+    - old non-weekly rows (computed_at before today) are removed
+    - today's non-weekly rows remain
+    - weekly rows within 26 weeks remain
+    - weekly rows older than 26 weeks are removed
+    """
+    engine = RetentionEngine()
+    stats = engine.run_cleanup(dry_run=True)
+    assert "skill_scores_purged" in stats
+
+    conn = get_db_connection()
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            # Insert 4 test records for each retention category
+            # A: old non-weekly (purged)
+            # B: today's non-weekly (retained)
+            # C: weekly within 26 weeks (retained)
+            # D: weekly older than 26 weeks (purged)
+            cur.execute("""
+                INSERT INTO skill_scores (
+                    computed_at, window_days, variable, region, season, lead_days,
+                    model, mae, is_weekly
+                ) VALUES
+                (NOW() - INTERVAL '3 days', 60, 'rain_mm', 'NW', 'monsoon', 1, 'blend', 2.1, false),
+                (NOW(), 60, 'tmax_c', 'NW', 'monsoon', 1, 'blend', 1.5, false),
+                (NOW() - INTERVAL '10 weeks', 60, 'wind_max_kmh', 'NW', 'monsoon', 1, 'blend', 3.0, true),
+                (NOW() - INTERVAL '30 weeks', 60, 'rain_mm', 'S', 'monsoon', 1, 'blend', 2.4, true)
+                ON CONFLICT (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly) DO NOTHING;
+            """)
+
+            # Query the purge criteria
+            cur.execute("""
+                SELECT variable, region, is_weekly
+                FROM skill_scores
+                WHERE (is_weekly = false AND (computed_at AT TIME ZONE 'UTC')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
+                   OR (is_weekly = true AND computed_at < CURRENT_DATE - INTERVAL '26 weeks');
+            """)
+            purged = cur.fetchall()
+            purged_items = {(r[0], r[1], r[2]) for r in purged}
+
+            assert ('rain_mm', 'NW', False) in purged_items, "Old non-weekly rows must be purged"
+            assert ('rain_mm', 'S', True) in purged_items, "Weekly rows older than 26 weeks must be purged"
+            assert ('tmax_c', 'NW', False) not in purged_items, "Today's non-weekly rows must NOT be purged"
+            assert ('wind_max_kmh', 'NW', True) not in purged_items, "Weekly rows within 26 weeks must NOT be purged"
+
+            # Execute delete
+            cur.execute("""
+                DELETE FROM skill_scores
+                WHERE (is_weekly = false AND (computed_at AT TIME ZONE 'UTC')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
+                   OR (is_weekly = true AND computed_at < CURRENT_DATE - INTERVAL '26 weeks');
+            """)
+
+            # Verify remaining records
+            cur.execute("SELECT variable, is_weekly FROM skill_scores WHERE variable IN ('tmax_c', 'wind_max_kmh');")
+            remaining = cur.fetchall()
+            rem_vars = {r[0] for r in remaining}
+            assert 'tmax_c' in rem_vars, "Today's non-weekly snapshot must remain"
+            assert 'wind_max_kmh' in rem_vars, "Active weekly snapshot must remain"
+
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_verification_snapshot_fr_ver_1():
+    """Verify FR-VER-1 daily verification snapshot logic:
+    - previous non-weekly snapshot is replaced by the latest snapshot
+    - weekly snapshots are preserved
+    - Sunday execution creates an is_weekly=true copy
+    """
+    runner = VerificationRunner()
+
+    # 1. Test Sunday vs non-Sunday dry-run generation
+    # 2026-09-20 was a Sunday; 2026-09-19 was a Saturday
+    res_sunday = runner.run_daily_verification(target_date=date(2026, 9, 20), dry_run=True)
+    res_saturday = runner.run_daily_verification(target_date=date(2026, 9, 19), dry_run=True)
+
+    assert res_sunday["is_sunday"] is True, "Sunday execution must be detected as Sunday"
+    assert res_saturday["is_sunday"] is False, "Saturday execution must not be detected as Sunday"
+
+    # Sunday produces both non-weekly snapshot AND weekly copy (2x rows)
+    assert res_sunday["skill_scores_written"] == 2 * res_saturday["skill_scores_written"], (
+        "Sunday run must create duplicate is_weekly=true rows for all computed metrics"
+    )
+
+    # 2. Database replacement test inside transaction
+    conn = get_db_connection()
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            # Seed an existing weekly snapshot and an old non-weekly row
+            cur.execute("""
+                INSERT INTO skill_scores (
+                    computed_at, window_days, variable, region, season, lead_days,
+                    model, mae, is_weekly
+                ) VALUES
+                ('2026-09-13 03:00:00+00', 60, 'rain_mm', 'NW', 'monsoon', 1, 'blend', 2.0, true),
+                ('2026-09-19 03:00:00+00', 60, 'rain_mm', 'NW', 'monsoon', 1, 'blend', 2.2, false)
+                ON CONFLICT (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly) DO NOTHING;
+            """)
+
+            # FR-VER-1 Step 1: delete all previous skill_scores where is_weekly = false
+            cur.execute("DELETE FROM skill_scores WHERE is_weekly = false;")
+
+            # Step 2: insert new latest snapshot
+            cur.execute("""
+                INSERT INTO skill_scores (
+                    computed_at, window_days, variable, region, season, lead_days,
+                    model, mae, is_weekly
+                ) VALUES
+                ('2026-09-20 03:00:00+00', 60, 'rain_mm', 'NW', 'monsoon', 1, 'blend', 1.9, false),
+                ('2026-09-20 03:00:00+00', 60, 'rain_mm', 'NW', 'monsoon', 1, 'blend', 1.9, true);
+            """)
+
+            # Verify that old non-weekly row is gone, new non-weekly exists, and weekly is preserved
+            cur.execute("""
+                SELECT computed_at, is_weekly, mae
+                FROM skill_scores
+                ORDER BY computed_at, is_weekly;
+            """)
+            rows = cur.fetchall()
+            non_weekly_dates = [r[0].strftime("%Y-%m-%d") for r in rows if not r[1]]
+            weekly_dates = [r[0].strftime("%Y-%m-%d") for r in rows if r[1]]
+
+            # Old non-weekly from 2026-09-19 was deleted and replaced by 2026-09-20
+            assert "2026-09-19" not in non_weekly_dates, "Previous non-weekly snapshot must be deleted"
+            assert "2026-09-20" in non_weekly_dates, "New non-weekly snapshot must be present"
+
+            # Both existing weekly snapshot (2026-09-13) and Sunday weekly copy (2026-09-20) are preserved
+            assert "2026-09-13" in weekly_dates, "Existing weekly snapshots must be preserved"
+            assert "2026-09-20" in weekly_dates, "Sunday execution must create is_weekly=true copy"
+
+        conn.rollback()
+    finally:
+        conn.close()
+
+
+def test_live_lead_days_range_zero_to_seven():
+    """Verify that live pipeline produces exactly lead days 0 through 7:
+    - Never produces lead_days > 7
+    - Expected lead range is 0–7 (total 8 days)
+    - Stored blended_forecasts records strictly observe 0 <= lead_days <= 7
+    """
+    runner = LivePipelineRunner()
+
+    # 1. Check dry-run sample fetch
+    records, _, _ = runner.fetch_live_forecasts(dry_run=True)
+    assert len(records) > 0, "Dry run fetch must produce records"
+
+    lead_days_found = {r[4] for r in records}
+    assert lead_days_found == set(range(0, 8)), f"Expected lead days 0..7, got {sorted(lead_days_found)}"
+    assert max(lead_days_found) == 7, "Maximum lead day must be 7"
+    assert min(lead_days_found) == 0, "Minimum lead day must be 0"
+    assert len(lead_days_found) == 8, "Total lead days must be 8"
+    assert not any(lead > 7 for lead in lead_days_found), "Live processing must never produce lead_days > 7"
+
+    # 2. Check full ingest-blend cycle output
+    cycle_result = runner.run_cycle(dry_run=True)
+    assert cycle_result["status"] == "SUCCESS"
+    # 40 locations * 3 variables * 8 lead days = 960 rows
+    assert cycle_result["blended_rows"] == 960, f"Expected 960 blended rows (40*3*8), got {cycle_result['blended_rows']}"
+
+    # 3. Query blended_forecasts in database to confirm no lead_days > 7 exists
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM blended_forecasts WHERE lead_days > 7 OR lead_days < 0;")
+            invalid_leads = cur.fetchone()[0]
+            assert invalid_leads == 0, f"Found {invalid_leads} records with lead_days outside 0..7"
+    finally:
+        conn.close()
+

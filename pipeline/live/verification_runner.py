@@ -199,54 +199,80 @@ class VerificationRunner:
                                 False,
                             ))
 
-            logger.info(f"Generated {len(skill_records)} verification skill rows.")
+            # Check if evaluation/computation date is Sunday (FR-VER-1)
+            # In Python: Monday is 0, Sunday is 6
+            is_sunday = (eval_date.weekday() == 6) if eval_date else (computed_at.weekday() == 6)
 
-            # Upsert into database skill_scores
-            if not dry_run and skill_records:
-                with conn.cursor() as cur:
-                    upsert_query = """
-                        INSERT INTO skill_scores (
-                            computed_at, window_days, variable, region, season, lead_days,
-                            model, mae, rmse, bias, n, pod, far, csi, threshold_mm, is_weekly
-                        ) VALUES %s
-                        ON CONFLICT (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly)
-                        DO UPDATE
-                        SET mae = EXCLUDED.mae,
-                            rmse = EXCLUDED.rmse,
-                            bias = EXCLUDED.bias,
-                            n = EXCLUDED.n,
-                            pod = EXCLUDED.pod,
-                            far = EXCLUDED.far,
-                            csi = EXCLUDED.csi;
-                    """
-                    execute_values(cur, upsert_query, skill_records, page_size=1000)
+            records_to_insert = list(skill_records)
+            if is_sunday:
+                # FR-VER-1: On Sunday, also insert a copy of the snapshot with is_weekly = True
+                weekly_copy = [rec[:-1] + (True,) for rec in skill_records]
+                records_to_insert.extend(weekly_copy)
 
-                    finished_at = datetime.now(timezone.utc)
-                    duration_sec = (finished_at - started_at).total_seconds()
+            logger.info(
+                f"Prepared {len(records_to_insert)} skill score records "
+                f"({len(skill_records)} non-weekly, {len(records_to_insert) - len(skill_records)} weekly, is_sunday={is_sunday})."
+            )
 
-                    # Telemetry to pipeline_runs
-                    cur.execute(
+            # Upsert into database skill_scores under FR-VER-1
+            if not dry_run and records_to_insert:
+                conn.autocommit = False
+                try:
+                    with conn.cursor() as cur:
+                        # 1. Delete all previous skill_scores rows where is_weekly = false (FR-VER-1)
+                        cur.execute("DELETE FROM skill_scores WHERE is_weekly = false;")
+
+                        # 2. Insert newly computed rows with is_weekly = false (and is_weekly = true on Sunday)
+                        upsert_query = """
+                            INSERT INTO skill_scores (
+                                computed_at, window_days, variable, region, season, lead_days,
+                                model, mae, rmse, bias, n, pod, far, csi, threshold_mm, is_weekly
+                            ) VALUES %s
+                            ON CONFLICT (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly)
+                            DO UPDATE
+                            SET mae = EXCLUDED.mae,
+                                rmse = EXCLUDED.rmse,
+                                bias = EXCLUDED.bias,
+                                n = EXCLUDED.n,
+                                pod = EXCLUDED.pod,
+                                far = EXCLUDED.far,
+                                csi = EXCLUDED.csi;
                         """
-                        INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s);
-                        """,
-                        (
-                            "verify-daily",
-                            started_at,
-                            finished_at,
-                            "SUCCESS",
-                            len(skill_records),
-                            0,
-                            f"Daily verification evaluated {len(joined)} matched observations, recorded {len(skill_records)} skill metrics in {duration_sec:.2f}s.",
-                        ),
-                    )
+                        execute_values(cur, upsert_query, records_to_insert, page_size=1000)
+
+                        finished_at = datetime.now(timezone.utc)
+                        duration_sec = (finished_at - started_at).total_seconds()
+
+                        # Telemetry to pipeline_runs
+                        cur.execute(
+                            """
+                            INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s);
+                            """,
+                            (
+                                "verify-daily",
+                                started_at,
+                                finished_at,
+                                "SUCCESS",
+                                len(records_to_insert),
+                                0,
+                                f"Daily verification evaluated {len(joined)} matched observations, replaced daily snapshot with {len(skill_records)} rows (Sunday weekly copy: {is_sunday}) in {duration_sec:.2f}s.",
+                            ),
+                        )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    conn.autocommit = True
 
             finished_at = datetime.now(timezone.utc)
             duration_sec = (finished_at - started_at).total_seconds()
             return {
                 "status": "SUCCESS",
                 "matched_observations": len(joined),
-                "skill_scores_written": len(skill_records),
+                "skill_scores_written": len(records_to_insert),
+                "is_sunday": is_sunday,
                 "eval_window": (str(start_eval_date), str(eval_date)),
                 "duration_seconds": duration_sec,
             }

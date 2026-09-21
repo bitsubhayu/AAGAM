@@ -12,7 +12,7 @@
 
 Phase 5 transitions AAGAM from an offline backtested research pipeline into a fully automated, observable, cloud-backed operational forecasting engine. All database schemas, Row-Level Security policies, cloud storage buckets, model registry quality gates, retention cleanups, and GitHub Actions scheduled workflows have been implemented and verified against `AAGAM_PRD.md` and `AAGAM_TECH_STACK.md`.
 
-All 83 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
+All 87 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
 
 ---
 
@@ -120,21 +120,22 @@ Implementation: [`pipeline/models/registry.py`](file:///c:/Users/subha/OneDrive/
 
 Implementation: [`pipeline/maintenance/retention.py`](file:///c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/pipeline/maintenance/retention.py)
 
-In strict accordance with authoritative `AAGAM_PRD.md` requirements:
+In strict accordance with authoritative `AAGAM_PRD.md` requirements (FR-OPS-4):
 
-1. **`blended_forecasts` Retention (90 Days):**
-   - Blended forecast records older than 90 days (`valid_date < CURRENT_DATE - INTERVAL '90 days'`) are purged after being exported to nightly Parquet backups.
-2. **`chat_audit` Retention (30 Days):**
+1. **`blended_forecasts` Retention (180 Days, 00Z UTC Run Only):**
+   - Blended forecast records are retained for 180 days, keeping strictly the 00Z UTC run.
+   - Non-00Z blended forecast rows and 00Z rows older than 180 days are purged after being exported to nightly Parquet backups.
+2. **`skill_scores` Retention:**
+   - Non-weekly rows (`is_weekly = false`) with `computed_at` before today (UTC) are purged during nightly cleanup.
+   - Weekly snapshots (`is_weekly = true`) are retained for 26 weeks; weekly rows older than 26 weeks are purged.
+3. **`chat_audit` Retention (30 Days):**
    - Assistant conversation logs and user feedback older than 30 days (`created_at < NOW() - INTERVAL '30 days'`) are purged.
-3. **Weight Override Expiry:**
+4. **Weight Override Expiry:**
    - Overrides where `expires_at < NOW()` and `active = true` are automatically deactivated (`active = false`).
-4. **Nightly Backup Failure Safety (PRD §11 Data Protection):**
-   - Every table in `BACKUP_TABLES` (`model_forecasts`, `blended_forecasts`, `alerts`, `skill_scores`, `weights`, `pipeline_runs`) must successfully export and upload to Supabase storage before retention cleanup is permitted.
-   - If ANY upload returns `False` or raises an exception, the backup operation is marked `FAILED`, retention cleanup is strictly ABORTED to protect historical data, no database rows are deleted, and a `FAILED` `pipeline_runs` telemetry row is recorded identifying the affected table (verified by automated test `test_nightly_backup_failure_aborts_retention_cleanup`).
-5. **Nightly Parquet Export:**
-   - Prior to deletion, operational data is preserved in the `backups` bucket organized by date.
-
-*(Note: Unsupported retention rules such as 180-day forecast retention or 365-day skill score retention have been removed to strictly adhere to the authoritative PRD).*
+5. **Nightly Backup Fail-Safe (PRD §11 Data Protection):**
+   - Operational data is exported to Parquet organized by date (`backups/{yyyymmdd}/{table}.parquet`) and uploaded to Supabase storage `backups` bucket.
+   - All required uploads for every table in `BACKUP_TABLES` (`model_forecasts`, `blended_forecasts`, `alerts`, `skill_scores`, `weights`, `pipeline_runs`) must succeed before cleanup is permitted.
+   - Any upload failure strictly aborts retention cleanup immediately to prevent data loss, leaving database rows untouched and recording a `FAILED` status in `pipeline_runs` (verified by automated test `test_nightly_backup_failure_aborts_retention_cleanup`).
 
 ---
 
@@ -157,14 +158,14 @@ Each stage was manually executed in dry-run mode to verify operational stability
 
 ### Stage 1: Ingest & Blend
 - **Command:** `python -m pipeline ingest-live --dry-run`
-- **Input Horizon:** 8 days (2026-09-21 to 2026-09-28) across 40 locations
+- **Input Horizon:** 8 lead days (0 to 7: Day 0 to Day 7) across 40 locations
 - **Rows Processed:**
-  - Raw forecasts: 3,360 rows
-  - Blended forecasts: 840 rows
-  - Hazard alerts: 29 alerts
+  - Raw forecasts: 3,840 rows
+  - Blended forecasts: 960 rows
+  - Hazard alerts: 33 alerts
 - **API Calls Estimated:** 0 (dry-run mode; ~160 in live)
 - **Status:** **SUCCESS**
-- **Duration:** 2.34s
+- **Duration:** 2.26s
 - **Output Artifact:** Records were processed/simulated for validation; no live database mutation was performed.
 
 ### Stage 2: Daily Verification
@@ -218,17 +219,17 @@ configfile: pyproject.toml
 testpaths: api/tests, pipeline/tests, tests
 plugins: anyio-4.15.1, asyncio-1.4.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 83 items
+collected 87 items
 
 api\tests\test_api.py .......                                            [  8%]
-tests\test_aggregation.py ...                                            [ 12%]
-tests\test_backfill_resumability.py ..                                   [ 14%]
-tests\test_blend.py .............                                        [ 30%]
-tests\test_data_integrity.py ..                                          [ 32%]
-tests\test_extremes.py .............                                     [ 48%]
-tests\test_locations.py ..                                               [ 50%]
-tests\test_openmeteo_client.py ....                                      [ 55%]
-tests\test_phase5_pipeline.py ....................                       [ 79%]
+tests\test_aggregation.py ...                                            [ 11%]
+tests\test_backfill_resumability.py ..                                   [ 13%]
+tests\test_blend.py .............                                        [ 28%]
+tests\test_data_integrity.py ..                                          [ 31%]
+tests\test_extremes.py .............                                     [ 45%]
+tests\test_locations.py ..                                               [ 48%]
+tests\test_openmeteo_client.py ....                                      [ 52%]
+tests\test_phase5_pipeline.py ........................                   [ 80%]
 tests\test_skill.py ................                                     [ 98%]
 tests\test_training_dataset.py .                                         [100%]
 
@@ -258,9 +259,9 @@ tests/test_phase5_pipeline.py::test_required_storage_buckets_exist
     return SyncStorageClient(
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 83 passed, 6 warnings in 30.62s =======================
+================== 87 passed, 6 warnings in 62.01s (0:01:02) ==================
 ```
-- **Total Passed:** 83 / 83 (100%)
+- **Total Passed:** 87 / 87 (100%)
 - **Zero Failures, Zero Skips.**
 
 ### Command: `ruff check .`

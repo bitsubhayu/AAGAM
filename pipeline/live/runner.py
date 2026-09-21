@@ -124,7 +124,7 @@ class LivePipelineRunner:
                 loc_id = loc["id"]
                 for model in ["gfs", "ecmwf_ifs", "icon", "aifs"]:
                     for var in ["rain_mm", "tmax_c", "wind_max_kmh"]:
-                        for lead in range(1, 8):
+                        for lead in range(0, 8):
                             val_date = issue_date + pd.Timedelta(days=lead)
                             val = 15.0 if var == "rain_mm" else (33.0 if var == "tmax_c" else 18.0)
                             sample_records.append((
@@ -187,7 +187,7 @@ class LivePipelineRunner:
                     for _, row in df_daily.iterrows():
                         val_date = row["valid_date"]
                         lead_days = (val_date - issue_date).days
-                        if lead_days < 1 or lead_days > 8:
+                        if lead_days < 0 or lead_days > 7:
                             continue
 
                         if pd.notna(row["rain_sum"]):
