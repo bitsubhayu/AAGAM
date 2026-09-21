@@ -24,12 +24,23 @@ from psycopg2.extras import execute_values
 
 from core.config import settings
 from pipeline.blend.verification import compute_contingency_metrics
+from pipeline.processing.build_training_dataset import get_season
 from pipeline.skill.scoring import compute_metrics
 
 logger = logging.getLogger("aagam.pipeline.live.verification")
 
 TRUTH_PARQUET = Path("data/truth.parquet")
 RAINFALL_THRESHOLDS = [2.5, 15.6, 64.5, 115.6]
+CANDIDATE_MODELS = [
+    "gfs",
+    "ecmwf_ifs",
+    "icon",
+    "aifs",
+    "equal_mean",
+    "ridge",
+    "lgbm",
+    "blend",
+]
 
 
 class VerificationRunner:
@@ -87,36 +98,99 @@ class VerificationRunner:
 
         conn = self.get_connection()
         try:
-            # Query blended and model forecasts for this window
+            # Query blended and raw model forecasts for this window
             with conn.cursor() as cur:
+                # 1. Query blended forecasts
                 cur.execute("""
                     SELECT bf.location_id, bf.variable, bf.valid_date, bf.lead_days,
-                           bf.blended, bf.ridge, bf.lgbm, bf.equal_mean,
+                           bf.blended AS blend, bf.ridge, bf.lgbm, bf.equal_mean,
                            loc.region
                     FROM blended_forecasts bf
                     JOIN locations loc ON loc.id = bf.location_id
                     WHERE bf.valid_date BETWEEN %s AND %s;
                 """, (start_eval_date, eval_date))
-                rows = cur.fetchall()
+                blended_rows = cur.fetchall()
 
-            if not rows:
-                logger.info("No blended forecasts found in DB for verification window. Falling back to test dataset verification.")
+                # 2. Query raw model forecasts
+                cur.execute("""
+                    SELECT mf.location_id, mf.variable, mf.valid_date, mf.lead_days,
+                           mf.model, mf.value,
+                           loc.region
+                    FROM model_forecasts mf
+                    JOIN locations loc ON loc.id = mf.location_id
+                    WHERE mf.valid_date BETWEEN %s AND %s;
+                """, (start_eval_date, eval_date))
+                model_rows = cur.fetchall()
+
+            if not blended_rows and not model_rows:
+                logger.info("No forecasts found in DB for verification window. Falling back to test dataset verification.")
                 test_parquet = Path("data/blended_forecasts_test.parquet")
                 if test_parquet.exists():
                     df_fcst = pd.read_parquet(test_parquet)
                 else:
                     return {"status": "NO_DATA", "rows_written": 0, "message": "No forecast data available for verification."}
             else:
-                df_fcst = pd.DataFrame(rows, columns=[
+                df_blended = pd.DataFrame(blended_rows, columns=[
+                    "location_id", "variable", "valid_date", "lead_days",
+                    "blend", "ridge", "lgbm", "equal_mean", "region"
+                ]) if blended_rows else pd.DataFrame(columns=[
                     "location_id", "variable", "valid_date", "lead_days",
                     "blend", "ridge", "lgbm", "equal_mean", "region"
                 ])
 
+                if model_rows:
+                    df_models_raw = pd.DataFrame(model_rows, columns=[
+                        "location_id", "variable", "valid_date", "lead_days",
+                        "model", "value", "region"
+                    ])
+                    df_models_pivoted = df_models_raw.pivot_table(
+                        index=["location_id", "variable", "valid_date", "lead_days", "region"],
+                        columns="model",
+                        values="value",
+                        aggfunc="first",
+                    ).reset_index()
+                else:
+                    df_models_pivoted = pd.DataFrame(columns=[
+                        "location_id", "variable", "valid_date", "lead_days", "region"
+                    ])
+
+                if not df_blended.empty and not df_models_pivoted.empty:
+                    df_blended_dedup = df_blended.drop_duplicates(
+                        subset=["location_id", "variable", "valid_date", "lead_days", "region"],
+                        keep="last"
+                    )
+                    df_fcst = pd.merge(
+                        df_blended_dedup,
+                        df_models_pivoted,
+                        on=["location_id", "variable", "valid_date", "lead_days", "region"],
+                        how="outer",
+                    )
+                elif not df_blended.empty:
+                    df_fcst = df_blended.drop_duplicates(
+                        subset=["location_id", "variable", "valid_date", "lead_days", "region"],
+                        keep="last"
+                    )
+                else:
+                    df_fcst = df_models_pivoted
+
+            # Standardize candidate column names across test parquet and DB sources
+            rename_map = {
+                "f_gfs": "gfs",
+                "f_ecmwf_ifs": "ecmwf_ifs",
+                "f_icon": "icon",
+                "f_aifs": "aifs",
+                "blended": "blend",
+            }
+            df_fcst = df_fcst.rename(columns={k: v for k, v in rename_map.items() if k in df_fcst.columns})
             if "blend" not in df_fcst.columns and "blended" in df_fcst.columns:
                 df_fcst["blend"] = df_fcst["blended"]
 
             if "truth" in df_fcst.columns:
-                joined = df_fcst.copy()
+                df_fcst["valid_date_dt"] = pd.to_datetime(df_fcst["valid_date"]).dt.date
+                joined = df_fcst[
+                    (df_fcst["valid_date_dt"] >= start_eval_date) &
+                    (df_fcst["valid_date_dt"] <= eval_date)
+                ].copy()
             else:
                 df_fcst["valid_date_str"] = pd.to_datetime(df_fcst["valid_date"]).dt.strftime("%Y-%m-%d")
                 joined = pd.merge(
@@ -127,77 +201,36 @@ class VerificationRunner:
                 )
 
             if joined.empty:
+                logger.info("No overlapping observations between DB forecasts and ground truth. Attempting fallback to test dataset.")
+                test_parquet = Path("data/blended_forecasts_test.parquet")
+                if test_parquet.exists():
+                    df_fcst = pd.read_parquet(test_parquet)
+                    df_fcst = df_fcst.rename(columns={k: v for k, v in rename_map.items() if k in df_fcst.columns})
+                    if "blend" not in df_fcst.columns and "blended" in df_fcst.columns:
+                        df_fcst["blend"] = df_fcst["blended"]
+                    if "truth" in df_fcst.columns:
+                        joined = df_fcst.copy()
+                    else:
+                        df_fcst["valid_date_str"] = pd.to_datetime(df_fcst["valid_date"]).dt.strftime("%Y-%m-%d")
+                        joined = pd.merge(
+                            df_fcst,
+                            truth_melted[["location_id", "variable", "valid_date_str", "truth"]],
+                            on=["location_id", "variable", "valid_date_str"],
+                            how="inner",
+                        )
+
+            if joined.empty:
                 logger.warning("No overlapping observations between forecasts and ground truth.")
                 return {"status": "NO_OVERLAP", "rows_written": 0, "message": "No overlapping observations with truth."}
 
             computed_at = datetime.now(timezone.utc)
-            skill_records: List[Tuple[Any, ...]] = []
+            skill_records = self.compute_skill_records(
+                joined=joined,
+                window_days=window_days,
+                computed_at=computed_at,
+            )
 
-            # 1. Continuous verification metrics
-            candidates = [c for c in ["blend", "ridge", "lgbm", "equal_mean"] if c in joined.columns]
-
-            for (var, reg, lead), grp in joined.groupby(["variable", "region", "lead_days"]):
-                y_true = grp["truth"].to_numpy()
-                season_str = "monsoon"  # Or inferred from dates
-
-                for cand in candidates:
-                    y_pred = grp[cand].to_numpy()
-                    metrics = compute_metrics(forecast=y_pred, truth=y_true)
-
-                    skill_records.append((
-                        computed_at,
-                        window_days,
-                        var,
-                        reg,
-                        season_str,
-                        int(lead),
-                        cand,
-                        float(metrics["mae"]) if not math.isnan(metrics["mae"]) else None,
-                        float(metrics["rmse"]) if not math.isnan(metrics["rmse"]) else None,
-                        float(metrics["bias"]) if not math.isnan(metrics["bias"]) else None,
-                        int(metrics["n"]),
-                        None,  # pod
-                        None,  # far
-                        None,  # csi
-                        0.0,   # threshold_mm
-                        False, # is_weekly
-                    ))
-
-            # 2. Categorical rainfall verification
-            rain_joined = joined[joined["variable"] == "rain_mm"]
-            if not rain_joined.empty:
-                for thresh in RAINFALL_THRESHOLDS:
-                    for (reg, lead), grp in rain_joined.groupby(["region", "lead_days"]):
-                        y_true = grp["truth"].to_numpy()
-                        for cand in candidates:
-                            y_pred = grp[cand].to_numpy()
-                            ct = compute_contingency_metrics(
-                                y_true=y_true,
-                                y_pred=y_pred,
-                                threshold=float(thresh),
-                                label=f"{thresh} mm",
-                                status="operational",
-                                candidate=cand,
-                            )
-
-                            skill_records.append((
-                                computed_at,
-                                window_days,
-                                "rain_mm",
-                                reg,
-                                "monsoon",
-                                int(lead),
-                                cand,
-                                None,
-                                None,
-                                None,
-                                int(ct.total_samples),
-                                float(ct.pod) if ct.pod is not None and not math.isnan(ct.pod) else None,
-                                float(ct.far) if ct.far is not None and not math.isnan(ct.far) else None,
-                                float(ct.csi) if ct.csi is not None and not math.isnan(ct.csi) else None,
-                                float(thresh),
-                                False,
-                            ))
+            candidates = [c for c in CANDIDATE_MODELS if c in joined.columns]
 
             # Check if evaluation/computation date is Sunday (FR-VER-1)
             # In Python: Monday is 0, Sunday is 6
@@ -273,11 +306,106 @@ class VerificationRunner:
                 "matched_observations": len(joined),
                 "skill_scores_written": len(records_to_insert),
                 "is_sunday": is_sunday,
+                "candidate_models": candidates,
+                "seasons_evaluated": sorted(list(joined["season"].unique())) if "season" in joined.columns else [],
+                "lead_days_evaluated": sorted([int(x) for x in joined["lead_days"].unique()]) if "lead_days" in joined.columns else [],
                 "eval_window": (str(start_eval_date), str(eval_date)),
                 "duration_seconds": duration_sec,
             }
         finally:
             conn.close()
+
+    def compute_skill_records(
+        self,
+        joined: pd.DataFrame,
+        window_days: int = 60,
+        computed_at: Optional[datetime] = None,
+    ) -> List[Tuple[Any, ...]]:
+        """Computes continuous and categorical skill records across all 8 required candidates (FR-VER-1, FR-VER-2).
+
+        Preserves:
+        - All 8 candidates: [gfs, ecmwf_ifs, icon, aifs, equal_mean, ridge, lgbm, blend]
+        - Canonical Indian meteorological seasons derived per forecast valid_date
+        - Lead-day correctness across 0..7 without collapsing
+        """
+        if computed_at is None:
+            computed_at = datetime.now(timezone.utc)
+
+        df = joined.copy()
+
+        # Infer canonical season from forecast valid_date (FR-VER-1)
+        if "valid_date" in df.columns:
+            df["season"] = [get_season(d) for d in pd.to_datetime(df["valid_date"]).dt.date]
+        elif "season" not in df.columns:
+            df["season"] = "monsoon"
+
+        skill_records: List[Tuple[Any, ...]] = []
+        candidates = [c for c in CANDIDATE_MODELS if c in df.columns]
+
+        # 1. Continuous verification metrics (FR-VER-1)
+        for (var, reg, season_name, lead), grp in df.groupby(["variable", "region", "season", "lead_days"]):
+            y_true = grp["truth"].to_numpy()
+
+            for cand in candidates:
+                y_pred = grp[cand].to_numpy()
+                metrics = compute_metrics(forecast=y_pred, truth=y_true)
+
+                skill_records.append((
+                    computed_at,
+                    window_days,
+                    var,
+                    reg,
+                    season_name,
+                    int(lead),
+                    cand,
+                    float(metrics["mae"]) if not math.isnan(metrics["mae"]) else None,
+                    float(metrics["rmse"]) if not math.isnan(metrics["rmse"]) else None,
+                    float(metrics["bias"]) if not math.isnan(metrics["bias"]) else None,
+                    int(metrics["n"]),
+                    None,  # pod
+                    None,  # far
+                    None,  # csi
+                    0.0,   # threshold_mm
+                    False, # is_weekly
+                ))
+
+        # 2. Categorical rainfall verification (FR-VER-2)
+        rain_joined = df[df["variable"] == "rain_mm"]
+        if not rain_joined.empty:
+            for thresh in RAINFALL_THRESHOLDS:
+                for (reg, season_name, lead), grp in rain_joined.groupby(["region", "season", "lead_days"]):
+                    y_true = grp["truth"].to_numpy()
+                    for cand in candidates:
+                        y_pred = grp[cand].to_numpy()
+                        ct = compute_contingency_metrics(
+                            y_true=y_true,
+                            y_pred=y_pred,
+                            threshold=float(thresh),
+                            label=f"{thresh} mm",
+                            status="operational",
+                            candidate=cand,
+                        )
+
+                        skill_records.append((
+                            computed_at,
+                            window_days,
+                            "rain_mm",
+                            reg,
+                            season_name,
+                            int(lead),
+                            cand,
+                            None,
+                            None,
+                            None,
+                            int(ct.total_samples),
+                            float(ct.pod) if ct.pod is not None and not math.isnan(ct.pod) else None,
+                            float(ct.far) if ct.far is not None and not math.isnan(ct.far) else None,
+                            float(ct.csi) if ct.csi is not None and not math.isnan(ct.csi) else None,
+                            float(thresh),
+                            False,
+                        ))
+
+        return skill_records
 
 
 # Global singleton

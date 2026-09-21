@@ -12,7 +12,7 @@
 
 Phase 5 transitions AAGAM from an offline backtested research pipeline into a fully automated, observable, cloud-backed operational forecasting engine. All database schemas, Row-Level Security policies, cloud storage buckets, model registry quality gates, retention cleanups, and GitHub Actions scheduled workflows have been implemented and verified against `AAGAM_PRD.md` and `AAGAM_TECH_STACK.md`.
 
-All 87 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
+All 91 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
 
 ---
 
@@ -172,9 +172,23 @@ Each stage was manually executed in dry-run mode to verify operational stability
 - **Command:** `python -m pipeline verify --dry-run`
 - **Input Period:** Trailing 60-day evaluation window (2026-07-20 to 2026-09-18)
 - **Rows Processed:** 75,600 matched truth observations
-- **Skill Scores Produced:** 980 metric rows
+- **Candidate Models Scored (FR-VER-1):** All 8 authoritative candidates evaluated:
+  1. `gfs` (Raw NWP)
+  2. `ecmwf_ifs` (Raw NWP)
+  3. `icon` (Raw NWP)
+  4. `aifs` (Raw NWP)
+  5. `equal_mean` (Consensus baseline)
+  6. `ridge` (L2 regression)
+  7. `lgbm` (Gradient boosting)
+  8. `blend` (Adaptive meta-blend)
+- **Continuous Metrics Evaluated:** MAE, RMSE, Bias, N for all 8 candidates across variables (`rain_mm`, `tmax_c`, `wind_max_kmh`), regions, seasons, and lead days (0–7).
+- **Categorical Rainfall Metrics Evaluated (FR-VER-2):** Contingency scores (Hits, False Alarms, Misses, Correct Negatives, POD, FAR, CSI, N) across rainfall thresholds (`2.5`, `15.6`, `64.5`, `115.6` mm) for all 8 candidate models.
+- **Dynamic Seasonal Derivation:** Canonical Indian meteorological seasons (`winter`, `pre_monsoon`, `monsoon`, `post_monsoon`) are derived dynamically per forecast `valid_date` using the authoritative `get_season` mapping, eliminating any hardcoded season assignment.
+- **Lead-Day Correctness:** Verification preserves lead days 0 through 7 distinctly without collapsing across leads.
+- **Snapshot Replacement & Sunday Weekly Copy:** Non-weekly daily records (`is_weekly = false`) replace the previous daily snapshot, while Sunday runs duplicate the snapshot as `is_weekly = true` for 26-week long-term verification history.
+- **Skill Scores Produced:** 1,960 non-weekly metric rows (3,920 total rows when evaluated on Sunday with weekly copy)
 - **Status:** **SUCCESS**
-- **Duration:** 0.64s
+- **Duration:** 0.68s
 - **Output Artifact:** Trailing verification metrics simulated for validation; no live database mutation was performed.
 
 ### Stage 3: Weekly Retraining & Quality Gate
@@ -219,17 +233,17 @@ configfile: pyproject.toml
 testpaths: api/tests, pipeline/tests, tests
 plugins: anyio-4.15.1, asyncio-1.4.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 87 items
+collected 91 items
 
-api\tests\test_api.py .......                                            [  8%]
-tests\test_aggregation.py ...                                            [ 11%]
+api\tests\test_api.py .......                                            [  7%]
+tests\test_aggregation.py ...                                            [ 10%]
 tests\test_backfill_resumability.py ..                                   [ 13%]
-tests\test_blend.py .............                                        [ 28%]
-tests\test_data_integrity.py ..                                          [ 31%]
-tests\test_extremes.py .............                                     [ 45%]
-tests\test_locations.py ..                                               [ 48%]
-tests\test_openmeteo_client.py ....                                      [ 52%]
-tests\test_phase5_pipeline.py ........................                   [ 80%]
+tests\test_blend.py .............                                        [ 27%]
+tests\test_data_integrity.py ..                                          [ 29%]
+tests\test_extremes.py .............                                     [ 43%]
+tests\test_locations.py ..                                               [ 46%]
+tests\test_openmeteo_client.py ....                                      [ 50%]
+tests\test_phase5_pipeline.py ............................               [ 81%]
 tests\test_skill.py ................                                     [ 98%]
 tests\test_training_dataset.py .                                         [100%]
 
@@ -259,9 +273,9 @@ tests/test_phase5_pipeline.py::test_required_storage_buckets_exist
     return SyncStorageClient(
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-================== 87 passed, 6 warnings in 62.01s (0:01:02) ==================
+======================= 91 passed, 6 warnings in 43.02s =======================
 ```
-- **Total Passed:** 87 / 87 (100%)
+- **Total Passed:** 91 / 91 (100%)
 - **Zero Failures, Zero Skips.**
 
 ### Command: `ruff check .`

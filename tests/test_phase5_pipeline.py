@@ -9,11 +9,12 @@ import uuid
 from datetime import date
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from pipeline.db.connection import get_db_connection
 from pipeline.live.runner import LivePipelineRunner
-from pipeline.live.verification_runner import VerificationRunner
+from pipeline.live.verification_runner import CANDIDATE_MODELS, VerificationRunner
 from pipeline.maintenance.retention import RetentionEngine
 from pipeline.models.registry import ModelRegistry
 from pipeline.storage.manager import storage_manager
@@ -837,4 +838,163 @@ def test_live_lead_days_range_zero_to_seven():
             assert invalid_leads == 0, f"Found {invalid_leads} records with lead_days outside 0..7"
     finally:
         conn.close()
+
+
+# =====================================================================
+# 11. FR-VER-1 & FR-VER-2 VERIFICATION CORRECTION REGRESSION TESTS
+# =====================================================================
+
+def _build_test_verification_fixture(dates_list=None, lead_days_list=None) -> pd.DataFrame:
+    """Builds a deterministic test DataFrame containing all 8 candidate models and variables."""
+    if dates_list is None:
+        dates_list = ["2026-01-15", "2026-04-15", "2026-07-15", "2026-10-15"]
+    if lead_days_list is None:
+        lead_days_list = list(range(0, 8))
+
+    rows = []
+    for d in dates_list:
+        for lead in lead_days_list:
+            # Rain variable (triggers continuous + categorical metrics)
+            rows.append({
+                "location_id": 1,
+                "region": "NW",
+                "variable": "rain_mm",
+                "valid_date": d,
+                "lead_days": lead,
+                "truth": 10.0,
+                "gfs": 11.0,
+                "ecmwf_ifs": 10.5,
+                "icon": 9.5,
+                "aifs": 10.2,
+                "equal_mean": 10.3,
+                "ridge": 10.1,
+                "lgbm": 10.0,
+                "blend": 10.05,
+            })
+            # Temperature variable (continuous metrics)
+            rows.append({
+                "location_id": 1,
+                "region": "NW",
+                "variable": "tmax_c",
+                "valid_date": d,
+                "lead_days": lead,
+                "truth": 32.0,
+                "gfs": 33.0,
+                "ecmwf_ifs": 32.5,
+                "icon": 31.8,
+                "aifs": 32.2,
+                "equal_mean": 32.4,
+                "ridge": 32.1,
+                "lgbm": 32.0,
+                "blend": 32.05,
+            })
+    return pd.DataFrame(rows)
+
+
+def test_verification_produces_all_eight_candidates():
+    """Verify FR-VER-1 requirement that skill_scores are computed for all 8 candidates:
+    gfs, ecmwf_ifs, icon, aifs, equal_mean, ridge, lgbm, blend.
+    The test must fail if any candidate is missing from generated skill records.
+    """
+    runner = VerificationRunner()
+    fixture_df = _build_test_verification_fixture()
+    records = runner.compute_skill_records(fixture_df)
+    assert len(records) > 0, "compute_skill_records must produce skill records"
+
+    # Tuple index 6 corresponds to model candidate name
+    models_produced = {r[6] for r in records}
+    expected_models = {
+        "gfs",
+        "ecmwf_ifs",
+        "icon",
+        "aifs",
+        "equal_mean",
+        "ridge",
+        "lgbm",
+        "blend",
+    }
+    assert models_produced == expected_models, (
+        f"Verification must evaluate exactly all 8 candidates. "
+        f"Missing: {expected_models - models_produced}, Extra: {models_produced - expected_models}"
+    )
+
+    # Prove that the verification fails if any candidate is missing
+    for required_candidate in expected_models:
+        df_incomplete = fixture_df.drop(columns=[required_candidate])
+        incomplete_records = runner.compute_skill_records(df_incomplete)
+        incomplete_models = {r[6] for r in incomplete_records}
+        assert required_candidate not in incomplete_models, f"{required_candidate} must be absent"
+        assert incomplete_models != expected_models, f"Missing candidate {required_candidate} must be detected"
+
+
+def test_verification_season_derived_from_valid_date():
+    """Verify FR-VER-1 requirement that season is derived dynamically from valid_date
+    using canonical Indian meteorological seasons rather than hardcoded to 'monsoon'.
+    Tests at least two dates from different seasons (Winter and Pre-Monsoon).
+    """
+    runner = VerificationRunner()
+
+    winter_date = "2026-01-20"        # Month 1 -> winter
+    pre_monsoon_date = "2026-04-15"   # Month 4 -> pre_monsoon
+    fixture_df = _build_test_verification_fixture(dates_list=[winter_date, pre_monsoon_date])
+
+    records = runner.compute_skill_records(fixture_df)
+    assert len(records) > 0
+
+    # Tuple index 4 corresponds to season
+    seasons_produced = {r[4] for r in records}
+    assert "winter" in seasons_produced, "Valid date in January must produce 'winter' season"
+    assert "pre_monsoon" in seasons_produced, "Valid date in April must produce 'pre_monsoon' season"
+    assert "monsoon" not in seasons_produced, (
+        "Records for January and April must NOT produce 'monsoon'. "
+        "Season must not be hardcoded to 'monsoon'."
+    )
+
+
+def test_verification_preserves_lead_days_zero_to_seven():
+    """Verify FR-VER-1 requirement that lead_days 0..7 are preserved and never collapsed.
+    All 8 candidates must retain lead-specific skill metrics for each lead in 0..7.
+    """
+    runner = VerificationRunner()
+    all_leads = list(range(0, 8))
+    fixture_df = _build_test_verification_fixture(lead_days_list=all_leads)
+
+    records = runner.compute_skill_records(fixture_df)
+    assert len(records) > 0
+
+    # Tuple index 5 is lead_days, index 6 is model
+    leads_produced = {r[5] for r in records}
+    assert leads_produced == set(all_leads), f"Expected all leads 0..7, got {sorted(leads_produced)}"
+
+    # Confirm every candidate has metrics for each lead day 0..7
+    for model in CANDIDATE_MODELS:
+        model_leads = {r[5] for r in records if r[6] == model}
+        assert model_leads == set(all_leads), f"Candidate {model} must have scores for all leads 0..7"
+
+
+def test_verification_live_job_scores_all_candidates_and_handles_sunday():
+    """Verify run_daily_verification executes the complete verification cycle:
+    - Evaluates all 8 candidate models
+    - Derives season from data
+    - Produces lead-day range
+    - Preserves Sunday weekly copy (2x rows on Sunday vs non-Sunday)
+    """
+    runner = VerificationRunner()
+
+    # 2026-09-20 was a Sunday; 2026-09-19 was a Saturday
+    res_sunday = runner.run_daily_verification(target_date=date(2026, 9, 20), dry_run=True)
+    res_saturday = runner.run_daily_verification(target_date=date(2026, 9, 19), dry_run=True)
+
+    assert res_sunday["status"] == "SUCCESS"
+    assert res_saturday["status"] == "SUCCESS"
+    assert res_sunday["is_sunday"] is True
+    assert res_saturday["is_sunday"] is False
+
+    expected_models = {"gfs", "ecmwf_ifs", "icon", "aifs", "equal_mean", "ridge", "lgbm", "blend"}
+    assert set(res_sunday["candidate_models"]) == expected_models
+    assert set(res_saturday["candidate_models"]) == expected_models
+
+    # Sunday produces both daily snapshot AND weekly copy (2x rows)
+    assert res_sunday["skill_scores_written"] == 2 * res_saturday["skill_scores_written"]
+
 
