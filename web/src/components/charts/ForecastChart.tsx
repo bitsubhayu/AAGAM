@@ -1,0 +1,298 @@
+import React from "react";
+import ReactECharts from "echarts-for-react";
+import type { ForecastSeriesItem } from "@/api/types";
+import { VARIABLES, type WeatherVariable } from "@/store/uiStore";
+
+interface ForecastChartProps {
+  series: ForecastSeriesItem[];
+  variable: WeatherVariable;
+  locationName: string;
+  showEnvelope?: boolean;
+  showThresholds?: boolean;
+  visibleModels?: {
+    gfs: boolean;
+    ecmwf_ifs: boolean;
+    icon: boolean;
+    aifs: boolean;
+    blended: boolean;
+  };
+}
+
+export const ForecastChart: React.FC<ForecastChartProps> = ({
+  series,
+  variable,
+  locationName,
+  showEnvelope = true,
+  showThresholds = true,
+  visibleModels = {
+    gfs: true,
+    ecmwf_ifs: true,
+    icon: true,
+    aifs: true,
+    blended: true,
+  },
+}) => {
+  const varMeta = VARIABLES[variable];
+
+  const dates = series.map((s) => s.valid_date);
+
+  const blendedVals = series.map((s) => s.blended);
+  const gfsVals = series.map((s) => s.models?.gfs ?? null);
+  const ifsVals = series.map((s) => s.models?.ecmwf_ifs ?? null);
+  const iconVals = series.map((s) => s.models?.icon ?? null);
+  const aifsVals = series.map((s) => s.models?.aifs ?? null);
+
+  // Calculate min and max envelope across models
+  const minVals = series.map((s) => {
+    const vals = [
+      s.models?.gfs,
+      s.models?.ecmwf_ifs,
+      s.models?.icon,
+      s.models?.aifs,
+    ].filter((v): v is number => v !== undefined && v !== null);
+    return vals.length > 0 ? Math.min(...vals) : s.blended;
+  });
+
+  const maxVals = series.map((s) => {
+    const vals = [
+      s.models?.gfs,
+      s.models?.ecmwf_ifs,
+      s.models?.icon,
+      s.models?.aifs,
+    ].filter((v): v is number => v !== undefined && v !== null);
+    return vals.length > 0 ? Math.max(...vals) : s.blended;
+  });
+
+  const spreadBandVals = maxVals.map((max, idx) => Math.max(0, max - minVals[idx]));
+
+  // Threshold markLines
+  const getThresholdMarkLine = () => {
+    if (!showThresholds) return undefined;
+    if (variable === "rain_mm") {
+      return {
+        symbol: "none",
+        data: [
+          {
+            yAxis: 64.5,
+            lineStyle: { color: "#d29922", type: "dashed", width: 1.5 },
+            label: { formatter: "Heavy Rain (64.5 mm)", color: "#d29922", position: "insideEndTop" },
+          },
+          {
+            yAxis: 115.6,
+            lineStyle: { color: "#db6d28", type: "dashed", width: 1.5 },
+            label: { formatter: "Very Heavy (115.6 mm)", color: "#db6d28", position: "insideEndTop" },
+          },
+        ],
+      };
+    }
+    if (variable === "tmax_c") {
+      return {
+        symbol: "none",
+        data: [
+          {
+            yAxis: 40.0,
+            lineStyle: { color: "#db6d28", type: "dashed", width: 1.5 },
+            label: { formatter: "Heatwave (40°C)", color: "#db6d28", position: "insideEndTop" },
+          },
+          {
+            yAxis: 45.0,
+            lineStyle: { color: "#f85149", type: "dashed", width: 1.5 },
+            label: { formatter: "Severe (45°C)", color: "#f85149", position: "insideEndTop" },
+          },
+        ],
+      };
+    }
+    // wind_max_kmh
+    return {
+      symbol: "none",
+      data: [
+        {
+          yAxis: 62.0,
+          lineStyle: { color: "#d29922", type: "dashed", width: 1.5 },
+          label: { formatter: "Gale (62 km/h)", color: "#d29922", position: "insideEndTop" },
+        },
+      ],
+    };
+  };
+
+  const chartOptions = {
+    backgroundColor: "transparent",
+    animationDuration: 300,
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: "#161b22",
+      borderColor: "#30363d",
+      textStyle: { color: "#c9d1d9", fontSize: 12 },
+      formatter: (params: any) => {
+        if (!params || !params.length) return "";
+        const idx = params[0].dataIndex;
+        const item = series[idx];
+        let out = `<div style="padding: 2px 4px;">`;
+        out += `<div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid #30363d; padding-bottom: 4px;">`;
+        out += `${locationName} · ${item.valid_date} (D+${item.lead_days})`;
+        out += `</div>`;
+        out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 3px 0; color: #388bfd; font-weight: bold;">`;
+        out += `<span>AAGAM Blended:</span><span style="font-family: monospace;">${item.blended.toFixed(1)} ${varMeta.shortUnit}</span>`;
+        out += `</div>`;
+
+        if (item.models?.gfs !== undefined) {
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #58a6ff;">`;
+          out += `<span>GFS (NOAA):</span><span style="font-family: monospace;">${item.models.gfs.toFixed(1)} ${varMeta.shortUnit}</span>`;
+          out += `</div>`;
+        }
+        if (item.models?.ecmwf_ifs !== undefined) {
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #3fb950;">`;
+          out += `<span>ECMWF IFS:</span><span style="font-family: monospace;">${item.models.ecmwf_ifs.toFixed(1)} ${varMeta.shortUnit}</span>`;
+          out += `</div>`;
+        }
+        if (item.models?.icon !== undefined) {
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #f0883e;">`;
+          out += `<span>DWD ICON:</span><span style="font-family: monospace;">${item.models.icon.toFixed(1)} ${varMeta.shortUnit}</span>`;
+          out += `</div>`;
+        }
+        if (item.models?.aifs !== undefined) {
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #a371f7;">`;
+          out += `<span>ECMWF AIFS (AI):</span><span style="font-family: monospace;">${item.models.aifs.toFixed(1)} ${varMeta.shortUnit}</span>`;
+          out += `</div>`;
+        }
+
+        out += `<div style="border-top: 1px solid #30363d; margin-top: 4px; pt-2; display: flex; justify-content: space-between; font-size: 11px; color: #8b949e;">`;
+        out += `<span>Model Spread (σ):</span><span style="font-family: monospace;">${item.spread.toFixed(1)} ${varMeta.shortUnit}</span>`;
+        out += `</div>`;
+        out += `</div>`;
+        return out;
+      },
+    },
+    legend: {
+      data: ["AAGAM Blended", "GFS", "ECMWF IFS", "DWD ICON", "ECMWF AIFS"],
+      top: 0,
+      textStyle: { color: "#8b949e", fontSize: 11 },
+      icon: "circle",
+    },
+    grid: {
+      left: "3%",
+      right: "4%",
+      bottom: "10%",
+      top: "14%",
+      containLabel: true,
+    },
+    xAxis: {
+      type: "category",
+      data: dates.map((d, i) => `${d}\n(D+${series[i].lead_days})`),
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: "#30363d" } },
+      axisLabel: { color: "#8b949e", fontSize: 11, interval: 0 },
+    },
+    yAxis: {
+      type: "value",
+      name: varMeta.unit,
+      nameTextStyle: { color: "#8b949e", fontSize: 11, align: "left" },
+      splitLine: { lineStyle: { color: "#21262d" } },
+      axisLabel: { color: "#8b949e", fontSize: 11, fontFamily: "monospace" },
+    },
+    series: [
+      // Confidence band base (transparent)
+      ...(showEnvelope
+        ? [
+            {
+              name: "Min Base",
+              type: "line",
+              data: minVals,
+              lineStyle: { opacity: 0 },
+              stack: "confidence-band",
+              symbol: "none",
+            },
+            {
+              name: "Spread Band",
+              type: "line",
+              data: spreadBandVals,
+              lineStyle: { opacity: 0 },
+              areaStyle: { color: "rgba(56, 139, 253, 0.12)" },
+              stack: "confidence-band",
+              symbol: "none",
+            },
+          ]
+        : []),
+
+      // Individual Model Lines
+      ...(visibleModels.gfs
+        ? [
+            {
+              name: "GFS",
+              type: "line",
+              data: gfsVals,
+              lineStyle: { color: "#58a6ff", width: 1.5, type: "solid" },
+              itemStyle: { color: "#58a6ff" },
+              symbol: "emptyCircle",
+              symbolSize: 4,
+            },
+          ]
+        : []),
+      ...(visibleModels.ecmwf_ifs
+        ? [
+            {
+              name: "ECMWF IFS",
+              type: "line",
+              data: ifsVals,
+              lineStyle: { color: "#3fb950", width: 1.5, type: "solid" },
+              itemStyle: { color: "#3fb950" },
+              symbol: "emptyCircle",
+              symbolSize: 4,
+            },
+          ]
+        : []),
+      ...(visibleModels.icon
+        ? [
+            {
+              name: "DWD ICON",
+              type: "line",
+              data: iconVals,
+              lineStyle: { color: "#f0883e", width: 1.5, type: "solid" },
+              itemStyle: { color: "#f0883e" },
+              symbol: "emptyCircle",
+              symbolSize: 4,
+            },
+          ]
+        : []),
+      ...(visibleModels.aifs
+        ? [
+            {
+              name: "ECMWF AIFS",
+              type: "line",
+              data: aifsVals,
+              lineStyle: { color: "#a371f7", width: 1.5, type: "solid" },
+              itemStyle: { color: "#a371f7" },
+              symbol: "emptyCircle",
+              symbolSize: 4,
+            },
+          ]
+        : []),
+
+      // Thick AAGAM Blended Line
+      ...(visibleModels.blended
+        ? [
+            {
+              name: "AAGAM Blended",
+              type: "line",
+              data: blendedVals,
+              lineStyle: { color: "#388bfd", width: 3.5 },
+              itemStyle: { color: "#388bfd" },
+              symbol: "circle",
+              symbolSize: 6,
+              markLine: getThresholdMarkLine(),
+            },
+          ]
+        : []),
+    ],
+  };
+
+  return (
+    <div className="w-full h-[360px]">
+      <ReactECharts
+        option={chartOptions}
+        style={{ height: "100%", width: "100%" }}
+        opts={{ renderer: "canvas" }}
+      />
+    </div>
+  );
+};

@@ -4,6 +4,7 @@
 @import "@fontsource/ibm-plex-sans/700.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/600.css";
+@import "leaflet/dist/leaflet.css";
 
 @tailwind base;
 @tailwind components;
@@ -11,6 +12,14 @@
 
 :root {
   color-scheme: dark;
+  --bg-app: #0d1117;
+  --bg-surface: #161b22;
+  --bg-surface-raised: #21262d;
+  --border-default: #30363d;
+  --border-subtle: #21262d;
+  --text-primary: #f0f6fc;
+  --text-secondary: #c9d1d9;
+  --text-muted: #8b949e;
 }
 
 body {
@@ -22,6 +31,51 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-code, pre {
+/* Tabular Numerals for Numerical Consistency */
+.tabular-nums, table, code, pre, .font-mono {
   font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Sleek Scrollbar for Dense Tables */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+/* Leaflet Dark Customization */
+.leaflet-container {
+  background-color: #0d1117 !important;
+  font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: #161b22 !important;
+  color: #c9d1d9 !important;
+  border: 1px solid #30363d !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 8px !important;
+}
+
+.leaflet-popup-content {
+  margin: 10px 14px !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: #8b949e !important;
+  padding: 4px 6px !important;
+}
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: #f0f6fc !important;
 }
