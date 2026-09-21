@@ -222,6 +222,9 @@ CREATE TRIGGER on_auth_user_created
 -- Row Level Security (RLS) Configuration
 -- ==============================================================================
 
+-- Enable RLS on ALL 11 Core Tables (PRD §11, FR-AUTH-2)
+ALTER TABLE locations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE model_forecasts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE model_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE blended_forecasts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weights ENABLE ROW LEVEL SECURITY;
@@ -229,52 +232,39 @@ ALTER TABLE skill_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weight_overrides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pipeline_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_audit ENABLE ROW LEVEL SECURITY;
 
--- Read policies for public/authenticated/service_role
+-- Drop previous policies to ensure clean policy definition without anon access
+DROP POLICY IF EXISTS allow_read_locations ON locations;
+DROP POLICY IF EXISTS allow_read_model_forecasts ON model_forecasts;
+DROP POLICY IF EXISTS allow_read_model_versions ON model_versions;
+DROP POLICY IF EXISTS allow_read_blended_forecasts ON blended_forecasts;
+DROP POLICY IF EXISTS allow_read_weights ON weights;
+DROP POLICY IF EXISTS allow_read_skill_scores ON skill_scores;
+DROP POLICY IF EXISTS allow_read_alerts ON alerts;
+DROP POLICY IF EXISTS allow_read_profiles ON profiles;
+DROP POLICY IF EXISTS allow_read_weight_overrides ON weight_overrides;
+DROP POLICY IF EXISTS allow_read_pipeline_runs ON pipeline_runs;
+DROP POLICY IF EXISTS allow_read_chat_audit ON chat_audit;
+
+-- Read policies: authenticated users and service_role ONLY (no anonymous access)
+CREATE POLICY allow_read_locations ON locations FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_model_forecasts ON model_forecasts FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_model_versions ON model_versions FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_blended_forecasts ON blended_forecasts FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_weights ON weights FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_skill_scores ON skill_scores FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_alerts ON alerts FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_profiles ON profiles FOR SELECT TO authenticated, service_role 
+    USING (user_id = auth.uid() OR public.is_admin());
+CREATE POLICY allow_read_weight_overrides ON weight_overrides FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_pipeline_runs ON pipeline_runs FOR SELECT TO authenticated, service_role USING (true);
+CREATE POLICY allow_read_chat_audit ON chat_audit FOR SELECT TO authenticated, service_role 
+    USING (user_id = auth.uid() OR public.is_admin());
+
 DO $$
 BEGIN
-    -- model_versions
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'model_versions' AND policyname = 'allow_read_model_versions') THEN
-        CREATE POLICY allow_read_model_versions ON model_versions FOR SELECT TO anon, authenticated, service_role USING (true);
-    END IF;
-
-    -- blended_forecasts
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'blended_forecasts' AND policyname = 'allow_read_blended_forecasts') THEN
-        CREATE POLICY allow_read_blended_forecasts ON blended_forecasts FOR SELECT TO anon, authenticated, service_role USING (true);
-    END IF;
-
-    -- weights
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'weights' AND policyname = 'allow_read_weights') THEN
-        CREATE POLICY allow_read_weights ON weights FOR SELECT TO anon, authenticated, service_role USING (true);
-    END IF;
-
-    -- skill_scores
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'skill_scores' AND policyname = 'allow_read_skill_scores') THEN
-        CREATE POLICY allow_read_skill_scores ON skill_scores FOR SELECT TO anon, authenticated, service_role USING (true);
-    END IF;
-
-    -- alerts
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'alerts' AND policyname = 'allow_read_alerts') THEN
-        CREATE POLICY allow_read_alerts ON alerts FOR SELECT TO anon, authenticated, service_role USING (true);
-    END IF;
-
-    -- profiles
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'allow_read_profiles') THEN
-        CREATE POLICY allow_read_profiles ON profiles FOR SELECT TO authenticated, service_role 
-        USING (user_id = auth.uid() OR public.is_admin());
-    END IF;
-
-    -- weight_overrides
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'weight_overrides' AND policyname = 'allow_read_weight_overrides') THEN
-        CREATE POLICY allow_read_weight_overrides ON weight_overrides FOR SELECT TO anon, authenticated, service_role USING (true);
-    END IF;
-
-    -- chat_audit
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'chat_audit' AND policyname = 'allow_read_chat_audit') THEN
-        CREATE POLICY allow_read_chat_audit ON chat_audit FOR SELECT TO authenticated, service_role 
-        USING (user_id = auth.uid() OR public.is_admin());
-    END IF;
 
     -- Write policies for weight_overrides
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'weight_overrides' AND policyname = 'allow_insert_weight_overrides') THEN

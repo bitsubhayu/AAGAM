@@ -7,6 +7,8 @@ idempotency, override auto-expiry, quota safety, and telemetry logging.
 
 from unittest.mock import patch
 
+import pytest
+
 from pipeline.db.connection import get_db_connection
 from pipeline.live.runner import LivePipelineRunner
 from pipeline.maintenance.retention import RetentionEngine
@@ -48,7 +50,7 @@ def test_all_11_core_tables_exist():
 
 
 def test_model_versions_unique_active_constraint():
-    """Verify that the partial unique index ensures only one active model version."""
+    """Verify that at most one active model version is allowed by the partial unique index."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -135,6 +137,56 @@ def test_auth_helper_functions_exist():
             assert "is_forecaster_or_admin" in funcs, "Function is_forecaster_or_admin() missing"
             assert funcs["is_admin"] is True, "is_admin() must be SECURITY DEFINER"
             assert funcs["is_forecaster_or_admin"] is True, "is_forecaster_or_admin() must be SECURITY DEFINER"
+    finally:
+        conn.close()
+
+
+def test_anonymous_reads_blocked_on_operational_tables():
+    """Verify that anonymous role (anon) is blocked from reading operational tables."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("BEGIN; SET LOCAL ROLE anon;")
+            # Operational tables must return 0 rows for anonymous queries under RLS
+            for table in ["blended_forecasts", "locations", "model_forecasts", "alerts", "weights"]:
+                cur.execute(f"SELECT COUNT(*) FROM {table};")
+                count = cur.fetchone()[0]
+                assert count == 0, f"Table '{table}' should not return data to anonymous users (got {count} rows)"
+            cur.execute("ROLLBACK;")
+    finally:
+        conn.close()
+
+
+def test_authenticated_reads_allowed_on_operational_tables():
+    """Verify that authenticated role can read operational tables."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("BEGIN; SET LOCAL ROLE authenticated;")
+            cur.execute("SELECT COUNT(*) FROM blended_forecasts;")
+            count = cur.fetchone()[0]
+            assert count > 0, "Authenticated role should have read access to blended_forecasts"
+            cur.execute("ROLLBACK;")
+    finally:
+        conn.close()
+
+
+def test_unauthorized_writes_blocked():
+    """Verify that unauthorized client writes to operational tables are blocked under RLS."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("BEGIN; SET LOCAL ROLE anon;")
+            try:
+                cur.execute("""
+                    INSERT INTO model_forecasts (location_id, model, variable, valid_date, lead_days, issue_time, value)
+                    VALUES (1, 'gfs', 'rain_mm', '2099-01-01', 1, NOW(), 10.0);
+                """)
+                pytest.fail("Anonymous write to model_forecasts should have failed with RLS violation")
+            except Exception as e:
+                err_msg = str(e).lower()
+                assert "permission denied" in err_msg or "violates row-level security" in err_msg or "policy" in err_msg
+            cur.execute("ROLLBACK;")
     finally:
         conn.close()
 

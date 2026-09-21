@@ -1,7 +1,7 @@
 """AAGAM — Database Retention and Nightly Backup Engine (PRD §11).
 
 Implements authoritative PRD retention rules:
-1. Expiring weight overrides past their expires_at date (is_active = false).
+1. Expiring weight overrides past their expires_at date (active = false).
 2. Purging blended forecasts older than 90 days.
 3. Purging chat audit records older than 30 days.
 4. Nightly export of key tables to Parquet and upload to Supabase storage `backups` bucket.

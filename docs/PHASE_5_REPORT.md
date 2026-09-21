@@ -37,7 +37,7 @@ All 11 core tables specified in PRD §11 were created and verified directly in S
 | 11 | `chat_audit` | Conversational assistant feedback log | `id` (BIGSERIAL PK) | **YES** |
 
 ### Key Constraints Verified:
-- **`model_versions`:** Partial unique index `UNIQUE (is_active) WHERE is_active = true` guarantees that exactly one model version can be active at any time.
+- **`model_versions`:** Partial unique index `UNIQUE (is_active) WHERE is_active = true` ensures that at most one active model version is allowed by the partial unique index.
 - **`weights`:** Non-negative constraint `CHECK (weight >= 0.0 AND weight <= 1.0)`.
 - **`profiles`:** Role restricted to `CHECK (role IN ('viewer', 'forecaster', 'admin'))`.
 - **`alerts`:** Status restricted to `CHECK (status IN ('active', 'expired', 'acknowledged'))`.
@@ -46,14 +46,15 @@ All 11 core tables specified in PRD §11 were created and verified directly in S
 
 ## 2. Row-Level Security (RLS) & Security Policies
 
-Row-Level Security is strictly enabled on **all 11 tables** (`relrowsecurity = true` verified by automated test `test_rls_enabled_on_all_tables`).
+Row-Level Security is strictly enabled on **all 11 tables** (`relrowsecurity = true` verified live in Supabase PostgreSQL by automated test `test_rls_enabled_on_all_tables`).
 
 ### Access Control Rules:
-1. **Public/Authenticated Read Access:**
-   - Authenticated users (`viewer`, `forecaster`, `admin`) can view forecasts, alerts, skill scores, weights, locations, and pipeline runs.
+1. **Authenticated Read Access Only (No Anonymous Reads):**
+   - In strict compliance with the PRD RLS outline, operational tables (`locations`, `model_forecasts`, `model_versions`, `blended_forecasts`, `weights`, `skill_scores`, `alerts`, `pipeline_runs`, `weight_overrides`) permit `SELECT` exclusively to `authenticated` and `service_role` roles.
+   - Anonymous access (`anon`) is blocked (`test_anonymous_reads_blocked_on_operational_tables` asserts `COUNT(*) = 0` under `anon` role).
 2. **Client Write Isolation:**
    - General client writes are completely blocked on all core operational tables (`locations`, `model_forecasts`, `blended_forecasts`, `weights`, `skill_scores`, `pipeline_runs`).
-   - Operational writes are restricted exclusively to the Supabase Service Role key executed within server-side pipeline runners.
+   - Operational writes are restricted exclusively to the Supabase Service Role key executed within server-side pipeline runners (`test_unauthorized_writes_blocked`).
 3. **Forecaster/Admin Overrides:**
    - `weight_overrides` can only be inserted by authenticated users possessing the `forecaster` or `admin` role, enforcing `created_by = auth.uid()`.
 4. **Alert Acknowledgement:**
@@ -285,7 +286,8 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 ## 13. Git & Working Tree Status
 
 - **Branch:** `phase-5/live-pipeline`
-- **Latest Commits:**
+- **Recent Commits:**
+  - `b899dd5`: `docs(phase-5): clarify default branch trigger rule for scheduled workflows`
   - `2f8b2fe`: `docs(phase-5): record operational acceptance observation audit and pending 3-cycle status`
   - `9efe91c`: `fix(phase-5): align retention policies with PRD and set pending acceptance status`
   - `2230787`: `feat(phase-5): implement live pipeline database scheduler and registry`
