@@ -14,6 +14,11 @@ rain:
     very_heavy: [115.6, 204.4]
     extremely_heavy: 204.5 # >= 204.5 mm/24h
 
+  intensity_labels:
+    heavy: 64.5
+    very_heavy: 115.6
+    extremely_heavy: 204.5
+
   alert_levels:
     advisory:
       condition: "any model >= 64.5 or blended >= 51.6"
@@ -29,31 +34,50 @@ rain:
       min_agreeing_models: 3
 
 heatwave:
-  min_consecutive_days: 2 # IMD criteria requires condition for 2 consecutive days
+  min_consecutive_days: 2 # IMD criteria requires condition for 2 consecutive forecast days
+  climatology_normal:
+    source: "era5_historical"
+    reason: "IMD Pune server (imdpune.gov.in) read timed out; falling back to ERA5 historical truth per PRD §8.4"
+    disclaimer: "indicative — single point, not a sub-division declaration"
   thresholds_by_terrain:
     plains:
       absolute_min_tmax: 40.0
       normal_departure_heatwave: 4.5
-      normal_departure_severe: 6.5
+      normal_departure_severe: 6.4
     coastal:
       absolute_min_tmax: 37.0
       normal_departure_heatwave: 4.5
-      normal_departure_severe: 6.5
+      normal_departure_severe: 6.4
     hills:
       absolute_min_tmax: 30.0
       normal_departure_heatwave: 4.5
-      normal_departure_severe: 6.5
+      normal_departure_severe: 6.4
   standalone_criteria:
-    heatwave_anywhere: 45.0 # >= 45.0°C irrespective of normal
-    severe_heatwave_anywhere: 47.0 # >= 47.0°C irrespective of normal
+    heatwave_anywhere: 45.0 # >= 45.0°C irrespective of normal (Watch)
+    severe_heatwave_anywhere: 47.0 # >= 47.0°C irrespective of normal (Alert)
 
 wind:
   # Configurable Beaufort scale defaults
   units: "km/h"
-  advisory: 50.0 # Moderate gale
-  watch: 62.0    # Gale (Beaufort 8)
-  alert: 75.0    # Strong gale (Beaufort 9)
-  storm: 89.0    # Storm (Beaufort 10)
+  advisory: 50.0 # Moderate gale (Beaufort 7: 50-61 km/h)
+  watch: 62.0    # Gale (Beaufort 8: 62-74 km/h)
+  alert: 75.0    # Strong gale (Beaufort 9: 75-88 km/h)
+  storm: 89.0    # Storm (Beaufort 10: 89-102 km/h)
+  citation: "IMD / NDMA cyclone and gale wind advisory standards based on Beaufort scale"
 
 uncertainty:
   percentile_trigger: 90 # High uncertainty flag if model spread > P90 historical spread
+
+verification_cutoffs:
+  - threshold_mm: 2.5
+    label: "Moderate Rain"
+    status: "pending confirmation"
+  - threshold_mm: 15.6
+    label: "Rather Heavy Rain"
+    status: "pending confirmation"
+  - threshold_mm: 64.5
+    label: "Heavy Rain"
+    status: "official IMD"
+  - threshold_mm: 115.6
+    label: "Very Heavy Rain"
+    status: "official IMD"
