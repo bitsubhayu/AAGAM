@@ -337,7 +337,10 @@ class VerificationRunner:
         if "valid_date" in df.columns:
             df["season"] = [get_season(d) for d in pd.to_datetime(df["valid_date"]).dt.date]
         elif "season" not in df.columns:
-            df["season"] = "monsoon"
+            raise ValueError(
+                "Verification dataset must contain 'valid_date' (to derive canonical season) "
+                "or an explicit 'season' column; refusing to invent or hardcode a season fallback."
+            )
 
         skill_records: List[Tuple[Any, ...]] = []
         candidates = [c for c in CANDIDATE_MODELS if c in df.columns]

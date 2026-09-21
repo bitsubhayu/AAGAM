@@ -7,6 +7,7 @@ idempotency, override auto-expiry, quota safety, and telemetry logging.
 
 import uuid
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
@@ -930,24 +931,53 @@ def test_verification_produces_all_eight_candidates():
 def test_verification_season_derived_from_valid_date():
     """Verify FR-VER-1 requirement that season is derived dynamically from valid_date
     using canonical Indian meteorological seasons rather than hardcoded to 'monsoon'.
-    Tests at least two dates from different seasons (Winter and Pre-Monsoon).
+    Tests:
+    1. Valid dates produce the canonical season across multiple distinct seasons.
+    2. Different seasons (winter, pre_monsoon, monsoon, post_monsoon) are correctly distinguished.
+    3. No hardcoded 'monsoon' fallback is used when season information is missing (raises ValueError).
+    4. Source-level assertion that no 'df["season"] = "monsoon"' fallback exists in verification_runner.py.
     """
     runner = VerificationRunner()
 
+    # 1 & 2: Test distinct seasons
     winter_date = "2026-01-20"        # Month 1 -> winter
     pre_monsoon_date = "2026-04-15"   # Month 4 -> pre_monsoon
-    fixture_df = _build_test_verification_fixture(dates_list=[winter_date, pre_monsoon_date])
+    monsoon_date = "2026-07-20"       # Month 7 -> monsoon
+    post_monsoon_date = "2026-10-20"  # Month 10 -> post_monsoon
+
+    fixture_df = _build_test_verification_fixture(
+        dates_list=[winter_date, pre_monsoon_date, monsoon_date, post_monsoon_date]
+    )
 
     records = runner.compute_skill_records(fixture_df)
     assert len(records) > 0
 
     # Tuple index 4 corresponds to season
     seasons_produced = {r[4] for r in records}
-    assert "winter" in seasons_produced, "Valid date in January must produce 'winter' season"
-    assert "pre_monsoon" in seasons_produced, "Valid date in April must produce 'pre_monsoon' season"
-    assert "monsoon" not in seasons_produced, (
-        "Records for January and April must NOT produce 'monsoon'. "
-        "Season must not be hardcoded to 'monsoon'."
+    assert seasons_produced == {"winter", "pre_monsoon", "monsoon", "post_monsoon"}, (
+        f"All 4 canonical seasons must be distinguished, got: {seasons_produced}"
+    )
+
+    # Test winter and pre-monsoon isolated: monsoon must NOT appear
+    isolated_df = _build_test_verification_fixture(dates_list=[winter_date, pre_monsoon_date])
+    isolated_records = runner.compute_skill_records(isolated_df)
+    isolated_seasons = {r[4] for r in isolated_records}
+    assert "winter" in isolated_seasons
+    assert "pre_monsoon" in isolated_seasons
+    assert "monsoon" not in isolated_seasons, "Monsoon must not appear for January or April dates"
+
+    # 3: Verify rejection when valid_date and season are both missing (no hardcoded fallback)
+    df_missing_info = fixture_df.drop(columns=["valid_date"])
+    if "season" in df_missing_info.columns:
+        df_missing_info = df_missing_info.drop(columns=["season"])
+
+    with pytest.raises(ValueError, match="refusing to invent or hardcode a season fallback"):
+        runner.compute_skill_records(df_missing_info)
+
+    # 4: Source-level assertion confirming no hardcoded 'monsoon' assignment exists in verification_runner.py
+    runner_code = (Path(__file__).resolve().parent.parent / "pipeline" / "live" / "verification_runner.py").read_text()
+    assert 'df["season"] = "monsoon"' not in runner_code, (
+        "verification_runner.py must not contain any hardcoded fallback assigning 'monsoon' to season."
     )
 
 
