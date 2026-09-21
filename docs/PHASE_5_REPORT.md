@@ -12,7 +12,7 @@
 
 Phase 5 transitions AAGAM from an offline backtested research pipeline into a fully automated, observable, cloud-backed operational forecasting engine. All database schemas, Row-Level Security policies, cloud storage buckets, model registry quality gates, retention cleanups, and GitHub Actions scheduled workflows have been implemented and verified against `AAGAM_PRD.md` and `AAGAM_TECH_STACK.md`.
 
-All 91 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
+All 93 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
 
 ---
 
@@ -25,19 +25,21 @@ All 11 core tables specified in PRD §11 were created and verified directly in S
 | # | Table Name | Purpose | Primary Key / Unique Constraint | RLS Enabled |
 |---|------------|---------|--------------------------------|-------------|
 | 1 | `locations` | 40 IMD/NCMRWF observation points | `id` (INTEGER PK), `slug` (UNIQUE) | **YES** |
-| 2 | `model_forecasts` | Raw multi-model NWP runs | `(location_id, model, variable, valid_date)` | **YES** |
+| 2 | `model_forecasts` | Raw multi-model NWP runs (latest run only) | `(location_id, model, variable, valid_date)` | **YES** |
 | 3 | `model_versions` | ML model registry metadata | `id` (SERIAL PK), UNIQUE partial on `(is_active) WHERE is_active = true` | **YES** |
 | 4 | `blended_forecasts` | Blended predictions & ensemble metrics | `(location_id, variable, valid_date, issue_time)` | **YES** |
 | 5 | `weights` | Dynamic regime/seasonal model weights | `(version_id, variable, region, season, lead_days, model, method)` | **YES** |
 | 6 | `skill_scores` | Trailing 60-day operational metrics | `(computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly)` | **YES** |
-
 | 7 | `alerts` | Extreme hazard warnings | `(issue_time, location_id, hazard, valid_date, lead_days)` | **YES** |
 | 8 | `profiles` | User roles & organizations | `user_id` (UUID PK references auth.users) | **YES** |
 | 9 | `weight_overrides` | Forecaster/Admin manual interventions | `id` (BIGSERIAL PK) | **YES** |
 | 10 | `pipeline_runs` | Observability & execution telemetry | `id` (BIGSERIAL PK) | **YES** |
 | 11 | `chat_audit` | Conversational assistant feedback log | `id` (BIGSERIAL PK) | **YES** |
 
-### Key Constraints Verified:
+### Key Constraints & Architecture Verified:
+- **`model_forecasts` vs Historical Parquet Store (PRD §11 line 545):**
+  - In strict alignment with PRD §11 line 545 (`-- latest run only (upsert); history for training lives in Parquet`), table `model_forecasts` maintains primary key `(location_id, model, variable, valid_date)`. This table serves latest-cycle operational display and is overwritten upon each subsequent cycle for the same `valid_date`.
+  - Authoritative multi-lead historical raw model forecasts (`gfs`, `ecmwf_ifs`, `icon`, `aifs`) are preserved in the canonical Parquet archive (`data/forecasts_backfill.parquet` locally and `training-data` bucket in Supabase storage) keyed by `(location_id, model, valid_date, lead_days)`. Live ingestion cycles archive raw forecast records to this store on every run via `LivePipelineRunner.archive_live_forecasts_to_parquet()`.
 - **`model_versions`:** Partial unique index `UNIQUE (is_active) WHERE is_active = true` ensures that at most one active model version is allowed by the partial unique index.
 - **`weights`:** Non-negative constraint `CHECK (weight >= 0.0 AND weight <= 1.0)`.
 - **`profiles`:** Role restricted to `CHECK (role IN ('viewer', 'forecaster', 'admin'))`.
@@ -136,6 +138,8 @@ In strict accordance with authoritative `AAGAM_PRD.md` requirements (FR-OPS-4):
    - Operational data is exported to Parquet organized by date (`backups/{yyyymmdd}/{table}.parquet`) and uploaded to Supabase storage `backups` bucket.
    - All required uploads for every table in `BACKUP_TABLES` (`model_forecasts`, `blended_forecasts`, `alerts`, `skill_scores`, `weights`, `pipeline_runs`) must succeed before cleanup is permitted.
    - Any upload failure strictly aborts retention cleanup immediately to prevent data loss, leaving database rows untouched and recording a `FAILED` status in `pipeline_runs` (verified by automated test `test_nightly_backup_failure_aborts_retention_cleanup`).
+6. **Live Execution Test Coverage:**
+   - `test_retention_engine_run_cleanup_live_execution` validates real execution of `RetentionEngine.run_cleanup(dry_run=False)` with controlled database rows, asserting the purge of expired weight overrides, non-00Z/stale blended forecasts, outdated skill scores, and >30d chat audit records, while verifying that retained rows persist in the database.
 
 ---
 
@@ -181,6 +185,14 @@ Each stage was manually executed in dry-run mode to verify operational stability
   6. `ridge` (L2 regression)
   7. `lgbm` (Gradient boosting)
   8. `blend` (Adaptive meta-blend)
+- **Historical Raw Forecast Persistence & Retrieval (PRD §11 line 545):**
+  - PostgreSQL `model_forecasts` stores latest-cycle raw forecasts for operational display (`PRIMARY KEY (location_id, model, variable, valid_date)`).
+  - Authoritative multi-lead historical raw model forecasts are archived permanently into the canonical Parquet store (`data/forecasts_backfill.parquet` locally and `training-data` bucket in Supabase storage) on every live cycle via `LivePipelineRunner.archive_live_forecasts_to_parquet()`.
+  - `VerificationRunner.load_historical_raw_forecasts(start_date, end_date)` queries this archive to retrieve the actual raw forecast issued for that exact issue `lead_days` and `valid_date`.
+  - Automated regression test `test_historical_raw_model_verification_path` proves that verification evaluates actual historical raw values (MAE = 0.5) and fails if the latest overwritten value in `model_forecasts` (value = 999.0, MAE = 966.3) is used.
+- **No Silent Fallback to Test Data in Production:**
+  - In production verification (`use_test_fallback=False`), missing operational forecast or truth data returns an explicit `NO_DATA` or `NO_OVERLAP` status.
+  - Fallback to synthetic test parquet (`data/blended_forecasts_test.parquet`) is strictly blocked in production and allowed only when `use_test_fallback=True` is explicitly passed in isolated test mode.
 - **Continuous Metrics Evaluated:** MAE, RMSE, Bias, N for all 8 candidates across variables (`rain_mm`, `tmax_c`, `wind_max_kmh`), regions, seasons, and lead days (0–7).
 - **Categorical Rainfall Metrics Evaluated (FR-VER-2):** Contingency scores (Hits, False Alarms, Misses, Correct Negatives, POD, FAR, CSI, N) across rainfall thresholds (`2.5`, `15.6`, `64.5`, `115.6` mm) for all 8 candidate models.
 - **Dynamic Seasonal Derivation:** Canonical Indian meteorological seasons (`winter`, `pre_monsoon`, `monsoon`, `post_monsoon`) are derived dynamically per forecast `valid_date` using the authoritative `get_season` mapping, eliminating any hardcoded season assignment.
@@ -233,17 +245,17 @@ configfile: pyproject.toml
 testpaths: api/tests, pipeline/tests, tests
 plugins: anyio-4.15.1, asyncio-1.4.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collected 91 items
+collected 93 items
 
 api\tests\test_api.py .......                                            [  7%]
 tests\test_aggregation.py ...                                            [ 10%]
-tests\test_backfill_resumability.py ..                                   [ 13%]
-tests\test_blend.py .............                                        [ 27%]
+tests\test_backfill_resumability.py ..                                   [ 12%]
+tests\test_blend.py .............                                        [ 26%]
 tests\test_data_integrity.py ..                                          [ 29%]
 tests\test_extremes.py .............                                     [ 43%]
-tests\test_locations.py ..                                               [ 46%]
-tests\test_openmeteo_client.py ....                                      [ 50%]
-tests\test_phase5_pipeline.py ............................               [ 81%]
+tests\test_locations.py ..                                               [ 45%]
+tests\test_openmeteo_client.py ....                                      [ 49%]
+tests\test_phase5_pipeline.py ..............................             [ 81%]
 tests\test_skill.py ................                                     [ 98%]
 tests\test_training_dataset.py .                                         [100%]
 
@@ -273,9 +285,9 @@ tests/test_phase5_pipeline.py::test_required_storage_buckets_exist
     return SyncStorageClient(
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 91 passed, 6 warnings in 43.02s =======================
+======================= 93 passed, 6 warnings in 42.86s =======================
 ```
-- **Total Passed:** 91 / 91 (100%)
+- **Total Passed:** 93 / 93 (100%)
 - **Zero Failures, Zero Skips.**
 
 ### Command: `ruff check .`

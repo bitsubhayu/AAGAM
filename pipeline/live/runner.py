@@ -255,6 +255,10 @@ class LivePipelineRunner:
                 """
                 execute_values(cur, upsert_query, raw_records, page_size=1000)
 
+            # Archive raw forecasts to Parquet historical store (PRD §11 line 545)
+            if not dry_run:
+                self.archive_live_forecasts_to_parquet(raw_records)
+
         # 3. Build pivoting table for active blending
         logger.info("Assembling multi-model inputs for blending...")
         df_raw = pd.DataFrame(
@@ -466,6 +470,68 @@ class LivePipelineRunner:
             "duration_seconds": duration_sec,
             "api_calls_est": api_calls_est,
         }
+
+    def archive_live_forecasts_to_parquet(
+        self,
+        raw_records: List[Tuple[Any, ...]],
+        parquet_path: Optional[Path] = None,
+    ) -> int:
+        """Archives live raw model forecast records to the canonical Parquet store (PRD §11 line 545).
+
+        Deduplicates on (location_id, model, valid_date, lead_days) so that every lead day
+        and issue is preserved for subsequent operational verification.
+        """
+        if not raw_records:
+            return 0
+
+        target_path = parquet_path or Path("data/forecasts_backfill.parquet")
+
+        df_new = pd.DataFrame(
+            raw_records,
+            columns=["location_id", "model", "variable", "valid_date", "lead_days", "issue_time", "value"],
+        )
+
+        pivoted_new = df_new.pivot_table(
+            index=["location_id", "model", "valid_date", "lead_days"],
+            columns="variable",
+            values="value",
+            aggfunc="first",
+        ).reset_index()
+
+        rename_dict = {
+            "rain_mm": "f_rain_mm",
+            "tmax_c": "f_tmax_c",
+            "wind_max_kmh": "f_wind_max_kmh",
+        }
+        pivoted_new = pivoted_new.rename(columns={k: v for k, v in rename_dict.items() if k in pivoted_new.columns})
+        for c in ["f_rain_mm", "f_tmax_c", "f_wind_max_kmh"]:
+            if c not in pivoted_new.columns:
+                pivoted_new[c] = np.nan
+
+        pivoted_new["valid_date"] = pd.to_datetime(pivoted_new["valid_date"]).dt.date
+        pivoted_new["location_id"] = pivoted_new["location_id"].astype(int)
+        pivoted_new["lead_days"] = pivoted_new["lead_days"].astype(int)
+
+        dedup_keys = ["location_id", "model", "valid_date", "lead_days"]
+
+        if target_path.exists():
+            try:
+                df_existing = pd.read_parquet(target_path)
+                df_existing["valid_date"] = pd.to_datetime(df_existing["valid_date"]).dt.date
+                df_existing["location_id"] = df_existing["location_id"].astype(int)
+                df_existing["lead_days"] = df_existing["lead_days"].astype(int)
+                combined = pd.concat([df_existing, pivoted_new], ignore_index=True)
+                combined = combined.drop_duplicates(subset=dedup_keys, keep="last").sort_values(dedup_keys).reset_index(drop=True)
+            except Exception as e:
+                logger.warning(f"Could not read existing parquet {target_path}: {e}; creating fresh.")
+                combined = pivoted_new.drop_duplicates(subset=dedup_keys, keep="last").sort_values(dedup_keys).reset_index(drop=True)
+        else:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            combined = pivoted_new.drop_duplicates(subset=dedup_keys, keep="last").sort_values(dedup_keys).reset_index(drop=True)
+
+        combined.to_parquet(target_path, index=False, engine="pyarrow", compression="snappy")
+        logger.info(f"Archived {len(pivoted_new)} live forecast records into {target_path} (total rows: {len(combined)}).")
+        return len(pivoted_new)
 
     run_cycle = run_ingest_and_blend
 

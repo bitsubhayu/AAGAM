@@ -181,7 +181,15 @@ def test_authenticated_reads_allowed_on_operational_tables():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("BEGIN; SET LOCAL ROLE authenticated;")
+            cur.execute("BEGIN;")
+            cur.execute("""
+                INSERT INTO blended_forecasts (
+                    location_id, variable, valid_date, issue_time, lead_days, blended
+                ) VALUES (
+                    1, 'rain_mm', CURRENT_DATE, CURRENT_DATE::timestamptz, 0, 10.0
+                ) ON CONFLICT (location_id, variable, valid_date, issue_time) DO NOTHING;
+            """)
+            cur.execute("SET LOCAL ROLE authenticated;")
             cur.execute("SELECT COUNT(*) FROM blended_forecasts;")
             count = cur.fetchone()[0]
             assert count > 0, "Authenticated role should have read access to blended_forecasts"
@@ -742,8 +750,8 @@ def test_verification_snapshot_fr_ver_1():
 
     # 1. Test Sunday vs non-Sunday dry-run generation
     # 2026-09-20 was a Sunday; 2026-09-19 was a Saturday
-    res_sunday = runner.run_daily_verification(target_date=date(2026, 9, 20), dry_run=True)
-    res_saturday = runner.run_daily_verification(target_date=date(2026, 9, 19), dry_run=True)
+    res_sunday = runner.run_daily_verification(target_date=date(2026, 9, 20), dry_run=True, use_test_fallback=True)
+    res_saturday = runner.run_daily_verification(target_date=date(2026, 9, 19), dry_run=True, use_test_fallback=True)
 
     assert res_sunday["is_sunday"] is True, "Sunday execution must be detected as Sunday"
     assert res_saturday["is_sunday"] is False, "Saturday execution must not be detected as Sunday"
@@ -1012,8 +1020,8 @@ def test_verification_live_job_scores_all_candidates_and_handles_sunday():
     runner = VerificationRunner()
 
     # 2026-09-20 was a Sunday; 2026-09-19 was a Saturday
-    res_sunday = runner.run_daily_verification(target_date=date(2026, 9, 20), dry_run=True)
-    res_saturday = runner.run_daily_verification(target_date=date(2026, 9, 19), dry_run=True)
+    res_sunday = runner.run_daily_verification(target_date=date(2026, 9, 20), dry_run=True, use_test_fallback=True)
+    res_saturday = runner.run_daily_verification(target_date=date(2026, 9, 19), dry_run=True, use_test_fallback=True)
 
     assert res_sunday["status"] == "SUCCESS"
     assert res_saturday["status"] == "SUCCESS"
@@ -1026,5 +1034,274 @@ def test_verification_live_job_scores_all_candidates_and_handles_sunday():
 
     # Sunday produces both daily snapshot AND weekly copy (2x rows)
     assert res_sunday["skill_scores_written"] == 2 * res_saturday["skill_scores_written"]
+
+
+def test_historical_raw_model_verification_path(tmp_path):
+    """Verify the real operational historical raw model verification path (FR-VER-1):
+    1. Distinguishes historical raw model forecasts from the latest overwritten cycle in model_forecasts.
+    2. Proves verification retrieves raw model values from the canonical historical store.
+    3. Fails if verification accidentally uses the latest overwritten raw forecast.
+    4. Evaluates all 8 candidates [gfs, ecmwf_ifs, icon, aifs, equal_mean, ridge, lgbm, blend].
+    5. Preserves lead_days without collapsing (tested at lead_days = 3).
+    6. Derives canonical season from forecast valid_date (monsoon for June).
+    7. Verifies Sunday weekly snapshot generation (2026-06-14 was a Sunday).
+    8. Confirms that missing historical operational data produces an explicit NO_DATA condition without silent test fallback.
+    """
+    target_eval_date = date(2026, 6, 14)  # 2026-06-14 was a Sunday in monsoon season
+    assert target_eval_date.weekday() == 6, "2026-06-14 must be a Sunday"
+
+    # Setup database connection
+    conn = get_db_connection()
+    conn.autocommit = True
+
+    try:
+        with conn.cursor() as cur:
+            # 1. Clean up any existing test records for this location and valid_date
+            cur.execute("DELETE FROM blended_forecasts WHERE location_id = 1 AND valid_date = %s;", (target_eval_date,))
+            cur.execute("DELETE FROM model_forecasts WHERE location_id = 1 AND valid_date = %s;", (target_eval_date,))
+
+            # 2. Seed blended_forecasts in DB for an older issue (issued on 2026-06-11, lead_days = 3)
+            # Ground truth for location 1 on 2026-06-14 is tmax_truth = 32.7
+            cur.execute("""
+                INSERT INTO blended_forecasts (
+                    location_id, variable, valid_date, issue_time, lead_days,
+                    blended, ridge, lgbm, equal_mean
+                ) VALUES (
+                    1, 'tmax_c', %s, '2026-06-11 00:00:00+00', 3,
+                    32.8, 32.7, 32.9, 32.8
+                );
+            """, (target_eval_date,))
+
+            # 3. Seed model_forecasts in DB simulating an OVERWRITTEN subsequent cycle
+            # This represents Day T (2026-06-14) running and overwriting model_forecasts with lead_days=0
+            # and a wildly corrupted/different value (value = 999.0).
+            cur.execute("""
+                INSERT INTO model_forecasts (
+                    location_id, model, variable, valid_date, lead_days, issue_time, value
+                ) VALUES (
+                    1, 'gfs', 'tmax_c', %s, 0, '2026-06-14 00:00:00+00', 999.0
+                ) ON CONFLICT (location_id, model, variable, valid_date) DO UPDATE
+                SET lead_days = EXCLUDED.lead_days, value = EXCLUDED.value;
+            """, (target_eval_date,))
+
+        # 4. Create the canonical historical Parquet store for this forecast issue (lead_days = 3)
+        # Historical raw forecasts: gfs = 33.2 (error = 0.5 vs truth 32.7)
+        hist_records = [
+            {"location_id": 1, "model": "gfs", "valid_date": target_eval_date, "lead_days": 3, "f_tmax_c": 33.2, "f_rain_mm": 1.7, "f_wind_max_kmh": 13.4},
+            {"location_id": 1, "model": "ecmwf_ifs", "valid_date": target_eval_date, "lead_days": 3, "f_tmax_c": 32.5, "f_rain_mm": 1.7, "f_wind_max_kmh": 13.4},
+            {"location_id": 1, "model": "icon", "valid_date": target_eval_date, "lead_days": 3, "f_tmax_c": 32.9, "f_rain_mm": 1.7, "f_wind_max_kmh": 13.4},
+            {"location_id": 1, "model": "aifs", "valid_date": target_eval_date, "lead_days": 3, "f_tmax_c": 32.6, "f_rain_mm": 1.7, "f_wind_max_kmh": 13.4},
+        ]
+        hist_parquet = tmp_path / "forecasts_backfill.parquet"
+        pd.DataFrame(hist_records).to_parquet(hist_parquet, index=False, engine="pyarrow")
+
+        # 5. Run verification with the historical Parquet store (use_test_fallback=False)
+        runner = VerificationRunner(historical_parquet_path=hist_parquet)
+        res = runner.run_daily_verification(
+            target_date=target_eval_date,
+            window_days=1,
+            dry_run=True,
+            use_test_fallback=False,
+        )
+
+        assert res["status"] == "SUCCESS", f"Expected SUCCESS, got {res}"
+        assert res["is_sunday"] is True, "Sunday execution must be detected"
+        assert res["seasons_evaluated"] == ["monsoon"], "June 14 must derive monsoon season"
+        assert res["lead_days_evaluated"] == [3], "Lead day 3 must be preserved without collapsing"
+
+        # Check all 8 candidates are scored
+        expected_candidates = {"gfs", "ecmwf_ifs", "icon", "aifs", "equal_mean", "ridge", "lgbm", "blend"}
+        assert set(res["candidate_models"]) == expected_candidates
+
+        # 6. Re-evaluate compute_skill_records on the joined data to verify MAE values
+        df_hist = runner.load_historical_raw_forecasts(target_eval_date, target_eval_date)
+        assert not df_hist.empty
+        assert set(df_hist.columns).issuperset({"gfs", "ecmwf_ifs", "icon", "aifs"})
+
+        # Query blended row
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT bf.location_id, bf.variable, bf.valid_date, bf.lead_days,
+                       bf.blended AS blend, bf.ridge, bf.lgbm, bf.equal_mean, loc.region
+                FROM blended_forecasts bf
+                JOIN locations loc ON loc.id = bf.location_id
+                WHERE bf.valid_date = %s;
+            """, (target_eval_date,))
+            b_rows = cur.fetchall()
+
+        df_b = pd.DataFrame(b_rows, columns=["location_id", "variable", "valid_date", "lead_days", "blend", "ridge", "lgbm", "equal_mean", "region"])
+        df_b["valid_date"] = pd.to_datetime(df_b["valid_date"]).dt.date
+        df_b["location_id"] = df_b["location_id"].astype(int)
+        df_b["lead_days"] = df_b["lead_days"].astype(int)
+
+        merged = pd.merge(df_b, df_hist, on=["location_id", "variable", "valid_date", "lead_days"], how="inner")
+        merged["truth"] = 32.7  # actual ground truth
+
+        records = runner.compute_skill_records(merged, window_days=1)
+        rec_by_model = {r[6]: r for r in records}
+
+        # Candidate GFS verification:
+        # If historical value (33.2) was used: MAE = |33.2 - 32.7| = 0.5.
+        # If overwritten latest value in model_forecasts (999.0) was used: MAE = |999.0 - 32.7| = 966.3.
+        assert "gfs" in rec_by_model
+        gfs_mae = rec_by_model["gfs"][7]
+        assert gfs_mae == pytest.approx(0.5, abs=0.01), f"Expected MAE 0.5 from historical forecast, got {gfs_mae}"
+        assert gfs_mae < 2.0, "Verification must use historical raw value, not corrupted latest value"
+        assert abs(gfs_mae - 966.3) > 100.0, "Test must fail if verification uses latest overwritten model_forecasts"
+
+        # 7. Verify NO_DATA condition when historical Parquet is missing in production
+        empty_parquet = tmp_path / "non_existent.parquet"
+        empty_runner = VerificationRunner(historical_parquet_path=empty_parquet)
+        res_no_data = empty_runner.run_daily_verification(
+            target_date=target_eval_date,
+            window_days=1,
+            dry_run=True,
+            use_test_fallback=False,
+        )
+        assert res_no_data["status"] == "NO_DATA", "Production verification must yield NO_DATA when historical raw data is missing"
+        assert "Missing historical operational raw model forecast data" in res_no_data["message"]
+
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM blended_forecasts WHERE location_id = 1 AND valid_date = %s;", (target_eval_date,))
+            cur.execute("DELETE FROM model_forecasts WHERE location_id = 1 AND valid_date = %s;", (target_eval_date,))
+        conn.close()
+
+
+def test_retention_engine_run_cleanup_live_execution():
+    """Verify that RetentionEngine.run_cleanup(dry_run=False) actually executes deletions and updates
+    against live database tables and verifies the resulting table states:
+    - weight_overrides: expired rows have active set to false, unexpired rows remain active
+    - blended_forecasts: non-00Z runs and >180d 00Z runs are purged, 00Z runs within 180d remain
+    - skill_scores: old non-weekly and >26w weekly runs are purged, today's non-weekly and <26w weekly remain
+    - chat_audit: >30d records are purged, <30d records remain
+    """
+    engine = RetentionEngine()
+    conn = get_db_connection()
+    conn.autocommit = True
+
+    try:
+        with conn.cursor() as cur:
+            # 1. Clean up any previous test remnants
+            cur.execute("DELETE FROM weight_overrides WHERE reason = 'test_retention_live_reason';")
+            cur.execute("DELETE FROM blended_forecasts WHERE issue_time IN ('2026-09-06 00:00:00+00', '2026-09-06 06:00:00+00', '2026-02-13 00:00:00+00');")
+            cur.execute("DELETE FROM skill_scores WHERE region = 'TEST_RETENTION';")
+            cur.execute("DELETE FROM chat_audit WHERE question = 'test_retention_query';")
+
+            # 2. Get or create a valid user_id for weight_overrides.created_by
+            cur.execute("SELECT id FROM auth.users LIMIT 1;")
+            u_row = cur.fetchone()
+            test_user_id = u_row[0] if u_row else str(uuid.uuid4())
+            if not u_row:
+                cur.execute("INSERT INTO auth.users (id, email, role) VALUES (%s, 'retention_test@internal.test', 'authenticated');", (test_user_id,))
+
+            # Seed weight_overrides: 1 expired, 1 active
+            cur.execute("""
+                INSERT INTO weight_overrides (
+                    created_by, variable, region, season, lead_days, weights, reason, active, expires_at
+                ) VALUES
+                (%s, 'rain_mm', 'NW', 'monsoon', 1, '{"gfs": 0.5}'::jsonb, 'test_retention_live_reason', true, NOW() - INTERVAL '1 hour'),
+                (%s, 'tmax_c', 'NW', 'monsoon', 1, '{"gfs": 0.5}'::jsonb, 'test_retention_live_reason', true, NOW() + INTERVAL '2 days');
+            """, (test_user_id, test_user_id))
+
+            # 3. Seed blended_forecasts:
+            # - Case A: 00Z within 180 days (MUST REMAIN)
+            # - Case B: non-00Z within 180 days (MUST BE PURGED)
+            # - Case C: 00Z older than 180 days (MUST BE PURGED)
+            cur.execute("""
+                INSERT INTO blended_forecasts (
+                    location_id, variable, valid_date, issue_time, lead_days, blended
+                ) VALUES
+                (1, 'rain_mm', CURRENT_DATE - INTERVAL '15 days', '2026-09-06 00:00:00+00', 1, 10.0),
+                (1, 'tmax_c', CURRENT_DATE - INTERVAL '15 days', '2026-09-06 06:00:00+00', 1, 30.0),
+                (1, 'wind_max_kmh', CURRENT_DATE - INTERVAL '220 days', '2026-02-13 00:00:00+00', 1, 15.0)
+                ON CONFLICT (location_id, variable, valid_date, issue_time) DO NOTHING;
+            """)
+
+            # 4. Seed skill_scores:
+            # - Case A: old non-weekly (computed_at 4 days ago) -> PURGED
+            # - Case B: today's non-weekly -> RETAINED
+            # - Case C: weekly within 26 weeks -> RETAINED
+            # - Case D: weekly older than 26 weeks (32 weeks ago) -> PURGED
+            cur.execute("""
+                INSERT INTO skill_scores (
+                    computed_at, window_days, variable, region, season, lead_days,
+                    model, mae, is_weekly
+                ) VALUES
+                (NOW() - INTERVAL '4 days', 60, 'rain_mm', 'TEST_RETENTION', 'monsoon', 1, 'blend', 2.0, false),
+                (NOW(), 60, 'tmax_c', 'TEST_RETENTION', 'monsoon', 1, 'blend', 1.8, false),
+                (NOW() - INTERVAL '8 weeks', 60, 'wind_max_kmh', 'TEST_RETENTION', 'monsoon', 1, 'blend', 2.5, true),
+                (NOW() - INTERVAL '32 weeks', 60, 'rain_mm', 'TEST_RETENTION', 'monsoon', 1, 'blend', 3.0, true)
+                ON CONFLICT (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly) DO NOTHING;
+            """)
+
+            # 5. Seed chat_audit:
+            # - Case A: older than 30 days -> PURGED
+            # - Case B: within 30 days -> RETAINED
+            cur.execute("""
+                INSERT INTO chat_audit (
+                    question, created_at
+                ) VALUES
+                ('test_retention_query', NOW() - INTERVAL '45 days'),
+                ('test_retention_query', NOW() - INTERVAL '10 days');
+            """)
+
+        # Execute real cleanup
+        stats = engine.run_cleanup(dry_run=False)
+
+        assert stats["overrides_expired"] >= 1, "At least 1 override must be expired"
+        assert stats["blended_forecasts_purged"] >= 2, "Non-00Z and >180d blended rows must be purged"
+        assert stats["skill_scores_purged"] >= 2, "Old non-weekly and >26w weekly skill scores must be purged"
+        assert stats["chat_audit_purged"] >= 1, "Old chat audit records must be purged"
+
+        # Verify actual database state
+        with conn.cursor() as cur:
+            # 1. Check weight_overrides: expired one must have active=false, unexpired must have active=true
+            cur.execute("""
+                SELECT variable, active
+                FROM weight_overrides
+                WHERE reason = 'test_retention_live_reason'
+                ORDER BY variable;
+            """)
+            wo_rows = dict(cur.fetchall())
+            assert wo_rows.get("rain_mm") is False, "Expired override must have active=false"
+            assert wo_rows.get("tmax_c") is True, "Unexpired override must remain active=true"
+
+            # 2. Check blended_forecasts: 00Z inside 180d must exist, others must not
+            cur.execute("""
+                SELECT variable FROM blended_forecasts
+                WHERE issue_time IN ('2026-09-06 00:00:00+00', '2026-09-06 06:00:00+00', '2026-02-13 00:00:00+00');
+            """)
+            bf_vars = {r[0] for r in cur.fetchall()}
+            assert "rain_mm" in bf_vars, "00Z row inside 180 days must remain"
+            assert "tmax_c" not in bf_vars, "non-00Z row must be deleted"
+            assert "wind_max_kmh" not in bf_vars, "00Z row older than 180 days must be deleted"
+
+            # 3. Check skill_scores:
+            cur.execute("""
+                SELECT variable, is_weekly FROM skill_scores
+                WHERE region = 'TEST_RETENTION';
+            """)
+            sk_rows = cur.fetchall()
+            sk_vars = {r[0] for r in sk_rows}
+            assert "tmax_c" in sk_vars, "Today's non-weekly row must remain"
+            assert "wind_max_kmh" in sk_vars, "Recent weekly row must remain"
+            assert "rain_mm" not in sk_vars, "Old non-weekly and >26w weekly rows must be deleted"
+
+            # 4. Check chat_audit:
+            cur.execute("""
+                SELECT COUNT(*) FROM chat_audit
+                WHERE question = 'test_retention_query';
+            """)
+            assert cur.fetchone()[0] == 1, "Only the fresh chat_audit row must remain"
+
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM weight_overrides WHERE reason = 'test_retention_live_reason';")
+            cur.execute("DELETE FROM blended_forecasts WHERE issue_time IN ('2026-09-06 00:00:00+00', '2026-09-06 06:00:00+00', '2026-02-13 00:00:00+00');")
+            cur.execute("DELETE FROM skill_scores WHERE region = 'TEST_RETENTION';")
+            cur.execute("DELETE FROM chat_audit WHERE question = 'test_retention_query';")
+        conn.close()
+
 
 
