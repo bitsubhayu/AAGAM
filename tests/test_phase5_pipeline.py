@@ -225,12 +225,11 @@ def test_required_storage_buckets_exist():
 # =====================================================================
 
 def test_retention_cleanup_execution():
-    """Verify that retention engine executes cleanup and records summary metrics."""
+    """Verify that retention engine executes cleanup and records summary metrics matching PRD rules."""
     engine = RetentionEngine()
     stats = engine.run_cleanup(dry_run=True)
     assert "overrides_expired" in stats
     assert "blended_forecasts_purged" in stats
-    assert "skill_scores_purged" in stats
     assert "chat_audit_purged" in stats
 
 

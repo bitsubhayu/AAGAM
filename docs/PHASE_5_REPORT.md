@@ -4,7 +4,7 @@
 **Problem Statement:** MoES / NCMRWF — SIH 2026 PS 26081  
 **Branch:** `phase-5/live-pipeline`  
 **Date:** September 21, 2026  
-**Status:** **APPROVED & VERIFIED** (Scheduled live cycle execution: **PENDING** cloud triggers)  
+**Status:** **Implementation complete; operational 3-cycle acceptance criterion pending.**  
 
 ---
 
@@ -107,18 +107,22 @@ Implementation: [`pipeline/models/registry.py`](file:///c:/Users/subha/OneDrive/
 
 ---
 
-## 5. Retention & Cleanup Engine
+## 5. Retention & Cleanup Engine (Authoritative PRD Alignment)
 
 Implementation: [`pipeline/maintenance/retention.py`](file:///c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/pipeline/maintenance/retention.py)
 
-1. **Forecast Retention (180 Days):**
-   - Blended and raw forecasts older than 180 days that are not 00Z runs are purged after being exported to nightly Parquet backups.
-2. **Skill Score Retention (365 Days):**
-   - Verification skill scores older than 365 days are archived to Parquet and purged.
+In strict accordance with authoritative `AAGAM_PRD.md` requirements:
+
+1. **`blended_forecasts` Retention (90 Days):**
+   - Blended forecast records older than 90 days (`valid_date < CURRENT_DATE - INTERVAL '90 days'`) are purged after being exported to nightly Parquet backups.
+2. **`chat_audit` Retention (30 Days):**
+   - Assistant conversation logs and user feedback older than 30 days (`created_at < NOW() - INTERVAL '30 days'`) are purged.
 3. **Weight Override Expiry:**
    - Overrides where `expires_at < NOW()` and `is_active = true` are automatically deactivated (`is_active = false`).
-4. **Chat Audit Retention (90 Days):**
-   - Chat assistant telemetry older than 90 days is purged.
+4. **Nightly Parquet Export:**
+   - Prior to deletion, operational data is preserved in the `backups` bucket organized by date.
+
+*(Note: Unsupported retention rules such as 180-day forecast retention or 365-day skill score retention have been removed to strictly adhere to the authoritative PRD).*
 
 ---
 
@@ -240,9 +244,9 @@ All checks passed!
 > [!IMPORTANT]
 > **Operational 3-Cycle Criterion Status:** **PENDING**
 > 
-> In accordance with instructions: *"Do not claim 'three consecutive scheduled cycles' unless they actually occurred. If GitHub scheduled cycles are not yet observable, explicitly mark the operational 3-cycle criterion as PENDING rather than inventing success."*
+> **Status Summary:** Implementation complete; operational 3-cycle acceptance criterion pending.
 > 
-> The GitHub Actions cron schedules have been defined and validated. The live recurring execution over 3 consecutive scheduled cycles will trigger upon push of `phase-5/live-pipeline` to GitHub.
+> Three consecutive scheduled cycles on GitHub Actions have not yet been observed. The GitHub Actions workflows and exact non-round cron schedules have been defined, validated, and tested locally via manual dry-runs. The live recurring execution over 3 consecutive scheduled cycles will trigger upon push of `phase-5/live-pipeline` to GitHub. No scheduled-cycle results are fabricated.
 
 ---
 

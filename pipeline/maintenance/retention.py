@@ -1,12 +1,11 @@
 """AAGAM — Database Retention and Nightly Backup Engine (PRD §11).
 
-Implements:
-1. Expiring weight overrides past their expires_at date.
-2. Cleaning blended forecasts older than 180 days (storing only 00Z runs).
-3. Purging non-weekly skill scores older than today, and weekly scores older than 26 weeks.
-4. Purging chat audits older than 30 days.
-5. Nightly export of key tables to Parquet and upload to Supabase storage `backups` bucket.
-6. Telemetry logging to `pipeline_runs`.
+Implements authoritative PRD retention rules:
+1. Expiring weight overrides past their expires_at date (is_active = false).
+2. Purging blended forecasts older than 90 days.
+3. Purging chat audit records older than 30 days.
+4. Nightly export of key tables to Parquet and upload to Supabase storage `backups` bucket.
+5. Telemetry logging to `pipeline_runs`.
 """
 
 from __future__ import annotations
@@ -75,52 +74,31 @@ class RetentionEngine:
             conn.close()
 
     def run_cleanup(self, dry_run: bool = False) -> Dict[str, int]:
-        """Applies all PRD §11 retention policies to database tables."""
+        """Applies authoritative PRD retention policies to database tables."""
         started_at = datetime.now(timezone.utc)
         conn = self.get_connection()
         stats: Dict[str, int] = {}
 
         try:
             with conn.cursor() as cur:
-                # 1. Expire weight overrides
+                # 1. Expire weight overrides past expires_at
                 stats["overrides_expired"] = self.expire_weight_overrides(dry_run=dry_run)
 
-                # 2. blended_forecasts: keep 180 days, storing only 00Z runs
-                # Purge non-00Z runs older than 180 days
+                # 2. blended_forecasts: retain 90 days (PRD §11)
                 if dry_run:
                     cur.execute("""
                         SELECT COUNT(*) FROM blended_forecasts
-                        WHERE valid_date < CURRENT_DATE - INTERVAL '180 days'
-                          AND EXTRACT(HOUR FROM issue_time) != 0;
+                        WHERE valid_date < CURRENT_DATE - INTERVAL '90 days';
                     """)
                     stats["blended_forecasts_purged"] = cur.fetchone()[0]
                 else:
                     cur.execute("""
                         DELETE FROM blended_forecasts
-                        WHERE valid_date < CURRENT_DATE - INTERVAL '180 days'
-                          AND EXTRACT(HOUR FROM issue_time) != 0;
+                        WHERE valid_date < CURRENT_DATE - INTERVAL '90 days';
                     """)
                     stats["blended_forecasts_purged"] = cur.rowcount
 
-                # 3. skill_scores:
-                # delete is_weekly = false with computed_at before today
-                # delete is_weekly = true older than 26 weeks
-                if dry_run:
-                    cur.execute("""
-                        SELECT COUNT(*) FROM skill_scores
-                        WHERE (is_weekly = false AND computed_at < CURRENT_DATE)
-                           OR (is_weekly = true AND computed_at < NOW() - INTERVAL '26 weeks');
-                    """)
-                    stats["skill_scores_purged"] = cur.fetchone()[0]
-                else:
-                    cur.execute("""
-                        DELETE FROM skill_scores
-                        WHERE (is_weekly = false AND computed_at < CURRENT_DATE)
-                           OR (is_weekly = true AND computed_at < NOW() - INTERVAL '26 weeks');
-                    """)
-                    stats["skill_scores_purged"] = cur.rowcount
-
-                # 4. chat_audit: delete older than 30 days
+                # 3. chat_audit: retain 30 days (PRD §6.8, §11)
                 if dry_run:
                     cur.execute("""
                         SELECT COUNT(*) FROM chat_audit
