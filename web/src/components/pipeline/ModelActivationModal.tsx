@@ -16,7 +16,7 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
   onClose,
   currentActiveVersionId,
 }) => {
-  const [targetId, setTargetId] = useState<number>(currentActiveVersionId || 2);
+  const [targetId, setTargetId] = useState<number>(currentActiveVersionId ?? 1);
   const activateMutation = useActivateModel();
 
   const handleActivate = async () => {

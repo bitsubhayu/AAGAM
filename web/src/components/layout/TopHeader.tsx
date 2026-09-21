@@ -49,7 +49,7 @@ export const TopHeader: React.FC = () => {
 
   const activeVersionStr = meta?.active_model_version?.id
     ? `v${meta.active_model_version.id}`
-    : "v2026-09-14";
+    : (meta ? "v1" : "...");
 
   return (
     <header className="border-b border-border bg-surface px-4 py-2.5 flex items-center justify-between gap-4 sticky top-0 z-40">

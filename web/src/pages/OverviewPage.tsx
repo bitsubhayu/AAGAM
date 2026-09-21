@@ -32,7 +32,7 @@ export const OverviewPage: React.FC = () => {
   });
 
   const { data: meta, isLoading: metaLoading } = useMeta();
-  const { data: skillData } = useSkill({
+  const { data: skillData, isLoading: skillLoading } = useSkill({
     variable: selectedVariable,
     windowDays: 90,
   });
@@ -48,11 +48,45 @@ export const OverviewPage: React.FC = () => {
     (s) => s.model === "equal_mean" && s.lead_days === selectedLeadDays
   );
 
-  let skillGainText = "+12.4% vs Equal-Mean";
+  let skillGainText = skillLoading ? "..." : "—";
   if (blendScore?.mae && baselineScore?.mae && baselineScore.mae > 0) {
     const gain = ((baselineScore.mae - blendScore.mae) / baselineScore.mae) * 100;
     skillGainText = `${gain >= 0 ? "+" : ""}${gain.toFixed(1)}% vs Equal-Mean`;
+  } else if (!skillLoading && (!blendScore?.mae || !baselineScore?.mae)) {
+    skillGainText = "N/A";
   }
+
+  // Determine top/dominant single model for this lead day
+  const singleScores =
+    skillData?.scores?.filter(
+      (s) =>
+        s.lead_days === selectedLeadDays &&
+        s.model !== "blend" &&
+        s.model !== "equal_mean" &&
+        s.mae !== null &&
+        s.mae !== undefined
+    ) || [];
+
+  const bestSingle =
+    singleScores.length > 0
+      ? singleScores.reduce((prev, curr) => (prev.mae! < curr.mae! ? prev : curr))
+      : null;
+
+  const modelLabels: Record<string, { name: string; res: string; colorClass: string }> = {
+    gfs: { name: "GFS", res: "0.25°", colorClass: "text-model-gfs" },
+    ecmwf_ifs: { name: "ECMWF IFS", res: "0.25°", colorClass: "text-model-ifs" },
+    icon: { name: "DWD ICON", res: "0.125°", colorClass: "text-model-icon" },
+    aifs: { name: "ECMWF AIFS", res: "0.25°", colorClass: "text-model-aifs" },
+  };
+
+  const topModelInfo =
+    bestSingle?.model && modelLabels[bestSingle.model]
+      ? modelLabels[bestSingle.model]
+      : {
+          name: bestSingle?.model?.toUpperCase() || (skillLoading ? "..." : "—"),
+          res: "NWP",
+          colorClass: "text-text-primary",
+        };
 
   return (
     <div className="space-y-4 font-sans">
@@ -84,16 +118,20 @@ export const OverviewPage: React.FC = () => {
         {/* KPI 2: Dominant / Best Model */}
         <Card compact className="border-l-4 border-l-brand-blue">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">Dominant Model (Week)</span>
+            <span className="text-xs font-medium text-text-muted">Dominant Model (Lead)</span>
             <Award className="w-4 h-4 text-brand-blue" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-model-ifs">ECMWF IFS</span>
-            <span className="text-xs text-text-muted">0.25°</span>
+            <span className={`text-2xl font-bold font-mono ${topModelInfo.colorClass}`}>
+              {topModelInfo.name}
+            </span>
+            <span className="text-xs text-text-muted">{topModelInfo.res}</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
             <span>Lead D+{selectedLeadDays} ({varMeta.shortUnit})</span>
-            <span className="text-emerald-400 font-mono">Top skill</span>
+            <span className="text-emerald-400 font-mono">
+              {bestSingle?.mae ? `${bestSingle.mae.toFixed(2)} MAE` : "Top skill"}
+            </span>
           </div>
         </Card>
 
@@ -127,14 +165,20 @@ export const OverviewPage: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold font-mono text-text-primary">
-              {metaLoading ? "..." : meta?.active_model_version?.id ? `v${meta.active_model_version.id}` : "v2026-09-14"}
+              {metaLoading
+                ? "..."
+                : meta?.active_model_version?.id
+                ? `v${meta.active_model_version.id}`
+                : "v1"}
             </span>
             <span className="text-xs px-1.5 py-0.2 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/40 font-mono">
               ACTIVE
             </span>
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
-            <span>4/4 Model Feeds OK</span>
+            <span>
+              {meta?.models ? `${meta.models.length}/${meta.models.length} Model Feeds OK` : "Feeds Active"}
+            </span>
             <button
               onClick={() => setActiveTab("pipeline")}
               className="text-brand-blue hover:underline font-medium"

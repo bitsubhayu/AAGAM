@@ -24,6 +24,7 @@ export const PipelineHealthPage: React.FC = () => {
   const runs = pipeline?.last_runs || [];
 
   const successfulRuns = runs.filter((r) => r.status?.toLowerCase() === "success").length;
+  const totalEstCalls = runs.reduce((acc, r) => acc + (r.api_calls_est ?? 0), 0);
 
   return (
     <div className="space-y-4 font-sans">
@@ -65,12 +66,12 @@ export const PipelineHealthPage: React.FC = () => {
           <span className="text-[11px] font-medium text-text-muted">Active Model Version</span>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-xl font-bold font-mono text-brand-blue">
-              {activeVer?.id ? `v${activeVer.id}` : "v2026-09-14"}
+              {isLoading ? "..." : activeVer?.id ? `v${activeVer.id}` : "v1"}
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono">100% REGULARIZED</span>
+            <span className="text-[10px] text-emerald-400 font-mono">REGULARIZED</span>
           </div>
           <p className="text-[10px] text-text-muted mt-1 truncate font-mono">
-            {activeVer?.storage_path || "models/20260914/ridge.joblib"}
+            {activeVer?.storage_path || "Active production weights"}
           </p>
         </Card>
 
@@ -78,20 +79,30 @@ export const PipelineHealthPage: React.FC = () => {
           <span className="text-[11px] font-medium text-text-muted">Pipeline Success Rate</span>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-xl font-bold font-mono text-emerald-400">
-              {runs.length > 0 ? Math.round((successfulRuns / runs.length) * 100) : 100}%
+              {runs.length > 0 ? `${Math.round((successfulRuns / runs.length) * 100)}%` : "—"}
             </span>
-            <span className="text-[10px] text-text-muted">({successfulRuns}/{runs.length} cycles)</span>
+            <span className="text-[10px] text-text-muted">
+              {runs.length > 0 ? `(${successfulRuns}/${runs.length} cycles)` : "No recorded cycles"}
+            </span>
           </div>
-          <p className="text-[10px] text-text-muted mt-1">Zero dropped blending cycles</p>
+          <p className="text-[10px] text-text-muted mt-1">
+            {runs.length > 0 && successfulRuns === runs.length
+              ? "Zero dropped blending cycles"
+              : "Operational cycle monitoring"}
+          </p>
         </Card>
 
         <Card compact>
           <span className="text-[11px] font-medium text-text-muted">Est. Daily API Calls</span>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-xl font-bold font-mono text-text-primary">
-              ~640 / 10,000
+              {totalEstCalls > 0 ? `${Math.round(totalEstCalls)} / 10,000` : "— / 10,000"}
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono">6.4% of cap</span>
+            <span className="text-[10px] text-emerald-400 font-mono">
+              {totalEstCalls > 0
+                ? `${((totalEstCalls / 10000) * 100).toFixed(1)}% of cap`
+                : "Free tier cap"}
+            </span>
           </div>
           <p className="text-[10px] text-text-muted mt-1">Open-Meteo non-commercial quota</p>
         </Card>
