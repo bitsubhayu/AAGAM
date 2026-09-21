@@ -239,14 +239,34 @@ All checks passed!
 
 ---
 
-## 11. Operational Schedule Criterion Status
+## 11. Operational Schedule Criterion Status & Observation Audit
 
 > [!IMPORTANT]
 > **Operational 3-Cycle Criterion Status:** **PENDING**
 > 
 > **Status Summary:** Implementation complete; operational 3-cycle acceptance criterion pending.
-> 
-> Three consecutive scheduled cycles on GitHub Actions have not yet been observed. The GitHub Actions workflows and exact non-round cron schedules have been defined, validated, and tested locally via manual dry-runs. The live recurring execution over 3 consecutive scheduled cycles will trigger upon push of `phase-5/live-pipeline` to GitHub. No scheduled-cycle results are fabricated.
+
+### 11.1 Cloud Execution Observation Audit
+As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supabase `pipeline_runs` and GitHub Actions workflows was performed:
+
+| Scheduled Workflow | Authoritative Cron Schedule | Next Scheduled Slot (UTC / IST) | Observed Cloud Runs | Status |
+|--------------------|----------------------------|---------------------------------|---------------------|--------|
+| `ingest-blend.yml` | `17 0,6,12,18 * * *` | 18:17 UTC (23:47 IST) | 0 | **PENDING** |
+| `verify-daily.yml` | `23 3 * * *` | 03:23 UTC (08:53 IST) | 0 | **PENDING** |
+| `train-weekly.yml` | `47 2 * * 0` | Sun 02:47 UTC (08:17 IST) | 0 | **PENDING** |
+| `backup-nightly.yml`| `41 3 * * *` | 03:41 UTC (09:11 IST) | 0 | **PENDING** |
+
+### 11.2 Acceptance Criteria Evaluation:
+1. **Zero Cloud Run Fabrication:** In strict adherence to the project guidelines, no scheduled cycle results have been fabricated.
+2. **Local vs Cloud Telemetry Disambiguation:** While local CLI executions (`python -m pipeline ingest-live --dry-run`, `verify --dry-run`, etc.) and automated test runs logged `SUCCESS` in `pipeline_runs`, these are strictly designated as test telemetry and are **not** counted toward the 3 scheduled cloud execution criterion.
+3. **Trigger Dependency:** Scheduled workflows run exclusively within GitHub Actions cloud runners after `phase-5/live-pipeline` is pushed to GitHub.
+4. **Conclusion:** Because fewer than 3 consecutive scheduled cloud cycles have elapsed, Phase 5 acceptance remains explicitly **PENDING**.
+
+| Scheduled Cycle # | Scheduled Target | Actual Cloud Run | Telemetry ID | Rows Written | Fresh Forecasts | Alerts Generated | Cycle Status |
+|---|---|---|---|---|---|---|---|
+| **Cycle 1** | `17 0,6,12,18 * * *` | None | N/A | N/A | N/A | N/A | **PENDING** |
+| **Cycle 2** | `17 0,6,12,18 * * *` | None | N/A | N/A | N/A | N/A | **PENDING** |
+| **Cycle 3** | `17 0,6,12,18 * * *` | None | N/A | N/A | N/A | N/A | **PENDING** |
 
 ---
 
@@ -265,6 +285,7 @@ All checks passed!
 ## 13. Git & Working Tree Status
 
 - **Branch:** `phase-5/live-pipeline`
-- **Git Commit:** `d26c551`
-- **Commit Message:** `feat(phase-5): implement live pipeline database scheduler and registry`
+- **Latest Commits:**
+  - `9efe91c`: `fix(phase-5): align retention policies with PRD and set pending acceptance status`
+  - `2230787`: `feat(phase-5): implement live pipeline database scheduler and registry`
 - **Working Tree:** Clean.
