@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from api.app.auth.dependencies import CurrentUser, require_role
 from api.app.db.locations import get_locations_with_coords
-from api.app.db.model_versions import get_active_model_version_cached
+from api.app.db.model_versions import (
+    get_active_model_version_cached,
+    get_region_weights_cached,
+)
 from api.app.db.pool import get_db_conn
 from core.config import settings
 from core.schemas import ForecastLocationInfo, ForecastResponse, ForecastSeriesItem
@@ -86,117 +89,97 @@ async def get_forecast(
     model_version_str = active_version.get("version_str", "v2026-09-21")
     active_ver_id = active_version.get("id", 2)
 
-    # 1. Query blended_forecasts
-    blend_rows = await conn.fetch(
-        """
-        SELECT valid_date, lead_days, blended, ridge, lgbm, equal_mean, spread,
-               models_over_threshold, degraded, issue_time
-        FROM blended_forecasts
-        WHERE location_id = $1 AND variable = $2
-        ORDER BY valid_date ASC
-        """,
-        target_loc_id,
-        variable,
-    )
-
-    # 2. Query model_forecasts
-    model_rows = await conn.fetch(
-        """
-        SELECT valid_date, lead_days, model, value, issue_time
-        FROM model_forecasts
-        WHERE location_id = $1 AND variable = $2
-        ORDER BY valid_date ASC, model ASC
-        """,
-        target_loc_id,
-        variable,
-    )
-
-    # Group model predictions by valid_date
-    models_by_date: Dict[str, Dict[str, Optional[float]]] = defaultdict(dict)
-    model_lead_map: Dict[str, int] = {}
-    latest_issue: Optional[datetime] = None
-
-    for m in model_rows:
-        v_date = m["valid_date"].isoformat()
-        m_name = m["model"]
-        models_by_date[v_date][m_name] = round(float(m["value"]), 2) if m["value"] is not None else None
-        model_lead_map[v_date] = m["lead_days"]
-        if m["issue_time"]:
-            if latest_issue is None or m["issue_time"] > latest_issue:
-                latest_issue = m["issue_time"]
+    # Single unified CTE query combining blended_forecasts and model_forecasts (1 round trip)
+    query_forecast = """
+        WITH blend_data AS (
+            SELECT valid_date, lead_days, blended, spread, models_over_threshold, degraded, issue_time
+            FROM blended_forecasts
+            WHERE location_id = $1 AND variable = $2
+        ),
+        model_data AS (
+            SELECT valid_date, lead_days, model, value, issue_time
+            FROM model_forecasts
+            WHERE location_id = $1 AND variable = $2
+        )
+        SELECT
+            COALESCE(b.valid_date, m.valid_date) AS valid_date,
+            COALESCE(b.lead_days, m.lead_days) AS lead_days,
+            b.blended,
+            b.spread,
+            b.models_over_threshold,
+            b.degraded,
+            COALESCE(b.issue_time, m.issue_time) AS issue_time,
+            m.models_json
+        FROM blend_data b
+        FULL OUTER JOIN (
+            SELECT
+                valid_date,
+                lead_days,
+                MAX(issue_time) AS issue_time,
+                jsonb_object_agg(model, round(value::numeric, 2)) AS models_json
+            FROM model_data
+            GROUP BY valid_date, lead_days
+        ) m ON b.valid_date = m.valid_date
+        ORDER BY valid_date ASC;
+    """
+    rows = await conn.fetch(query_forecast, target_loc_id, variable)
 
     series_items: List[ForecastSeriesItem] = []
     is_degraded = False
+    latest_issue: Optional[datetime] = None
 
-    if blend_rows:
-        for b in blend_rows:
-            v_date = b["valid_date"].isoformat()
-            lead = b["lead_days"]
-            b_val = round(float(b["blended"]), 2) if b["blended"] is not None else None
-            spread_val = round(float(b["spread"]), 2) if b["spread"] is not None else None
-            m_dict = models_by_date.get(v_date, {})
-            if b["degraded"]:
-                is_degraded = True
-            if b["issue_time"]:
-                if latest_issue is None or b["issue_time"] > latest_issue:
-                    latest_issue = b["issue_time"]
+    # Load regional weights from TTL cache for dynamic blend fallback if needed (0 SQL round trips on warm requests)
+    region = loc_match.get("region", "CENTRAL")
+    weight_map = await get_region_weights_cached(conn, active_ver_id, variable, region)
 
-            series_items.append(
-                ForecastSeriesItem(
-                    valid_date=v_date,
-                    lead_days=lead,
-                    blended=b_val,
-                    models=m_dict,
-                    spread=spread_val,
-                    models_over_threshold=b["models_over_threshold"] or 0,
-                )
-            )
-    elif model_rows:
-        # If blended_forecasts is empty, compute blend dynamically using active weights
-        region = loc_match.get("region", "CENTRAL")
-        weights_rows = await conn.fetch(
-            """
-            SELECT lead_days, model, weight
-            FROM weights
-            WHERE version_id = $1 AND variable = $2 AND region = $3
-            """,
-            active_ver_id,
-            variable,
-            region,
-        )
-        weight_map: Dict[int, Dict[str, float]] = defaultdict(dict)
-        for w in weights_rows:
-            weight_map[w["lead_days"]][w["model"]] = float(w["weight"])
+    for r in rows:
+        v_date = r["valid_date"].isoformat() if r["valid_date"] else ""
+        lead = r["lead_days"] or 1
+        raw_models = r["models_json"]
+        m_dict: Dict[str, Optional[float]] = {}
+        if raw_models:
+            if isinstance(raw_models, str):
+                m_dict = json.loads(raw_models)
+            else:
+                m_dict = raw_models
 
-        for v_date in sorted(models_by_date.keys()):
-            m_dict = models_by_date[v_date]
-            lead = model_lead_map.get(v_date, 1)
+        if r["issue_time"] and (latest_issue is None or r["issue_time"] > latest_issue):
+            latest_issue = r["issue_time"]
+        if r["degraded"]:
+            is_degraded = True
 
-            # Compute blend from weights or equal mean
+        b_val = round(float(r["blended"]), 2) if r["blended"] is not None else None
+        spread_val = round(float(r["spread"]), 2) if r["spread"] is not None else None
+
+        if b_val is None and m_dict:
+            # Dynamic blend calculation from models
             vals = [v for v in m_dict.values() if v is not None]
             w_dict = weight_map.get(lead, {})
-
             if vals and w_dict and all(m in w_dict for m in m_dict if m_dict[m] is not None):
                 blended_calc = sum(w_dict[m] * m_dict[m] for m in m_dict if m_dict[m] is not None)
             elif vals:
                 blended_calc = float(np.mean(vals))
             else:
                 blended_calc = None
+            b_val = round(blended_calc, 2) if blended_calc is not None else None
+            spread_val = round(float(np.ptp(vals)), 2) if len(vals) > 1 else 0.0
 
-            spread_calc = float(np.ptp(vals)) if len(vals) > 1 else 0.0
-
-            series_items.append(
-                ForecastSeriesItem(
-                    valid_date=v_date,
-                    lead_days=lead,
-                    blended=round(blended_calc, 2) if blended_calc is not None else None,
-                    models=m_dict,
-                    spread=round(spread_calc, 2),
-                    models_over_threshold=0,
-                )
+        series_items.append(
+            ForecastSeriesItem(
+                valid_date=v_date,
+                lead_days=lead,
+                blended=b_val,
+                models=m_dict,
+                spread=spread_val,
+                models_over_threshold=r["models_over_threshold"] or 0,
             )
+        )
 
-    issue_time_str = latest_issue.strftime("%Y-%m-%dT%H:%M:%SZ") if latest_issue else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue_time_str = (
+        latest_issue.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if latest_issue
+        else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
 
     return ForecastResponse(
         location=ForecastLocationInfo(

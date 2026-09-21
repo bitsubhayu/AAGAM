@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import asyncpg
 
@@ -54,8 +54,153 @@ async def get_active_model_version_cached(conn: Optional[asyncpg.Connection] = N
     }
 
 
+_DOMINANT_WEIGHTS_CACHE: Dict[str, Tuple[float, Dict[str, str]]] = {}
+_REGION_WEIGHTS_CACHE: Dict[str, Tuple[float, Dict[int, Dict[str, float]]]] = {}
+
+
+async def get_dominant_weights_cached(
+    conn: asyncpg.Connection,
+    version_id: int,
+    variable: str,
+    lead_days: int,
+) -> Dict[str, str]:
+    """Retrieves dominant model per region for (version, variable, lead_days) with 60s TTL cache."""
+    global _DOMINANT_WEIGHTS_CACHE
+    now = time.time()
+    cache_key = f"{version_id}:{variable}:{lead_days}"
+    if cache_key in _DOMINANT_WEIGHTS_CACHE:
+        cache_time, cached_val = _DOMINANT_WEIGHTS_CACHE[cache_key]
+        if (now - cache_time) < 60.0:
+            return cached_val
+
+    dominant_by_region: Dict[str, str] = {}
+    try:
+        weight_rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (region) region, model, weight
+            FROM weights
+            WHERE version_id = $1 AND variable = $2 AND lead_days = $3
+            ORDER BY region, weight DESC
+            """,
+            version_id,
+            variable,
+            lead_days,
+        )
+        for w in weight_rows:
+            dominant_by_region[w["region"]] = w["model"]
+        _DOMINANT_WEIGHTS_CACHE[cache_key] = (now, dominant_by_region)
+    except Exception as e:
+        logger.warning(f"Error querying dominant weights: {e}")
+    return dominant_by_region
+
+
+async def get_region_weights_cached(
+    conn: asyncpg.Connection,
+    version_id: int,
+    variable: str,
+    region: str,
+) -> Dict[int, Dict[str, float]]:
+    """Retrieves regional weights by lead_days and model with 60s TTL cache."""
+    global _REGION_WEIGHTS_CACHE
+    now = time.time()
+    cache_key = f"{version_id}:{variable}:{region}"
+    if cache_key in _REGION_WEIGHTS_CACHE:
+        cache_time, cached_val = _REGION_WEIGHTS_CACHE[cache_key]
+        if (now - cache_time) < 60.0:
+            return cached_val
+
+    weight_map: Dict[int, Dict[str, float]] = {}
+    try:
+        weights_rows = await conn.fetch(
+            """
+            SELECT lead_days, model, weight
+            FROM weights
+            WHERE version_id = $1 AND variable = $2 AND region = $3
+            """,
+            version_id,
+            variable,
+            region,
+        )
+        for w in weights_rows:
+            lead = w["lead_days"]
+            if lead not in weight_map:
+                weight_map[lead] = {}
+            weight_map[lead][w["model"]] = float(w["weight"])
+        _REGION_WEIGHTS_CACHE[cache_key] = (now, weight_map)
+    except Exception as e:
+        logger.warning(f"Error querying regional weights: {e}")
+    return weight_map
+
+
+_WEIGHTS_ITEMS_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+
+
+async def get_weights_matrix_cached(
+    conn: asyncpg.Connection,
+    version_id: int,
+    variable: Optional[str] = None,
+    region: Optional[str] = None,
+    season: Optional[str] = None,
+    lead_days: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Retrieves weights rows with a 60s in-memory TTL cache for immutable active version weights."""
+    global _WEIGHTS_ITEMS_CACHE
+    now = time.time()
+    cache_key = f"{version_id}:{variable}:{region}:{season}:{lead_days}"
+    if cache_key in _WEIGHTS_ITEMS_CACHE:
+        cache_time, cached_val = _WEIGHTS_ITEMS_CACHE[cache_key]
+        if (now - cache_time) < 60.0:
+            return cached_val
+
+    query = """
+        SELECT variable, region, season, lead_days, model, weight, method, n_samples, fallback_level
+        FROM weights
+        WHERE version_id = $1
+    """
+    params: List[Any] = [version_id]
+    idx = 2
+    if variable:
+        query += f" AND variable = ${idx}"
+        params.append(variable)
+        idx += 1
+    if region:
+        query += f" AND region = ${idx}"
+        params.append(region)
+        idx += 1
+    if season:
+        query += f" AND season = ${idx}"
+        params.append(season)
+        idx += 1
+    if lead_days:
+        query += f" AND lead_days = ${idx}"
+        params.append(lead_days)
+        idx += 1
+    query += " ORDER BY variable, region, season, lead_days, weight DESC"
+
+    rows = await conn.fetch(query, *params)
+    serialized = [
+        {
+            "variable": r["variable"],
+            "region": r["region"],
+            "season": r["season"],
+            "lead_days": r["lead_days"],
+            "model": r["model"],
+            "weight": round(float(r["weight"]), 4),
+            "method": r["method"],
+            "n_samples": r["n_samples"],
+            "fallback_level": r["fallback_level"],
+        }
+        for r in rows
+    ]
+    _WEIGHTS_ITEMS_CACHE[cache_key] = (now, serialized)
+    return serialized
+
+
 def invalidate_model_version_cache() -> None:
-    """Invalidates the active model version cache (called after activation or rollback)."""
-    global _ACTIVE_VERSION_CACHE, _ACTIVE_VERSION_TIME
+    """Invalidates the active model version and weights cache (called after activation or rollback)."""
+    global _ACTIVE_VERSION_CACHE, _ACTIVE_VERSION_TIME, _DOMINANT_WEIGHTS_CACHE, _REGION_WEIGHTS_CACHE, _WEIGHTS_ITEMS_CACHE
     _ACTIVE_VERSION_CACHE = None
     _ACTIVE_VERSION_TIME = 0.0
+    _DOMINANT_WEIGHTS_CACHE.clear()
+    _REGION_WEIGHTS_CACHE.clear()
+    _WEIGHTS_ITEMS_CACHE.clear()

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import asyncpg
-import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from api.app.auth.dependencies import CurrentUser, require_role
 from api.app.db.locations import get_locations_with_coords
-from api.app.db.model_versions import get_active_model_version_cached
+from api.app.db.model_versions import (
+    get_active_model_version_cached,
+    get_dominant_weights_cached,
+)
 from api.app.db.pool import get_db_conn
 from core.config import settings
 from core.schemas import MapPointItem, MapResponse
@@ -57,78 +58,55 @@ async def get_map_data(
     active_version = await get_active_model_version_cached(conn)
     active_ver_id = active_version.get("id", 2)
 
-    # Fetch dominant model per region
-    dominant_by_region: Dict[str, str] = {}
-    try:
-        weight_rows = await conn.fetch(
-            """
-            SELECT DISTINCT ON (region) region, model, weight
-            FROM weights
-            WHERE version_id = $1 AND variable = $2 AND lead_days = $3
-            ORDER BY region, weight DESC
-            """,
-            active_ver_id,
-            variable,
-            lead_days,
-        )
-        for w in weight_rows:
-            dominant_by_region[w["region"]] = w["model"]
-    except Exception as e:
-        logger.warning(f"Error querying dominant weights: {e}")
+    # 1. Fetch dominant model per region from 60s in-memory TTL cache (0 SQL round trips on warm requests)
+    dominant_by_region = await get_dominant_weights_cached(conn, active_ver_id, variable, lead_days)
 
-    # Query blended_forecasts for the lead
-    blend_rows = await conn.fetch(
-        """
-        SELECT location_id, valid_date, issue_time, blended, spread, degraded
-        FROM blended_forecasts
-        WHERE variable = $1 AND lead_days = $2
-        """,
-        variable,
-        lead_days,
-    )
+    # 2. Unified single SQL query combining blended_forecasts with model_forecasts fallback (1 round trip)
+    query_map = """
+        WITH blend_pts AS (
+            SELECT location_id, valid_date, issue_time, blended, spread, degraded
+            FROM blended_forecasts
+            WHERE variable = $1 AND lead_days = $2
+        ),
+        model_pts AS (
+            SELECT
+                location_id,
+                MAX(valid_date) AS valid_date,
+                MAX(issue_time) AS issue_time,
+                round(AVG(value)::numeric, 2) AS blended,
+                round((MAX(value) - MIN(value))::numeric, 2) AS spread,
+                false AS degraded
+            FROM model_forecasts
+            WHERE variable = $1 AND lead_days = $2
+            GROUP BY location_id
+        )
+        SELECT
+            COALESCE(b.location_id, m.location_id) AS location_id,
+            COALESCE(b.valid_date, m.valid_date) AS valid_date,
+            COALESCE(b.issue_time, m.issue_time) AS issue_time,
+            COALESCE(b.blended, m.blended) AS blended,
+            COALESCE(b.spread, m.spread) AS spread,
+            COALESCE(b.degraded, m.degraded) AS degraded
+        FROM blend_pts b
+        FULL OUTER JOIN model_pts m ON b.location_id = m.location_id;
+    """
+    rows = await conn.fetch(query_map, variable, lead_days)
+
     blend_map: Dict[int, Dict[str, Any]] = {}
     valid_date_str = ""
     latest_issue: Optional[datetime] = None
 
-    for b in blend_rows:
-        blend_map[b["location_id"]] = {
-            "blended": round(float(b["blended"]), 2) if b["blended"] is not None else None,
-            "spread": round(float(b["spread"]), 2) if b["spread"] is not None else None,
-            "degraded": bool(b["degraded"]),
+    for r in rows:
+        loc_id = r["location_id"]
+        blend_map[loc_id] = {
+            "blended": round(float(r["blended"]), 2) if r["blended"] is not None else None,
+            "spread": round(float(r["spread"]), 2) if r["spread"] is not None else None,
+            "degraded": bool(r["degraded"]),
         }
-        if b["valid_date"]:
-            valid_date_str = b["valid_date"].isoformat()
-        if b["issue_time"] and (latest_issue is None or b["issue_time"] > latest_issue):
-            latest_issue = b["issue_time"]
-
-    # Fallback to model_forecasts if blended_forecasts is empty
-    if not blend_map:
-        model_rows = await conn.fetch(
-            """
-            SELECT location_id, valid_date, issue_time, model, value
-            FROM model_forecasts
-            WHERE variable = $1 AND lead_days = $2
-            """,
-            variable,
-            lead_days,
-        )
-        models_by_loc: Dict[int, Dict[str, float]] = defaultdict(dict)
-        for m in model_rows:
-            models_by_loc[m["location_id"]][m["model"]] = float(m["value"])
-            if m["valid_date"] and not valid_date_str:
-                valid_date_str = m["valid_date"].isoformat()
-            if m["issue_time"] and (latest_issue is None or m["issue_time"] > latest_issue):
-                latest_issue = m["issue_time"]
-
-        for loc_id, m_dict in models_by_loc.items():
-            vals = list(m_dict.values())
-            b_val = float(np.mean(vals)) if vals else None
-            s_val = float(np.ptp(vals)) if len(vals) > 1 else 0.0
-            blend_map[loc_id] = {
-                "blended": round(b_val, 2) if b_val is not None else None,
-                "spread": round(s_val, 2),
-                "degraded": False,
-            }
+        if r["valid_date"] and not valid_date_str:
+            valid_date_str = r["valid_date"].isoformat()
+        if r["issue_time"] and (latest_issue is None or r["issue_time"] > latest_issue):
+            latest_issue = r["issue_time"]
 
     points: List[MapPointItem] = []
     for loc in locations:
@@ -152,7 +130,11 @@ async def get_map_data(
             )
         )
 
-    issue_time_str = latest_issue.strftime("%Y-%m-%dT%H:%M:%SZ") if latest_issue else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue_time_str = (
+        latest_issue.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if latest_issue
+        else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
     if not valid_date_str:
         valid_date_str = datetime.now(timezone.utc).date().isoformat()
 

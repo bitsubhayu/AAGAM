@@ -178,3 +178,66 @@ tests\test_training_dataset.py .                                         [100%]
    Phase 5 remains frozen. Its operational 3-cycle acceptance criterion remains explicitly **PENDING / DEFERRED** pending scheduled runs on the default branch.
 3. **Phase 7 (Frontend) & Phase 8 (AI Assistant / Groq) Boundary:**  
    Neither Phase 7 nor Phase 8 has been started. No frontend redesign, Groq API integration, tool-use loop, or token-budget agent code has been implemented. `/chat` exists strictly as a minimal SSE scaffold to validate the API contract.
+
+---
+
+## 8. Performance Optimization Pass (Target: Sub-500ms Warm p95 on /forecast, /map, /weights)
+
+### A. Baseline Performance & Bottleneck Diagnosis
+Prior to this pass, the baseline warm p95 latencies for three endpoints exceeded the 500 ms target when tested over public WAN from the local environment to the Supabase transaction pooler in AWS Mumbai (`ap-south-1`):
+- `/forecast`: 546.10 ms
+- `/map`: 589.67 ms
+- `/weights`: 605.83 ms
+
+#### Trace Analysis:
+Detailed profiling and `EXPLAIN ANALYZE` revealed that query execution on the PostgreSQL engine itself takes **< 0.7 ms** for all three endpoints. However, base network transit round-trip time between the local client and the Supabase pooler over WAN is **~92–95 ms per network round-trip**.
+1. **`/forecast` Bottleneck:** Executed 2 to 3 sequential database round-trips (`blended_forecasts` query, then `model_forecasts` query, then dynamic `weights` fallback query if `blended_forecasts` was empty), accumulating 2–3 × 95 ms ≈ 190–285 ms in serial database round-trips.
+2. **`/map` Bottleneck:** Executed 2 to 3 sequential database round-trips (dominant `weights` per region query, then `blended_forecasts` points query, then `model_forecasts` fallback query), accumulating 2–3 × 95 ms ≈ 190–285 ms in serial database round-trips.
+3. **`/weights` Bottleneck:** Executed an un-cached SQL query to `model_versions` on every single request (`SELECT id FROM model_versions WHERE is_active = true LIMIT 1`, ~96 ms), followed by pulling all 1,680 weights rows over WAN (~330 ms), totaling ~430 ms in database transit time.
+
+---
+
+### B. Optimizations Implemented
+
+All optimizations strictly complied with the required order:
+
+1. **Elimination of Redundant SQL Round-Trips via Unified CTE Queries:**
+   - **`/forecast` (`api/app/routers/forecast.py`):** Replaced 2 sequential queries with a single unified Common Table Expression (CTE) utilizing a `FULL OUTER JOIN` between `blended_forecasts` and `model_forecasts`, with models aggregated into a typed JSON object via PostgreSQL's native `jsonb_object_agg(model, round(value::numeric, 2))`. Number of SQL round-trips reduced from **2–3** down to **1**.
+   - **`/map` (`api/app/routers/map.py`):** Replaced sequential points query and fallback query with a single unified CTE joining `blended_forecasts` and `model_forecasts`. Number of SQL round-trips reduced from **2–3** down to **1**.
+2. **Request-Local & In-Memory TTL Caching for Immutable Static Metadata (`api/app/db/model_versions.py`):**
+   - **Active Version Cache in `/weights`:** Replaced un-cached `SELECT id FROM model_versions` in `get_weights()` and `get_weights_map()` with `get_active_model_version_cached(conn)` (0.00 ms on warm requests).
+   - **Dominant Weights Cache in `/map`:** Added `get_dominant_weights_cached()` with 60-second TTL for regional dominant model selection, completely eliminating the sequential weights query on warm requests.
+   - **Weights Matrix Cache in `/weights`:** Added `get_weights_matrix_cached()` with 60-second TTL for active model version weights.
+   - **Cache Invalidation:** All caches (`_ACTIVE_VERSION_CACHE`, `_DOMINANT_WEIGHTS_CACHE`, `_REGION_WEIGHTS_CACHE`, `_WEIGHTS_ITEMS_CACHE`) are strictly flushed whenever `invalidate_model_version_cache()` is called (e.g. during model activation or rollback).
+3. **Preservation of Security, Roles, and Error Envelopes:**
+   - Zero weakening of authentication; Supabase JWT verification remains mandatory on all protected endpoints.
+   - RBAC rules (`viewer`, `forecaster`, `admin`) remain 100% enforced.
+   - Exact PRD §12 response shapes, field names, units, and error envelopes `{ "error": { "code": "...", "message": "...", "retry_after": ... } }` are preserved.
+
+---
+
+### C. Before vs After Performance Comparison (50 Warm Iterations Each)
+
+Benchmarked using the canonical benchmark harness [`scripts/measure_api_latency.py`](file:///C:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/scripts/measure_api_latency.py) in the exact same test environment against the live Supabase database:
+
+| Endpoint | Old p95 | New p95 | Difference | Old SQL Round-Trips | New SQL Round-Trips | PRD Target (<500ms) | Status |
+|---|---|---|---|---|---|---|---|
+| `GET /health` | 231.83 ms | **217.10 ms** | -14.73 ms | 1 | 1 | < 500 ms | **PASS** |
+| `GET /api/v1/meta` | 260.01 ms | **241.48 ms** | -18.53 ms | 1 | 1 | < 500 ms | **PASS** |
+| `GET /api/v1/forecast` | 546.10 ms | **346.16 ms** | **-199.94 ms (-36.6%)** | 2–3 | **1** | < 500 ms | **PASS** |
+| `GET /api/v1/map` | 589.67 ms | **347.66 ms** | **-242.01 ms (-41.0%)** | 2–3 | **1** | < 500 ms | **PASS** |
+| `GET /api/v1/weights` | 605.83 ms | **281.32 ms** | **-324.51 ms (-53.6%)** | 2 | **0 (cached)** | < 500 ms | **PASS** |
+| `GET /api/v1/alerts` | 366.87 ms | **347.89 ms** | -18.98 ms | 1 | 1 | < 500 ms | **PASS** |
+| `GET /api/v1/pipeline/status` | 457.99 ms | **432.83 ms** | -25.16 ms | 1 | 1 | < 500 ms | **PASS** |
+
+#### Target Achievement:
+**CASE A ACHIEVED:** All 7 core read endpoints now achieve warm p95 latencies **sub-500 ms** (ranging between 217 ms and 432 ms) even over the remote public WAN to AWS Mumbai.
+
+---
+
+### D. Regression and Verification Results
+
+- **Full Pytest Suite:** **118 passed, 0 failures, 0 skipped** across all 11 test modules.
+- **Contract Tests (`api/tests/test_phase6_contracts.py`):** **25 passed, 0 failures** (verified in 23.64s).
+- **Ruff Code Quality:** All checks passed (**0 lint errors**).
+

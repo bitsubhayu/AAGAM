@@ -12,6 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from api.app.auth.dependencies import CurrentUser, require_role
 from api.app.db.locations import get_locations_with_coords
+from api.app.db.model_versions import (
+    get_active_model_version_cached,
+    get_weights_matrix_cached,
+)
 from api.app.db.pool import get_db_conn, set_rls_claims
 from core.config import settings
 from core.schemas import (
@@ -46,54 +50,20 @@ async def get_weights(
     if response is not None:
         response.headers["Cache-Control"] = "public, max-age=120"
 
-    # Get active version
-    active_ver_id = 2
-    ver_row = await conn.fetchrow("SELECT id FROM model_versions WHERE is_active = true LIMIT 1")
-    if ver_row:
-        active_ver_id = ver_row["id"]
+    # Get active version from cache (eliminates un-cached SQL round trip)
+    active_version = await get_active_model_version_cached(conn)
+    active_ver_id = active_version.get("id", 2)
 
-    query = """
-        SELECT variable, region, season, lead_days, model, weight, method, n_samples, fallback_level
-        FROM weights
-        WHERE version_id = $1
-    """
-    params: List[Any] = [active_ver_id]
-    idx = 2
-
-    if variable:
-        query += f" AND variable = ${idx}"
-        params.append(variable)
-        idx += 1
-    if region:
-        query += f" AND region = ${idx}"
-        params.append(region)
-        idx += 1
-    if season:
-        query += f" AND season = ${idx}"
-        params.append(season)
-        idx += 1
-    if lead_days:
-        query += f" AND lead_days = ${idx}"
-        params.append(lead_days)
-        idx += 1
-
-    query += " ORDER BY variable, region, season, lead_days, weight DESC"
-
-    rows = await conn.fetch(query, *params)
-    items = [
-        WeightMatrixItem(
-            variable=r["variable"],
-            region=r["region"],
-            season=r["season"],
-            lead_days=r["lead_days"],
-            model=r["model"],
-            weight=round(float(r["weight"]), 4),
-            method=r["method"],
-            n_samples=r["n_samples"],
-            fallback_level=r["fallback_level"],
-        )
-        for r in rows
-    ]
+    # Fetch weights matrix with 60s TTL cache for active version
+    rows = await get_weights_matrix_cached(
+        conn,
+        active_ver_id,
+        variable=variable,
+        region=region,
+        season=season,
+        lead_days=lead_days,
+    )
+    items = [WeightMatrixItem(**r) for r in rows]
 
     return WeightsResponse(
         version_id=active_ver_id,
@@ -115,10 +85,9 @@ async def get_weights_map(
     if response is not None:
         response.headers["Cache-Control"] = "public, max-age=120"
 
-    active_ver_id = 2
-    ver_row = await conn.fetchrow("SELECT id FROM model_versions WHERE is_active = true LIMIT 1")
-    if ver_row:
-        active_ver_id = ver_row["id"]
+    # Get active version from cache (eliminates un-cached SQL round trip)
+    active_version = await get_active_model_version_cached(conn)
+    active_ver_id = active_version.get("id", 2)
 
     # Fetch weights for this variable, lead, and season
     rows = await conn.fetch(
@@ -185,12 +154,20 @@ async def create_weight_override(
     if override.variable not in VALID_VARIABLES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "INVALID_VARIABLE", "message": f"Variable must be one of {list(VALID_VARIABLES)}", "retry_after": None},
+            detail={
+                "code": "INVALID_VARIABLE",
+                "message": f"Variable must be one of {list(VALID_VARIABLES)}",
+                "retry_after": None,
+            },
         )
     if override.region not in VALID_REGIONS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "INVALID_REGION", "message": f"Region must be one of {list(VALID_REGIONS)}", "retry_after": None},
+            detail={
+                "code": "INVALID_REGION",
+                "message": f"Region must be one of {list(VALID_REGIONS)}",
+                "retry_after": None,
+            },
         )
     if len(override.reason.strip()) < 10:
         raise HTTPException(
@@ -209,7 +186,11 @@ async def create_weight_override(
     if abs(total_weight - 1.0) > 0.01:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "INVALID_WEIGHTS", "message": f"Weights must sum to 1.0 (received sum: {total_weight:.3f}).", "retry_after": None},
+            detail={
+                "code": "INVALID_WEIGHTS",
+                "message": f"Weights must sum to 1.0 (received sum: {total_weight:.3f}).",
+                "retry_after": None,
+            },
         )
 
     # 3. Insert with RLS claims set
