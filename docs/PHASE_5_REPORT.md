@@ -356,6 +356,11 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 
 - **Branch:** `phase-5/live-pipeline`
 - **Recent Commits:**
+  - `50d4a37`: `fix(phase-5): implement historical raw forecast store retrieval for FR-VER-1 and strengthen retention test realism`
+  - `011bd0c`: `fix(phase-5): remove hardcoded monsoon fallback in verification runner`
+  - `b57df89`: `fix(phase-5): score all 8 verification candidates and derive canonical seasons`
+  - `e8d684e`: `fix(phase-5): align retention, verification snapshot, and lead days with PRD`
+  - `650ee9a`: `docs(phase-5): harmonize test verification output and dry-run simulation wording`
   - `c228e9f`: `fix(phase-5): enforce nightly backup safety aborting retention cleanup on upload failure`
   - `439c5ee`: `fix(phase-5): enforce profile role immutability and chat_audit field protection`
   - `cdea8b2`: `fix(phase-5): enforce strict rls on all 11 tables and remove anonymous read access`
