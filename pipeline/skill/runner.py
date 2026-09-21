@@ -36,6 +36,7 @@ from pipeline.skill.plots import (
     plot_skill_by_region,
     plot_skill_by_season,
 )
+from pipeline.skill.scoring import filter_by_trailing_window
 from pipeline.skill.weights import build_skill_weights_table
 
 logging.basicConfig(
@@ -48,6 +49,7 @@ logger = logging.getLogger("aagam.pipeline.skill.runner")
 TRAINING_DATASET_PATH = Path("data/training_dataset.parquet")
 OUTPUT_SKILL_SCORES_PATH = Path("data/skill_scores.parquet")
 OUTPUT_WEIGHTS_PATH = Path("data/baseline_weights.parquet")
+OUTPUT_LIVE_WEIGHTS_60D_PATH = Path("data/live_weights_60d.parquet")
 OUTPUT_COMPARISONS_PATH = Path("data/baseline_comparisons.parquet")
 REPORTS_DIR = Path("reports")
 
@@ -102,6 +104,16 @@ def run_phase_2_pipeline(
 
     weights_df.to_parquet(OUTPUT_WEIGHTS_PATH, index=False)
     logger.info(f"Saved baseline weights Parquet to {OUTPUT_WEIGHTS_PATH} ({len(weights_df):,} rows).")
+
+    # 4b. Trailing 60-Day Window Live Weights (FR-SKILL-1)
+    logger.info("Computing trailing 60-day live weights (FR-SKILL-1 live window)...")
+    max_date = pd.to_datetime(df["valid_date"].max()).date()
+    df_60d = filter_by_trailing_window(df, cutoff_date=max_date, window_days=60)
+    engine_60d = HierarchicalFallbackEngine(df_60d, min_samples=min_samples)
+    resolved_skill_60d = engine_60d.build_resolved_skill_table()
+    weights_60d = build_skill_weights_table(resolved_skill_60d, epsilon=epsilon, method="inverse_mae_60d_live")
+    weights_60d.to_parquet(OUTPUT_LIVE_WEIGHTS_60D_PATH, index=False)
+    logger.info(f"Saved trailing 60-day live weights Parquet to {OUTPUT_LIVE_WEIGHTS_60D_PATH} ({len(weights_60d):,} rows).")
 
     # 5. Baseline Evaluation on Held-Out Test Set
     logger.info("Determining best-single models on training history...")

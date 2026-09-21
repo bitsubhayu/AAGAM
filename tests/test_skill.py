@@ -283,3 +283,60 @@ class TestPhase2ParquetArtifacts:
         }
         assert set(df["candidate"].unique()) == expected_candidates
         assert set(df["variable"].unique()) == {"rain_mm", "tmax_c", "wind_max_kmh"}
+
+    def test_live_weights_60d_artifact(self):
+        path = Path("data/live_weights_60d.parquet")
+        assert path.exists(), f"Missing artifact: {path}"
+        df = pd.read_parquet(path)
+
+        expected_cols = [
+            "variable", "lead_days", "region", "season", "regime",
+            "model", "weight", "mae", "rmse", "bias", "n_samples",
+            "fallback_level", "method"
+        ]
+        for col in expected_cols:
+            assert col in df.columns, f"Missing column: {col}"
+
+        assert (df["weight"] >= 0.0).all(), "Found negative weights in 60d live table"
+        assert not df["weight"].isna().any(), "Found NaN weights in 60d live table"
+
+        # Verify weights sum to 1.0 per bucket
+        bucket_sums = df.groupby(["variable", "lead_days", "region", "season", "regime"])["weight"].sum()
+        for b_sum in bucket_sums:
+            assert math.isclose(b_sum, 1.0, abs_tol=1e-4), f"60d bucket weight sum {b_sum} != 1.0"
+
+    def test_weights_no_negative_or_nan(self):
+        for fname in ["baseline_weights.parquet", "live_weights_60d.parquet"]:
+            p = Path("data") / fname
+            df = pd.read_parquet(p)
+            assert (df["weight"] >= 0.0).all(), f"Found negative weight in {fname}"
+            assert not df["weight"].isna().any(), f"Found NaN weight in {fname}"
+
+            # When model has samples (n > 0), MAE must be valid non-NaN
+            valid_samples_mask = df["n_samples"] > 0
+            assert not df.loc[valid_samples_mask, "mae"].isna().any(), f"Found NaN MAE with n > 0 in {fname}"
+
+            # When model has 0 samples (e.g. ICON at lead 7), weight must be strictly 0.0
+            zero_samples_mask = df["n_samples"] == 0
+            if zero_samples_mask.any():
+                assert (df.loc[zero_samples_mask, "weight"] == 0.0).all(), f"Zero-sample model has non-zero weight in {fname}"
+                assert df.loc[zero_samples_mask, "mae"].isna().all(), f"Zero-sample model fabricated non-NaN MAE in {fname}"
+
+    def test_zero_test_data_leakage_in_artifacts(self):
+        # Verify training dataset dates vs train/val/test splits
+        df = pd.read_parquet("data/training_dataset.parquet")
+        splits = split_dataset_temporally(df)
+
+        max_train = pd.to_datetime(splits.train_df["valid_date"].max()).date()
+        min_test = pd.to_datetime(splits.test_df["valid_date"].min()).date()
+
+        assert max_train == date(2026, 3, 22)
+        assert min_test == date(2026, 6, 21)
+        assert max_train < min_test, "Test data leakage: train overlap with test"
+
+        # Confirm test set covers exactly the 2026 monsoon test block
+        test_dates = pd.to_datetime(splits.test_df["valid_date"]).dt.date.unique()
+        assert len(test_dates) == 90
+        assert min(test_dates) == date(2026, 6, 21)
+        assert max(test_dates) == date(2026, 9, 18)
+
