@@ -12,7 +12,7 @@
 
 Phase 5 transitions AAGAM from an offline backtested research pipeline into a fully automated, observable, cloud-backed operational forecasting engine. All database schemas, Row-Level Security policies, cloud storage buckets, model registry quality gates, retention cleanups, and GitHub Actions scheduled workflows have been implemented and verified against `AAGAM_PRD.md` and `AAGAM_TECH_STACK.md`.
 
-All 77 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
+All 82 unit, integration, and regression tests pass with a 100% success rate, and 0 lint errors exist across the codebase.
 
 ---
 
@@ -27,7 +27,7 @@ All 11 core tables specified in PRD §11 were created and verified directly in S
 | 1 | `locations` | 40 IMD/NCMRWF observation points | `id` (INTEGER PK), `slug` (UNIQUE) | **YES** |
 | 2 | `model_forecasts` | Raw multi-model NWP runs | `(location_id, model, variable, valid_date)` | **YES** |
 | 3 | `model_versions` | ML model registry metadata | `id` (SERIAL PK), UNIQUE partial on `(is_active) WHERE is_active = true` | **YES** |
-| 4 | `blended_forecasts` | Blended predictions & ensemble metrics | `(location_id, variable, valid_date, issue_time, lead_days)` | **YES** |
+| 4 | `blended_forecasts` | Blended predictions & ensemble metrics | `(location_id, variable, valid_date, issue_time)` | **YES** |
 | 5 | `weights` | Dynamic regime/seasonal model weights | `(version_id, variable, region, season, lead_days, model, method)` | **YES** |
 | 6 | `skill_scores` | Trailing 60-day operational metrics | `(computed_at, window_days, variable, region, season, lead_days, model)` | **YES** |
 | 7 | `alerts` | Extreme hazard warnings | `(issue_time, location_id, hazard, valid_date, lead_days)` | **YES** |
@@ -59,8 +59,15 @@ Row-Level Security is strictly enabled on **all 11 tables** (`relrowsecurity = t
    - `weight_overrides` can only be inserted by authenticated users possessing the `forecaster` or `admin` role, enforcing `created_by = auth.uid()`.
 4. **Alert Acknowledgement:**
    - Only `forecaster` or `admin` roles can update `alerts.status = 'acknowledged'` with their user ID and timestamp.
-5. **Security Definer Functions:**
+5. **Profile Immutability & Self-Role Escalation Prevention:**
+   - Normal authenticated clients are strictly forbidden from inserting or updating `profiles`. Role self-escalation (e.g. viewer promoting self to admin) is completely blocked.
+   - Profile management is restricted to administrative users via `allow_admin_manage_profiles` (`public.is_admin()`) and service-role server processes (`test_prevent_self_role_escalation`).
+6. **Chat Audit Field Protection:**
+   - Authenticated clients are strictly permitted to update ONLY their own row's `feedback` field via `GRANT UPDATE (feedback)` and RLS policy `allow_update_chat_audit_feedback`.
+   - Alteration of protected telemetry columns (`question`, `mode`, `tools`, `model`, `tokens_in`, `tokens_out`, `latency_ms`, `cached`, `flagged`, `user_id`, `created_at`) is rejected at both column-privilege and trigger levels (`test_chat_audit_protected_fields_cannot_be_altered`).
+7. **Security Definer Functions:**
    - `public.is_admin()` and `public.is_forecaster_or_admin()` implemented with `SECURITY DEFINER` and verified.
+
 
 ---
 
@@ -287,8 +294,10 @@ As of **September 21, 2026, 15:25 IST (09:55 UTC)**, an exhaustive audit of Supa
 
 - **Branch:** `phase-5/live-pipeline`
 - **Recent Commits:**
+  - `cdea8b2`: `fix(phase-5): enforce strict rls on all 11 tables and remove anonymous read access`
   - `b899dd5`: `docs(phase-5): clarify default branch trigger rule for scheduled workflows`
   - `2f8b2fe`: `docs(phase-5): record operational acceptance observation audit and pending 3-cycle status`
   - `9efe91c`: `fix(phase-5): align retention policies with PRD and set pending acceptance status`
   - `2230787`: `feat(phase-5): implement live pipeline database scheduler and registry`
 - **Working Tree:** Clean.
+

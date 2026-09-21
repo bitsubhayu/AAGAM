@@ -5,6 +5,7 @@ Tests schema integrity, RLS configuration, model registry quality gate,
 idempotency, override auto-expiry, quota safety, and telemetry logging.
 """
 
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -188,6 +189,130 @@ def test_unauthorized_writes_blocked():
                 assert "permission denied" in err_msg or "violates row-level security" in err_msg or "policy" in err_msg
             cur.execute("ROLLBACK;")
     finally:
+        conn.close()
+
+
+def test_prevent_self_role_escalation():
+    """Verify that normal authenticated users cannot modify their role or insert profiles."""
+    conn = get_db_connection()
+    conn.autocommit = True
+    test_user_id = str(uuid.uuid4())
+    admin_user_id = str(uuid.uuid4())
+
+    try:
+        with conn.cursor() as cur:
+            # 1. Create a normal user (trigger automatically creates profile with role 'viewer')
+            cur.execute("""
+                INSERT INTO auth.users (id, email, role)
+                VALUES (%s, 'viewer_user@aagam.local', 'authenticated');
+            """, (test_user_id,))
+
+            cur.execute("SELECT role FROM profiles WHERE user_id = %s;", (test_user_id,))
+            initial_role = cur.fetchone()[0]
+            assert initial_role == "viewer", "Auto-created profile must have default 'viewer' role"
+
+            # 2. Simulate normal authenticated user session
+            cur.execute("BEGIN;")
+            cur.execute("SET LOCAL ROLE authenticated;")
+            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (test_user_id,))
+
+            # Attempt self-escalation to admin
+            cur.execute("UPDATE profiles SET role = 'admin' WHERE user_id = %s;", (test_user_id,))
+            assert cur.rowcount == 0, "Normal authenticated user must NOT be able to update their profile or role"
+
+            # Attempt client-side profile creation
+            with pytest.raises(Exception) as excinfo:
+                cur.execute("""
+                    INSERT INTO profiles (user_id, role, display_name)
+                    VALUES (%s, 'admin', 'Unauthorized Admin');
+                """, (str(uuid.uuid4()),))
+            assert "violates row-level security policy" in str(excinfo.value).lower() or "permission denied" in str(excinfo.value).lower()
+
+            cur.execute("ROLLBACK;")
+
+            # 3. Confirm profile role remains strictly 'viewer'
+            cur.execute("SELECT role FROM profiles WHERE user_id = %s;", (test_user_id,))
+            assert cur.fetchone()[0] == "viewer", "Role must remain 'viewer' after attempted escalation"
+
+            # 4. Verify admin user CAN manage profiles
+            cur.execute("""
+                INSERT INTO auth.users (id, email, role)
+                VALUES (%s, 'admin_user@aagam.local', 'authenticated');
+            """, (admin_user_id,))
+            cur.execute("UPDATE profiles SET role = 'admin' WHERE user_id = %s;", (admin_user_id,))
+
+            cur.execute("BEGIN;")
+            cur.execute("SET LOCAL ROLE authenticated;")
+            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (admin_user_id,))
+
+            cur.execute("UPDATE profiles SET display_name = 'Verified Viewer' WHERE user_id = %s;", (test_user_id,))
+            assert cur.rowcount == 1, "Admin user must be allowed to manage profiles"
+            cur.execute("ROLLBACK;")
+
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM profiles WHERE user_id IN (%s, %s);", (test_user_id, admin_user_id))
+            cur.execute("DELETE FROM auth.users WHERE id IN (%s, %s);", (test_user_id, admin_user_id))
+        conn.close()
+
+
+def test_chat_audit_protected_fields_cannot_be_altered():
+    """Verify that authenticated users can only update feedback on chat_audit, and cannot modify protected fields."""
+    conn = get_db_connection()
+    conn.autocommit = True
+    user_a_id = str(uuid.uuid4())
+    user_b_id = str(uuid.uuid4())
+
+    try:
+        with conn.cursor() as cur:
+            # Create users and chat audit log entry (created server-side via service role)
+            cur.execute("""
+                INSERT INTO auth.users (id, email, role)
+                VALUES (%s, 'usera@aagam.local', 'authenticated'),
+                       (%s, 'userb@aagam.local', 'authenticated');
+            """, (user_a_id, user_b_id))
+
+            cur.execute("""
+                INSERT INTO chat_audit (user_id, question, mode, latency_ms, tokens_in, tokens_out)
+                VALUES (%s, 'What is the rainfall forecast?', 'Explain', 150, 100, 50)
+                RETURNING id;
+            """, (user_a_id,))
+            audit_id = cur.fetchone()[0]
+
+            # 1. Authenticated user A updates feedback on own log entry -> SUCCEEDS
+            cur.execute("BEGIN;")
+            cur.execute("SET LOCAL ROLE authenticated;")
+            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (user_a_id,))
+
+            cur.execute("UPDATE chat_audit SET feedback = 1 WHERE id = %s;", (audit_id,))
+            assert cur.rowcount == 1, "User must be able to update feedback on their own chat_audit entry"
+            cur.execute("ROLLBACK;")
+
+            # 2. Authenticated user A attempts to tamper with protected field (question / latency_ms) -> FAILS
+            cur.execute("BEGIN;")
+            cur.execute("SET LOCAL ROLE authenticated;")
+            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (user_a_id,))
+
+            with pytest.raises(Exception) as excinfo:
+                cur.execute("UPDATE chat_audit SET question = 'Tampered question' WHERE id = %s;", (audit_id,))
+            err_msg = str(excinfo.value).lower()
+            assert "permission denied" in err_msg or "only update the feedback field" in err_msg or "policy" in err_msg
+            cur.execute("ROLLBACK;")
+
+            # 3. Authenticated user B attempts to update user A's feedback -> FAILS (0 rows affected by RLS)
+            cur.execute("BEGIN;")
+            cur.execute("SET LOCAL ROLE authenticated;")
+            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (user_b_id,))
+
+            cur.execute("UPDATE chat_audit SET feedback = -1 WHERE id = %s;", (audit_id,))
+            assert cur.rowcount == 0, "User B must not be able to update User A's chat_audit entry"
+            cur.execute("ROLLBACK;")
+
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM chat_audit WHERE user_id IN (%s, %s);", (user_a_id, user_b_id))
+            cur.execute("DELETE FROM profiles WHERE user_id IN (%s, %s);", (user_a_id, user_b_id))
+            cur.execute("DELETE FROM auth.users WHERE id IN (%s, %s);", (user_a_id, user_b_id))
         conn.close()
 
 

@@ -248,6 +248,17 @@ DROP POLICY IF EXISTS allow_read_weight_overrides ON weight_overrides;
 DROP POLICY IF EXISTS allow_read_pipeline_runs ON pipeline_runs;
 DROP POLICY IF EXISTS allow_read_chat_audit ON chat_audit;
 
+-- Explicitly drop write policies to ensure clean re-application
+DROP POLICY IF EXISTS allow_insert_weight_overrides ON weight_overrides;
+DROP POLICY IF EXISTS allow_update_weight_overrides ON weight_overrides;
+DROP POLICY IF EXISTS allow_ack_alerts ON alerts;
+DROP POLICY IF EXISTS allow_insert_chat_audit ON chat_audit;
+DROP POLICY IF EXISTS allow_update_chat_audit ON chat_audit;
+DROP POLICY IF EXISTS allow_update_chat_audit_feedback ON chat_audit;
+DROP POLICY IF EXISTS allow_insert_profiles ON profiles;
+DROP POLICY IF EXISTS allow_update_profiles ON profiles;
+DROP POLICY IF EXISTS allow_admin_manage_profiles ON profiles;
+
 -- Read policies: authenticated users and service_role ONLY (no anonymous access)
 CREATE POLICY allow_read_locations ON locations FOR SELECT TO authenticated, service_role USING (true);
 CREATE POLICY allow_read_model_forecasts ON model_forecasts FOR SELECT TO authenticated, service_role USING (true);
@@ -262,6 +273,45 @@ CREATE POLICY allow_read_weight_overrides ON weight_overrides FOR SELECT TO auth
 CREATE POLICY allow_read_pipeline_runs ON pipeline_runs FOR SELECT TO authenticated, service_role USING (true);
 CREATE POLICY allow_read_chat_audit ON chat_audit FOR SELECT TO authenticated, service_role 
     USING (user_id = auth.uid() OR public.is_admin());
+
+-- Trigger function: Ensure authenticated clients can ONLY update the feedback field on chat_audit (PRD §11)
+CREATE OR REPLACE FUNCTION public.check_chat_audit_update()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    -- Service role / postgres can do anything
+    IF current_user IN ('postgres', 'service_role') THEN
+        RETURN NEW;
+    END IF;
+
+    -- For authenticated users, verify that ONLY feedback was modified
+    IF NEW.id IS DISTINCT FROM OLD.id OR
+       NEW.user_id IS DISTINCT FROM OLD.user_id OR
+       NEW.created_at IS DISTINCT FROM OLD.created_at OR
+       NEW.question IS DISTINCT FROM OLD.question OR
+       NEW.mode IS DISTINCT FROM OLD.mode OR
+       NEW.tools IS DISTINCT FROM OLD.tools OR
+       NEW.model IS DISTINCT FROM OLD.model OR
+       NEW.tokens_in IS DISTINCT FROM OLD.tokens_in OR
+       NEW.tokens_out IS DISTINCT FROM OLD.tokens_out OR
+       NEW.latency_ms IS DISTINCT FROM OLD.latency_ms OR
+       NEW.cached IS DISTINCT FROM OLD.cached OR
+       NEW.flagged IS DISTINCT FROM OLD.flagged THEN
+        RAISE EXCEPTION 'Authenticated users may only update the feedback field on chat_audit';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_protect_chat_audit_fields ON chat_audit;
+CREATE TRIGGER trg_protect_chat_audit_fields
+    BEFORE UPDATE ON chat_audit
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_chat_audit_update();
 
 DO $$
 BEGIN
@@ -285,27 +335,22 @@ BEGIN
         WITH CHECK (public.is_forecaster_or_admin());
     END IF;
 
-    -- Write policies for chat_audit
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'chat_audit' AND policyname = 'allow_insert_chat_audit') THEN
-        CREATE POLICY allow_insert_chat_audit ON chat_audit FOR INSERT TO authenticated
-        WITH CHECK (user_id = auth.uid());
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'chat_audit' AND policyname = 'allow_update_chat_audit') THEN
-        CREATE POLICY allow_update_chat_audit ON chat_audit FOR UPDATE TO authenticated
+    -- Write policies for chat_audit: strictly feedback update only for row owner (PRD §11)
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'chat_audit' AND policyname = 'allow_update_chat_audit_feedback') THEN
+        CREATE POLICY allow_update_chat_audit_feedback ON chat_audit FOR UPDATE TO authenticated
         USING (user_id = auth.uid())
         WITH CHECK (user_id = auth.uid());
     END IF;
 
-    -- Write policies for profiles
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'allow_insert_profiles') THEN
-        CREATE POLICY allow_insert_profiles ON profiles FOR INSERT TO authenticated
-        WITH CHECK (user_id = auth.uid());
-    END IF;
-
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'allow_update_profiles') THEN
-        CREATE POLICY allow_update_profiles ON profiles FOR UPDATE TO authenticated
-        USING (user_id = auth.uid() OR public.is_admin())
-        WITH CHECK (user_id = auth.uid() OR public.is_admin());
+    -- Write policies for profiles: strictly admin-only management (PRD §11). Normal users cannot insert/update/escalate roles.
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'allow_admin_manage_profiles') THEN
+        CREATE POLICY allow_admin_manage_profiles ON profiles FOR ALL TO authenticated
+        USING (public.is_admin())
+        WITH CHECK (public.is_admin());
     END IF;
 END $$;
+
+-- Column-level write permissions for chat_audit: authenticated users can only update feedback
+REVOKE UPDATE ON chat_audit FROM authenticated;
+GRANT UPDATE (feedback) ON chat_audit TO authenticated;
+
