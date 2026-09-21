@@ -1,25 +1,116 @@
+"""FastAPI Main Application for AAGAM (Adaptive AI-Grid Assimilation Model).
+
+SIH 2026 PS 26081 (MoES / NCMRWF).
+Phase 6 Implementation:
+- /api/v1 API router mount
+- asyncpg connection pool with statement_cache_size=0
+- Supabase JWT authentication and role-based access control
+- Strict PRD §12 error envelope
+- Slowapi rate limiting
+- CORS locked to configured origins
+- Cold-start softening headers
+"""
+
+from __future__ import annotations
+
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
-from api.app.db.supabase import get_supabase_client, read_setup_row
-from core.config import get_locations, get_models, get_regions, get_thresholds, settings
-from core.schemas import HealthResponse, HelloResponse
+from api.app.db.pool import db_pool
+from api.app.db.supabase import read_setup_row
+from api.app.middleware.rate_limit import custom_rate_limit_exceeded_handler, limiter
+from api.app.routers import (
+    alerts,
+    artifacts,
+    chat,
+    export,
+    forecast,
+    health,
+    history,
+    meta,
+    models,
+    pipeline,
+    skill,
+    weights,
+)
+from api.app.routers import (
+    map as map_router,
+)
+from core.config import settings
+from core.schemas import HelloResponse
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("aagam.api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan context manager handling asyncpg connection pool."""
+    logger.info("Starting up AAGAM API...")
+    await db_pool.init_pool()
+    yield
+    logger.info("Shutting down AAGAM API...")
+    await db_pool.close_pool()
+
 
 app = FastAPI(
     title="AAGAM Backend API",
     description="Adaptive AI-Grid Assimilation Model — SIH 2026 PS 26081 (MoES / NCMRWF)",
-    version="0.1.0",
+    version="0.6.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
+
+# Attach rate limiter state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, custom_rate_limit_exceeded_handler)
+
+
+# ==============================================================================
+# Strict PRD §12 Error Envelope Handlers
+# ==============================================================================
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Formats all HTTPExceptions to follow the PRD error envelope."""
+    if isinstance(exc.detail, dict):
+        code = exc.detail.get("code", "HTTP_ERROR")
+        msg = exc.detail.get("message", str(exc.detail))
+        retry_after = exc.detail.get("retry_after")
+    else:
+        code = "HTTP_ERROR"
+        msg = str(exc.detail)
+        retry_after = None
+
+    headers = getattr(exc, "headers", None) or {}
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": code, "message": msg, "retry_after": retry_after}},
+        headers=headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Formats request validation errors to follow the PRD error envelope."""
+    errors = exc.errors()
+    first_error = errors[0] if errors else {}
+    loc = " -> ".join([str(item) for item in first_error.get("loc", [])])
+    msg = f"Validation failed at '{loc}': {first_error.get('msg', 'Invalid input')}"
+
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": "VALIDATION_ERROR", "message": msg, "retry_after": None}},
+    )
+
 
 # CORS Middleware with environment-driven allowed origins
 app.add_middleware(
@@ -31,58 +122,24 @@ app.add_middleware(
 )
 
 
+# Root endpoint
 @app.get("/", tags=["General"])
 async def root() -> Dict[str, Any]:
     return {
         "project": "AAGAM — Adaptive AI-Grid Assimilation Model",
         "organization": "MoES / NCMRWF",
         "phase": "Phase 0 — Setup",
+        "version": "0.6.0",
         "health": "/health",
-        "hello": "/api/v1/hello",
         "docs": "/docs",
+        "api_base": settings.API_V1_STR,
     }
 
 
-@app.get("/health", response_model=HealthResponse, tags=["Observability"])
-async def health_check() -> HealthResponse:
-    """Liveness probe returning server status and Supabase connectivity."""
-    client = get_supabase_client()
-    connected = False
-    details = "Supabase client not initialized (credentials pending)"
-
-    if client:
-        try:
-            status, _, msg = read_setup_row()
-            connected = (status == "PASS")
-            details = msg
-        except Exception as e:
-            details = f"Connection error: {e}"
-
-    return HealthResponse(
-        status="ok",
-        app="AAGAM Backend API",
-        version="0.1.0",
-        timestamp=datetime.now(timezone.utc),
-        timezone_display=settings.APP_TZ_DISPLAY,
-        supabase_connected=connected,
-        details=details,
-    )
-
-
+# Retain Phase 0 Hello-World for backward compatibility
 @app.get("/api/v1/hello", response_model=HelloResponse, tags=["Phase 0 Verification"])
 async def hello_world() -> HelloResponse:
-    """
-    Phase 0 Hello-World Endpoint.
-    Directly fulfills the PRD Phase 0 acceptance condition:
-    'hello-world API on Render reads a row from Supabase'
-
-    Distinguishes:
-    - PASS: actual remote Supabase read
-    - BLOCKED: credentials or database migration not yet populated
-    - FAIL: implementation or connection error
-    """
     status, row_data, message = read_setup_row()
-
     if status == "PASS" and row_data:
         return HelloResponse(
             message="Hello from AAGAM! Successfully read row from Supabase.",
@@ -118,17 +175,20 @@ async def hello_world() -> HelloResponse:
         )
 
 
-@app.get("/api/v1/meta", tags=["Metadata"])
-async def get_meta() -> Dict[str, Any]:
-    """Returns static configurations for locations, regions, models, and thresholds."""
-    return {
-        "locations_count": len(get_locations()),
-        "locations": get_locations(),
-        "regions": get_regions(),
-        "models": get_models(),
-        "thresholds": get_thresholds(),
-        "app_timezone": settings.APP_TZ_DISPLAY,
-    }
+# Mount PRD §12 Routers
+app.include_router(health.router)
+app.include_router(meta.router)
+app.include_router(forecast.router)
+app.include_router(map_router.router)
+app.include_router(weights.router)
+app.include_router(skill.router)
+app.include_router(alerts.router)
+app.include_router(history.router)
+app.include_router(artifacts.router)
+app.include_router(export.router)
+app.include_router(chat.router)
+app.include_router(pipeline.router)
+app.include_router(models.router)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,12 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: Optional[str] = Field(default=None)
     SUPABASE_PUBLISHABLE_KEY: Optional[str] = Field(default=None)
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = Field(default=None)
+    SUPABASE_JWT_SECRET: Optional[str] = Field(default=None)
+    SUPABASE_JWKS_URL: Optional[str] = Field(default=None)
     DATABASE_URL: Optional[str] = Field(default=None)
+    DB_POOL_MIN_SIZE: int = Field(default=1)
+    DB_POOL_MAX_SIZE: int = Field(default=10)
+    API_V1_STR: str = Field(default="/api/v1")
 
     # Groq LLM
     GROQ_API_KEY: Optional[str] = Field(default=None)
@@ -45,6 +50,14 @@ class Settings(BaseSettings):
         if not self.CORS_ALLOWED_ORIGINS:
             return ["http://localhost:5173", "http://localhost:3000"]
         return [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def jwks_url(self) -> Optional[str]:
+        if self.SUPABASE_JWKS_URL:
+            return self.SUPABASE_JWKS_URL
+        if self.SUPABASE_URL:
+            return f"{self.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        return None
 
 
 settings = Settings()
