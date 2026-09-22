@@ -72,8 +72,11 @@ async def request_otp(payload: OtpRequest) -> Dict[str, str]:
         )
 
     try:
-        # Supabase passwordless OTP
-        client.auth.sign_in_with_otp({"email": payload.email})
+        # Supabase passwordless OTP with redirect to http://localhost:3000
+        client.auth.sign_in_with_otp({
+            "email": payload.email,
+            "options": {"email_redirect_to": "http://localhost:3000"},
+        })
         logger.info(f"OTP requested for {payload.email}")
         return {
             "status": "ok",
