@@ -1,6 +1,5 @@
 import json
 import subprocess
-import sys
 import urllib.request
 from pathlib import Path
 
@@ -9,7 +8,7 @@ print("=== TEMPORARY DEFAULT-BRANCH TRANSITION RUNNER ===")
 # Extract GitHub token from git credential helper
 p_cred = subprocess.Popen(["git", "credential", "fill"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
 out_cred, _ = p_cred.communicate(input="protocol=https\nhost=github.com\n\n")
-token = [l.split("=", 1)[1] for l in out_cred.splitlines() if l.startswith("password=")][0]
+token = [line.split("=", 1)[1] for line in out_cred.splitlines() if line.startswith("password=")][0]
 headers = {
     "Authorization": f"token {token}",
     "User-Agent": "AAGAM-Audit",
@@ -44,7 +43,7 @@ assert local_head == remote_phase9, f"Local and remote phase-9 mismatch! {local_
 
 # 4. Verify working tree is clean
 status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
-non_script_changes = [l for l in status.splitlines() if "transition_default_branch.py" not in l]
+non_script_changes = [line for line in status.splitlines() if "transition_default_branch.py" not in line]
 print(f"4. Working Tree Clean:     {len(non_script_changes) == 0}")
 assert len(non_script_changes) == 0, f"Working tree is dirty: {status}"
 

@@ -147,29 +147,35 @@ def test_auth_helper_functions_exist():
 
 
 def test_anonymous_reads_blocked_on_operational_tables():
-    """Verify that anonymous role (anon) is blocked from reading all 11 core tables under RLS."""
+    """Verify that anonymous role (anon) is blocked from reading protected tables while public tables are accessible (PRD Phase 10)."""
     conn = get_db_connection()
-    all_11_tables = [
-        "locations",
+    protected_tables = [
         "model_forecasts",
         "model_versions",
-        "blended_forecasts",
-        "weights",
-        "skill_scores",
-        "alerts",
         "profiles",
         "weight_overrides",
         "pipeline_runs",
         "chat_audit",
     ]
+    public_tables = [
+        "locations",
+        "blended_forecasts",
+        "weights",
+        "skill_scores",
+        "alerts",
+    ]
     try:
         with conn.cursor() as cur:
             cur.execute("BEGIN; SET LOCAL ROLE anon;")
-            # All 11 core tables must return 0 rows for anonymous queries under RLS
-            for table in all_11_tables:
+            for table in protected_tables:
                 cur.execute(f"SELECT COUNT(*) FROM {table};")
                 count = cur.fetchone()[0]
                 assert count == 0, f"Table '{table}' should not return data to anonymous users (got {count} rows)"
+            for table in public_tables:
+                cur.execute(f"SELECT COUNT(*) FROM {table};")
+                # Queries succeed without permission error
+                count = cur.fetchone()[0]
+                assert count >= 0
             cur.execute("ROLLBACK;")
     finally:
         conn.close()

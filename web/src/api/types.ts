@@ -179,6 +179,10 @@ export interface AlertItem {
   status: "active" | "acknowledged" | "expired" | string;
   acknowledged_by?: string;
   acknowledged_at?: string;
+  event_id?: number | null;
+  lifecycle_state?: "new" | "upgraded" | "downgraded" | "unchanged" | "cancelled" | string;
+  previous_severity?: "advisory" | "watch" | "alert" | string | null;
+  rarity_label?: string | null;
 }
 
 export interface AlertListResponse {
@@ -191,7 +195,50 @@ export interface AlertAckResponse {
   status: string;
   acknowledged_by: string;
   acknowledged_at: string;
-  message: string;
+  message?: string;
+}
+
+export interface AlertEventItem {
+  id: number;
+  location_id: number;
+  location_name?: string;
+  location_slug?: string;
+  region?: string;
+  hazard: string;
+  status: "active" | "expired" | "cancelled" | string;
+  severity_peak: "advisory" | "watch" | "alert" | string;
+  value_peak?: number | null;
+  start_date: string;
+  end_date: string;
+  first_detected_at: string;
+  last_updated_at: string;
+  outcome: "hit" | "false_alarm" | "pending" | "unverifiable" | string;
+  verified_at?: string | null;
+}
+
+export interface LifecycleEventNode {
+  issue_time: string;
+  lifecycle_state: string;
+  severity: string;
+  previous_severity?: string | null;
+  valid_date: string;
+  value?: number | null;
+}
+
+export interface AlertEventDetailResponse {
+  event: AlertEventItem;
+  alerts: AlertItem[];
+  lifecycle_history: LifecycleEventNode[];
+  guidance?: any;
+  track_record?: any;
+  share_text?: string | null;
+}
+
+export interface AlertEventAckResponse {
+  id: number;
+  status: string;
+  acknowledged_by: string;
+  acknowledged_at: string;
 }
 
 export interface SkillScoreItem {

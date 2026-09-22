@@ -5,9 +5,9 @@ import urllib.request
 p = subprocess.Popen(['git', 'credential', 'fill'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 out, _ = p.communicate(input='protocol=https\nhost=github.com\n\n')
 token = None
-for l in out.splitlines():
-    if l.startswith('password='):
-        token = l.split('=', 1)[1]
+for line in out.splitlines():
+    if line.startswith('password='):
+        token = line.split('=', 1)[1]
 
 headers = {'Authorization': f'token {token}', 'User-Agent': 'AAGAM-Audit'}
 

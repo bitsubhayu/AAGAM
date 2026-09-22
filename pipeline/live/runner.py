@@ -30,6 +30,11 @@ from core.config import get_locations, get_regions, settings
 from pipeline.blend.blender import AagamBlender
 from pipeline.blend.extremes import ExtremeGuidanceEngine
 from pipeline.clients.openmeteo import OPENMETEO_MODELS, OpenMeteoClient
+from pipeline.events.group import AlertEventRecord, group_alerts_into_events
+from pipeline.events.lifecycle_state import (
+    compute_lifecycle_states,
+    update_event_cancellations_and_expiries,
+)
 from pipeline.models.lgbm import LightGBMEngine
 from pipeline.models.registry import model_registry
 from pipeline.models.select import SelectionDecision
@@ -405,9 +410,96 @@ class LivePipelineRunner:
             """
             execute_values(cur, blend_upsert_query, blended_records, page_size=1000)
 
-            # 9. Upsert alerts into database
-            if alerts_list:
-                logger.info(f"Upserting {len(alerts_list)} alerts into database...")
+            # 9. Phase 10: Event grouping, lifecycle state evaluation, and alert upsert
+            # Query existing active alert_events from database
+            cur.execute("""
+                SELECT id, location_id, hazard, status, severity_peak, value_peak,
+                       start_date, end_date, first_detected_at, last_updated_at, outcome, verified_at
+                FROM alert_events
+                WHERE status = 'active';
+            """)
+            active_events = [
+                AlertEventRecord(
+                    id=r[0], location_id=r[1], hazard=r[2], status=r[3],
+                    severity_peak=r[4], value_peak=r[5], start_date=r[6], end_date=r[7],
+                    first_detected_at=r[8], last_updated_at=r[9], outcome=r[10], verified_at=r[11]
+                )
+                for r in cur.fetchall()
+            ]
+
+            # Query immediately previous cycle alerts
+            cur.execute("""
+                SELECT DISTINCT issue_time FROM alerts
+                WHERE issue_time < %s
+                ORDER BY issue_time DESC LIMIT 1;
+            """, (started_at,))
+            prev_issue_row = cur.fetchone()
+            previous_alerts = []
+            if prev_issue_row:
+                cur.execute("""
+                    SELECT id, location_id, hazard, severity, valid_date, lead_days, value, event_id
+                    FROM alerts
+                    WHERE issue_time = %s;
+                """, (prev_issue_row[0],))
+                previous_alerts = [
+                    {
+                        "id": r[0], "location_id": r[1], "hazard": r[2],
+                        "severity": r[3], "valid_date": r[4], "lead_days": r[5],
+                        "value": r[6], "event_id": r[7]
+                    }
+                    for r in cur.fetchall()
+                ]
+
+            # Compute lifecycle states (new, upgraded, downgraded, unchanged)
+            compute_lifecycle_states(alerts_list, previous_alerts)
+
+            # Group alerts into alert_events
+            grouped_alerts, updated_events = group_alerts_into_events(alerts_list, active_events, now=started_at)
+
+            # Persist alert_events (insert new or update existing)
+            for evt in updated_events:
+                if evt.id is None or evt.id < 0:
+                    cur.execute("""
+                        INSERT INTO alert_events (
+                            location_id, hazard, status, severity_peak, value_peak,
+                            start_date, end_date, first_detected_at, last_updated_at, outcome
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id;
+                    """, (
+                        evt.location_id, evt.hazard, evt.status, evt.severity_peak, evt.value_peak,
+                        evt.start_date, evt.end_date, evt.first_detected_at, evt.last_updated_at, evt.outcome
+                    ))
+                    new_id = cur.fetchone()[0]
+                    old_temp_id = evt.id
+                    evt.id = new_id
+                    for a in grouped_alerts:
+                        if getattr(a, "event_id", None) == old_temp_id or getattr(a, "_event_ref", None) is evt:
+                            a.event_id = new_id
+                else:
+                    cur.execute("""
+                        UPDATE alert_events
+                        SET start_date = %s, end_date = %s, severity_peak = %s, value_peak = %s,
+                            status = %s, last_updated_at = %s
+                        WHERE id = %s;
+                    """, (
+                        evt.start_date, evt.end_date, evt.severity_peak, evt.value_peak,
+                        evt.status, evt.last_updated_at, evt.id
+                    ))
+
+            # Handle event and alert cancellations/expiries
+            expired_ids, cancelled_evt_ids, cancelled_alert_ids = update_event_cancellations_and_expiries(
+                grouped_alerts, previous_alerts, updated_events, today_date=started_at.date(), now=started_at
+            )
+            if expired_ids:
+                cur.execute("UPDATE alert_events SET status = 'expired', last_updated_at = %s WHERE id = ANY(%s::bigint[]);", (started_at, expired_ids))
+            if cancelled_evt_ids:
+                cur.execute("UPDATE alert_events SET status = 'cancelled', last_updated_at = %s WHERE id = ANY(%s::bigint[]);", (started_at, cancelled_evt_ids))
+            if cancelled_alert_ids:
+                cur.execute("UPDATE alerts SET lifecycle_state = 'cancelled' WHERE id = ANY(%s::bigint[]);", (cancelled_alert_ids,))
+
+            # Upsert enriched alerts into database
+            if grouped_alerts:
+                logger.info(f"Upserting {len(grouped_alerts)} alerts with lifecycle states into database...")
                 alert_records = [
                     (
                         started_at,
@@ -421,13 +513,16 @@ class LivePipelineRunner:
                         a.spread,
                         json.dumps(a.rule),
                         a.status,
+                        getattr(a, "event_id", None),
+                        getattr(a, "lifecycle_state", "new"),
+                        getattr(a, "previous_severity", None),
                     )
-                    for a in alerts_list
+                    for a in grouped_alerts
                 ]
                 alert_upsert_query = """
                     INSERT INTO alerts (
                         issue_time, location_id, hazard, severity, valid_date, lead_days,
-                        value, models_over, spread, rule, status
+                        value, models_over, spread, rule, status, event_id, lifecycle_state, previous_severity
                     ) VALUES %s
                     ON CONFLICT (issue_time, location_id, hazard, valid_date, lead_days) DO UPDATE
                     SET severity = EXCLUDED.severity,
@@ -435,7 +530,10 @@ class LivePipelineRunner:
                         models_over = EXCLUDED.models_over,
                         spread = EXCLUDED.spread,
                         rule = EXCLUDED.rule,
-                        status = EXCLUDED.status;
+                        status = EXCLUDED.status,
+                        event_id = EXCLUDED.event_id,
+                        lifecycle_state = EXCLUDED.lifecycle_state,
+                        previous_severity = EXCLUDED.previous_severity;
                 """
                 execute_values(cur, alert_upsert_query, alert_records, page_size=1000)
 

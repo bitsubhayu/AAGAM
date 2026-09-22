@@ -1,8 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { AlertAckResponse, AlertListResponse } from "./types";
+import type {
+  AlertAckResponse,
+  AlertEventAckResponse,
+  AlertEventDetailResponse,
+  AlertListResponse,
+} from "./types";
 
-interface UseAlertsParams {
+export interface UseAlertsParams {
+  window?: "upcoming_2d" | "upcoming_3d" | "upcoming_7d" | "past_24h" | "past_7d" | string;
   status?: string;
   hazard?: string;
   region?: string;
@@ -14,6 +20,7 @@ interface UseAlertsParams {
 
 export function useAlerts(params: UseAlertsParams = {}) {
   const queryParams = new URLSearchParams();
+  if (params.window) queryParams.set("window", params.window);
   if (params.status) queryParams.set("status", params.status);
   if (params.hazard && params.hazard !== "ALL") queryParams.set("hazard", params.hazard);
   if (params.region && params.region !== "ALL") queryParams.set("region", params.region);
@@ -33,6 +40,15 @@ export function useAlerts(params: UseAlertsParams = {}) {
   });
 }
 
+export function useAlertEvent(eventId?: number | null) {
+  return useQuery<AlertEventDetailResponse>({
+    queryKey: ["alert-event", eventId],
+    queryFn: () => apiFetch<AlertEventDetailResponse>(`/alerts/events/${eventId}`),
+    enabled: typeof eventId === "number" && eventId > 0,
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useAcknowledgeAlert() {
   const queryClient = useQueryClient();
 
@@ -43,6 +59,22 @@ export function useAcknowledgeAlert() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["alert-event"] });
+    },
+  });
+}
+
+export function useAcknowledgeAlertEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation<AlertEventAckResponse, Error, number>({
+    mutationFn: (eventId: number) =>
+      apiFetch<AlertEventAckResponse>(`/alerts/events/${eventId}/ack`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["alert-event"] });
     },
   });
 }

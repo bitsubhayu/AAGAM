@@ -87,7 +87,6 @@ def test_protected_endpoints_reject_missing_token(client):
         "/api/v1/weights",
         "/api/v1/weights/map",
         "/api/v1/skill",
-        "/api/v1/alerts",
         "/api/v1/history?location=bhubaneswar&variable=rain_mm",
         "/api/v1/pipeline/status",
     ]

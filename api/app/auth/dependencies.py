@@ -118,14 +118,31 @@ async def get_current_user(
     return CurrentUser(user_id=user_id, email=email, role=user_role)
 
 
-def require_role(min_role: str) -> Callable[[CurrentUser], CurrentUser]:
+async def get_optional_user(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> CurrentUser:
+    """Dependency that extracts user if Authorization header is provided, or yields anonymous user."""
+    if not authorization:
+        await set_rls_claims(conn, None, role="anon")
+        return CurrentUser(user_id="", email=None, role="anon")
+    return await get_current_user(authorization=authorization, conn=conn)
+
+
+def require_role(min_role: str, allow_anonymous: bool = False) -> Callable[..., CurrentUser]:
     """Dependency factory to enforce role-based access control.
 
     min_role:
-    - 'any': allows 'viewer', 'forecaster', 'admin'
+    - 'public' or allow_anonymous=True: allows 'anon', 'viewer', 'forecaster', 'admin'
+    - 'any': allows authenticated 'viewer', 'forecaster', 'admin'
     - 'forecaster+': allows 'forecaster', 'admin'
     - 'admin': allows 'admin' only
     """
+    if min_role == "public" or allow_anonymous:
+        def public_role_checker(current_user: CurrentUser = Depends(get_optional_user)) -> CurrentUser:
+            return current_user
+        return public_role_checker
+
     def role_checker(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         user_role = current_user.role
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   AlertTriangle,
   Award,
@@ -7,6 +7,7 @@ import {
   ArrowRight,
   ShieldCheck,
   MapPin,
+  Clock,
 } from "lucide-react";
 import { useUIStore, VARIABLES } from "@/store/uiStore";
 import { useAlerts } from "@/api/useAlerts";
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { IndiaForecastMap } from "@/components/map/IndiaForecastMap";
 import { AlertCard } from "@/components/alerts/AlertCard";
+import { AlertEventDetailDrawer } from "@/components/alerts/AlertEventDetailDrawer";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export const OverviewPage: React.FC = () => {
@@ -26,9 +28,33 @@ export const OverviewPage: React.FC = () => {
     setActiveTab,
   } = useUIStore();
 
+  // Selected window with local storage client-side persistence (PRD §10.4 FR-UI-1)
+  const [selectedWindow, setSelectedWindow] = useState<string>(() => {
+    try {
+      return localStorage.getItem("aagam_alert_window") || "upcoming_7d";
+    } catch {
+      return "upcoming_7d";
+    }
+  });
+
+  const [hazardFilter, setHazardFilter] = useState<string>("ALL");
+  const [regionFilter, setRegionFilter] = useState<string>("ALL");
+  const [minSeverityFilter, setMinSeverityFilter] = useState<string>("ALL");
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("aagam_alert_window", selectedWindow);
+    } catch {}
+  }, [selectedWindow]);
+
   const { data: alertsData, isLoading: alertsLoading } = useAlerts({
-    status: "active",
-    limit: 5,
+    window: selectedWindow,
+    hazard: hazardFilter !== "ALL" ? hazardFilter : undefined,
+    region: regionFilter !== "ALL" ? regionFilter : undefined,
+    minSeverity: minSeverityFilter !== "ALL" ? minSeverityFilter : undefined,
+    limit: 20,
   });
 
   const { data: meta, isLoading: metaLoading } = useMeta();
@@ -39,6 +65,12 @@ export const OverviewPage: React.FC = () => {
 
   const varMeta = VARIABLES[selectedVariable];
   const activeAlertsCount = alertsData?.count ?? 0;
+  const rawAlerts = alertsData?.alerts || [];
+
+  // Severity counts
+  const advisoryCount = rawAlerts.filter((a) => a.severity === "advisory").length;
+  const watchCount = rawAlerts.filter((a) => a.severity === "watch").length;
+  const alertCount = rawAlerts.filter((a) => a.severity === "alert").length;
 
   // Calculate skill gain vs equal-mean from latest scores
   const blendScore = skillData?.scores?.find(
@@ -88,6 +120,28 @@ export const OverviewPage: React.FC = () => {
           colorClass: "text-text-primary",
         };
 
+  const getEmptyStateMessage = () => {
+    switch (selectedWindow) {
+      case "upcoming_2d":
+        return "No alerts in the next 2 days.";
+      case "upcoming_3d":
+        return "No alerts in the next 3 days.";
+      case "upcoming_7d":
+        return "No alerts in the next 7 days.";
+      case "past_24h":
+        return "No alerts recorded in the last 24 hours.";
+      case "past_7d":
+        return "No alerts recorded in the last 7 days.";
+      default:
+        return "No alerts matching current filters.";
+    }
+  };
+
+  const handleOpenEvent = (eventId: number) => {
+    setSelectedEventId(eventId);
+    setDrawerOpen(true);
+  };
+
   return (
     <div className="space-y-4 font-sans">
       {/* KPI Tiles Row (PRD §10.4 FR-UI-1) */}
@@ -95,7 +149,7 @@ export const OverviewPage: React.FC = () => {
         {/* KPI 1: Active Alerts */}
         <Card compact className="border-l-4 border-l-hazard-alert">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">Active Weather Alerts</span>
+            <span className="text-xs font-medium text-text-muted">Weather Alerts Window</span>
             <AlertTriangle className="w-4 h-4 text-hazard-alert" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
@@ -105,7 +159,7 @@ export const OverviewPage: React.FC = () => {
             <span className="text-xs text-text-muted">flagged points</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className="text-text-muted">Next 72h window</span>
+            <span className="text-text-muted capitalize">{selectedWindow.replace("_", " ")}</span>
             <button
               onClick={() => setActiveTab("alerts")}
               className="text-brand-blue hover:underline font-medium"
@@ -118,7 +172,7 @@ export const OverviewPage: React.FC = () => {
         {/* KPI 2: Dominant / Best Model */}
         <Card compact className="border-l-4 border-l-brand-blue">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">Dominant Model (Lead)</span>
+            <span className="text-xs font-medium text-text-muted">Top Single Model</span>
             <Award className="w-4 h-4 text-brand-blue" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
@@ -127,18 +181,21 @@ export const OverviewPage: React.FC = () => {
             </span>
             <span className="text-xs text-text-muted">{topModelInfo.res}</span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
-            <span>Lead D+{selectedLeadDays} ({varMeta.shortUnit})</span>
-            <span className="text-emerald-400 font-mono">
-              {bestSingle?.mae ? `${bestSingle.mae.toFixed(2)} MAE` : "Top skill"}
-            </span>
+          <div className="mt-1 flex items-center justify-between text-[11px]">
+            <span className="text-text-muted">D+{selectedLeadDays} ({varMeta?.shortUnit || ""}) lead error</span>
+            <button
+              onClick={() => setActiveTab("weights")}
+              className="text-brand-blue hover:underline font-medium"
+            >
+              Weights &rarr;
+            </button>
           </div>
         </Card>
 
-        {/* KPI 3: Blend Skill Gain */}
+        {/* KPI 3: Ensemble Skill Gain */}
         <Card compact className="border-l-4 border-l-emerald-500">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">AAGAM Blend Gain</span>
+            <span className="text-xs font-medium text-text-muted">Blend Performance</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
@@ -146,57 +203,53 @@ export const OverviewPage: React.FC = () => {
               {skillGainText}
             </span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
-            <span>90-Day evaluation test</span>
+          <div className="mt-1 flex items-center justify-between text-[11px]">
+            <span className="text-text-muted">Held-out test block</span>
             <button
               onClick={() => setActiveTab("skill")}
               className="text-brand-blue hover:underline font-medium"
             >
-              Skill matrix &rarr;
+              Skill Curves &rarr;
             </button>
           </div>
         </Card>
 
-        {/* KPI 4: Pipeline Health & Active Version */}
-        <Card compact className="border-l-4 border-l-purple-500">
+        {/* KPI 4: Ingestion / System Health */}
+        <Card compact className="border-l-4 border-l-emerald-400">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">Model Version & Freshness</span>
-            <Server className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-medium text-text-muted">Ingest Status</span>
+            <Server className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-text-primary">
-              {metaLoading
-                ? "..."
-                : meta?.active_model_version?.id
-                ? `v${meta.active_model_version.id}`
-                : "v1"}
+            <span className="text-2xl font-bold font-mono text-emerald-400">
+              {metaLoading ? "..." : meta?.last_run?.status?.toUpperCase() || "OK"}
             </span>
-            <span className="text-xs px-1.5 py-0.2 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-800/40 font-mono">
-              ACTIVE
+            <span className="text-xs text-text-muted font-mono">
+              {meta?.models ? `${meta.models.length}/${meta.models.length} sources` : "4/4 sources"}
             </span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
-            <span>
-              {meta?.models ? `${meta.models.length}/${meta.models.length} Model Feeds OK` : "Feeds Active"}
+          <div className="mt-1 flex items-center justify-between text-[11px]">
+            <span className="text-text-muted font-mono">
+              v{meta?.active_model_version?.id ? `${meta.active_model_version.id}` : "prod"}
             </span>
             <button
               onClick={() => setActiveTab("pipeline")}
               className="text-brand-blue hover:underline font-medium"
             >
-              Telemetry &rarr;
+              Health &rarr;
             </button>
           </div>
         </Card>
       </div>
 
-      {/* Main Viewport: Split Spatial Map & Recent Alerts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left 2 Cols: India Spatial Map */}
-        <div className="lg:col-span-2 space-y-3">
+      {/* Main Content Grid: Map (2 Cols) + Home Alerts Section (1 Col) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        {/* Left 2 Cols: Interactive Map with Lead & Variable Controls */}
+        <div className="lg:col-span-2 space-y-4">
           <Card className="p-4">
-            <CardHeader className="pb-2 mb-2">
+            <CardHeader className="pb-3 border-b border-border">
               <div>
-                <CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-brand-blue" />
                   <span>Operational Spatial Forecast Grid</span>
                 </CardTitle>
@@ -218,37 +271,141 @@ export const OverviewPage: React.FC = () => {
           </Card>
         </div>
 
-        {/* Right 1 Col: Top Active Alerts & Quick Status */}
+        {/* Right 1 Col: Upgraded Public Home Alerts Section (PRD §10.4 FR-UI-1) */}
         <div className="space-y-4">
           <Card className="p-4">
             <CardHeader className="pb-2 mb-2">
               <div>
                 <CardTitle>
                   <AlertTriangle className="w-4 h-4 text-brand-orange" />
-                  <span>Priority Weather Alerts</span>
+                  <span>Weather Alerts & Events</span>
                 </CardTitle>
                 <CardDescription>
-                  Active extreme guidance flags across next 72 hours
+                  Public hazard guidance calibrated to IMD criteria
                 </CardDescription>
               </div>
-              <Badge variant="watch">{activeAlertsCount} ACTIVE</Badge>
+              <Badge variant="watch">{activeAlertsCount} TOTAL</Badge>
             </CardHeader>
 
-            <div className="space-y-2.5 mt-3">
+            {/* Upcoming / Past Window Toggle */}
+            <div className="space-y-2 pt-1 border-t border-border/60">
+              <div className="flex items-center justify-between text-[11px] text-text-muted">
+                <span className="flex items-center gap-1 font-medium">
+                  <Clock className="w-3 h-3 text-brand-blue" />
+                  <span>Window:</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-mono">
+                    {advisoryCount} Adv
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/30 text-[10px] font-mono">
+                    {watchCount} Wat
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 text-[10px] font-mono font-bold">
+                    {alertCount} Alt
+                  </span>
+                </div>
+              </div>
+
+              {/* Toggle Buttons */}
+              <div className="grid grid-cols-2 gap-1.5 bg-[#161b22] p-1 rounded border border-border text-xs">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-text-muted uppercase font-mono px-1">Upcoming:</span>
+                  {(["upcoming_2d", "upcoming_3d", "upcoming_7d"] as const).map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => setSelectedWindow(w)}
+                      className={`flex-1 py-1 px-1 rounded text-[11px] font-medium transition-colors ${
+                        selectedWindow === w
+                          ? "bg-brand-blue text-white"
+                          : "text-text-muted hover:text-text-secondary bg-[#21262d]"
+                      }`}
+                      title={w === "upcoming_7d" ? "Next 7 days (Default)" : undefined}
+                    >
+                      {w === "upcoming_2d" ? "2d" : w === "upcoming_3d" ? "3d" : "7d (Def)"}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 border-l border-border/60 pl-1.5">
+                  <span className="text-[10px] text-text-muted uppercase font-mono px-1">Past:</span>
+                  {(["past_24h", "past_7d"] as const).map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => setSelectedWindow(w)}
+                      className={`flex-1 py-1 px-1 rounded text-[11px] font-medium transition-colors ${
+                        selectedWindow === w
+                          ? "bg-brand-blue text-white"
+                          : "text-text-muted hover:text-text-secondary bg-[#21262d]"
+                      }`}
+                    >
+                      {w === "past_24h" ? "24h" : "7d"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filters Row */}
+              <div className="grid grid-cols-3 gap-1.5 text-[11px] pt-1">
+                <select
+                  value={hazardFilter}
+                  onChange={(e) => setHazardFilter(e.target.value)}
+                  className="bg-[#21262d] border border-border rounded px-1.5 py-1 text-text-primary outline-none"
+                >
+                  <option value="ALL">All Hazards</option>
+                  <option value="heavy_rain">Rain</option>
+                  <option value="heatwave">Heat</option>
+                  <option value="high_wind">Wind</option>
+                  <option value="high_uncertainty">Spread</option>
+                </select>
+
+                <select
+                  value={regionFilter}
+                  onChange={(e) => setRegionFilter(e.target.value)}
+                  className="bg-[#21262d] border border-border rounded px-1.5 py-1 text-text-primary outline-none"
+                >
+                  <option value="ALL">All Regions</option>
+                  <option value="NORTH">North</option>
+                  <option value="SOUTH">South</option>
+                  <option value="EAST_NE">East/NE</option>
+                  <option value="WEST">West</option>
+                  <option value="CENTRAL">Central</option>
+                </select>
+
+                <select
+                  value={minSeverityFilter}
+                  onChange={(e) => setMinSeverityFilter(e.target.value)}
+                  className="bg-[#21262d] border border-border rounded px-1.5 py-1 text-text-primary outline-none"
+                >
+                  <option value="ALL">All Levels</option>
+                  <option value="advisory">Advisory+</option>
+                  <option value="watch">Watch+</option>
+                  <option value="alert">Alert Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Alerts List / Calm Empty State */}
+            <div className="space-y-2.5 mt-3 max-h-[500px] overflow-y-auto pr-0.5">
               {alertsLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-16 w-full" />
                   <Skeleton className="h-16 w-full" />
                   <Skeleton className="h-16 w-full" />
                 </div>
-              ) : !alertsData?.alerts || alertsData.alerts.length === 0 ? (
-                <div className="p-6 bg-[#21262d] rounded-lg text-center text-xs text-text-muted">
+              ) : rawAlerts.length === 0 ? (
+                <div className="p-6 bg-[#21262d] rounded-lg text-center text-xs text-text-muted space-y-1">
                   <ShieldCheck className="w-6 h-6 text-emerald-400 mx-auto mb-1.5" />
-                  No severe weather alerts active in the next 72 hours.
+                  <div className="font-medium text-text-secondary">{getEmptyStateMessage()}</div>
+                  <div className="text-[11px]">All 40 synoptic stations currently within normal thresholds.</div>
                 </div>
               ) : (
-                alertsData.alerts.map((alert) => (
-                  <AlertCard key={alert.id} alert={alert} />
+                rawAlerts.map((alert) => (
+                  <AlertCard
+                    key={alert.id}
+                    alert={alert}
+                    onSelectEvent={handleOpenEvent}
+                  />
                 ))
               )}
             </div>
@@ -261,7 +418,7 @@ export const OverviewPage: React.FC = () => {
                   onClick={() => setActiveTab("alerts")}
                   className="w-full text-xs text-brand-blue"
                 >
-                  <span>View all {activeAlertsCount} alerts in Extreme Weather Center</span>
+                  <span>View full history in Extreme Weather Center</span>
                   <ArrowRight className="w-3 h-3 ml-1" />
                 </Button>
               </div>
@@ -269,6 +426,16 @@ export const OverviewPage: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* Phase 10 Alert Event Detail Drawer */}
+      <AlertEventDetailDrawer
+        eventId={selectedEventId}
+        isOpen={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setSelectedEventId(null);
+        }}
+      />
     </div>
   );
 };

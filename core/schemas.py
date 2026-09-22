@@ -236,6 +236,10 @@ class AlertItem(BaseModel):
     status: str
     acknowledged_by: Optional[str] = None
     acknowledged_at: Optional[str] = None
+    event_id: Optional[int] = None
+    lifecycle_state: Optional[str] = None
+    previous_severity: Optional[str] = None
+    rarity_label: Optional[str] = None
 
 
 class AlertListResponse(BaseModel):
@@ -244,6 +248,49 @@ class AlertListResponse(BaseModel):
 
 
 class AlertAckResponse(BaseModel):
+    id: int
+    status: str
+    acknowledged_by: str
+    acknowledged_at: str
+
+
+class AlertEventItem(BaseModel):
+    id: int
+    location_id: int
+    location_name: Optional[str] = None
+    location_slug: Optional[str] = None
+    region: Optional[str] = None
+    hazard: str
+    status: str
+    severity_peak: str
+    value_peak: Optional[float] = None
+    start_date: str
+    end_date: str
+    first_detected_at: str
+    last_updated_at: str
+    outcome: str = "pending"
+    verified_at: Optional[str] = None
+
+
+class LifecycleEventNode(BaseModel):
+    issue_time: str
+    lifecycle_state: str
+    severity: str
+    previous_severity: Optional[str] = None
+    valid_date: str
+    value: Optional[float] = None
+
+
+class AlertEventDetailResponse(BaseModel):
+    event: AlertEventItem
+    alerts: List[AlertItem]
+    lifecycle_history: List[LifecycleEventNode]
+    guidance: Optional[Dict[str, Any]] = None
+    track_record: Optional[Dict[str, Any]] = None
+    share_text: Optional[str] = None
+
+
+class AlertEventAckResponse(BaseModel):
     id: int
     status: str
     acknowledged_by: str

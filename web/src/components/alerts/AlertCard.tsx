@@ -8,6 +8,7 @@ import {
   HelpCircle,
   Clock,
   Check,
+  Activity,
 } from "lucide-react";
 import type { AlertItem } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
@@ -19,9 +20,10 @@ import { WhyFlaggedModal } from "./WhyFlaggedModal";
 
 interface AlertCardProps {
   alert: AlertItem;
+  onSelectEvent?: (eventId: number) => void;
 }
 
-export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
+export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) => {
   const { role } = useAuthStore();
   const ackMutation = useAcknowledgeAlert();
   const [whyModalOpen, setWhyModalOpen] = useState(false);
@@ -32,6 +34,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
   const getHazardIcon = () => {
     switch (alert.hazard) {
       case "heavy_rain":
+      case "heavy_rain_3day":
         return <CloudRain className="w-4 h-4 text-blue-400" />;
       case "heatwave":
         return <Flame className="w-4 h-4 text-orange-400" />;
@@ -43,7 +46,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
   };
 
   const getUnit = () => {
-    if (alert.hazard === "heavy_rain") return "mm/24h";
+    if (alert.hazard === "heavy_rain" || alert.hazard === "heavy_rain_3day") return "mm/24h";
     if (alert.hazard === "heatwave") return "°C";
     if (alert.hazard === "high_wind") return "km/h";
     return "";
@@ -70,6 +73,21 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
       ? "watch"
       : "advisory";
 
+  const getLifecycleBadgeClass = (state?: string) => {
+    switch (state) {
+      case "new":
+        return "bg-blue-500/10 text-blue-400 border-blue-500/30";
+      case "upgraded":
+        return "bg-rose-500/10 text-rose-400 border-rose-500/30 font-bold";
+      case "downgraded":
+        return "bg-amber-500/10 text-amber-400 border-amber-500/30";
+      case "cancelled":
+        return "bg-zinc-500/10 text-zinc-400 border-zinc-500/30 line-through";
+      default:
+        return "bg-zinc-500/10 text-zinc-400 border-zinc-500/30";
+    }
+  };
+
   return (
     <>
       <div
@@ -93,6 +111,12 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
               <Badge variant={severityVariant} showIcon>
                 {alert.severity.toUpperCase()}
               </Badge>
+              {alert.lifecycle_state && (
+                <span className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border ${getLifecycleBadgeClass(alert.lifecycle_state)}`}>
+                  {alert.lifecycle_state}
+                  {alert.previous_severity && alert.lifecycle_state !== "new" && ` (from ${alert.previous_severity})`}
+                </span>
+              )}
               {isAcknowledged && (
                 <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
                   <CheckCircle2 className="w-3 h-3" />
@@ -105,7 +129,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
               <div>
                 <span className="text-text-muted text-[11px]">Forecast: </span>
                 <span className="font-mono font-bold text-text-primary text-sm">
-                  {alert.value.toFixed(1)} {getUnit()}
+                  {alert.value !== null && alert.value !== undefined ? alert.value.toFixed(1) : "—"} {getUnit()}
                 </span>
               </div>
               <div className="flex items-center gap-1">
@@ -117,7 +141,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
             </div>
 
             {/* Agreement chip & spread */}
-            <div className="flex items-center gap-2 pt-1">
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
               <span className="text-[10px] px-2 py-0.5 rounded bg-[#21262d] text-text-secondary border border-border font-mono">
                 Agreement: {alert.models_over}/4 models exceed threshold
               </span>
@@ -131,23 +155,35 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert }) => {
 
           {/* Right: Actions */}
           <div className="flex flex-col items-end gap-2 shrink-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setWhyModalOpen(true)}
-              className="text-text-muted hover:text-text-primary text-[11px] h-7 px-2"
-            >
-              <HelpCircle className="w-3.5 h-3.5 mr-1 text-brand-blue" />
-              <span>Why Flagged</span>
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {alert.event_id && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSelectEvent?.(alert.event_id!)}
+                  className="text-brand-blue border-brand-blue/30 hover:bg-brand-blue/10 text-[11px] h-7 px-2"
+                >
+                  <Activity className="w-3 h-3 mr-1" />
+                  <span>Event Detail</span>
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setWhyModalOpen(true)}
+                className="text-text-muted hover:text-text-primary text-[11px] h-7 px-2"
+              >
+                <HelpCircle className="w-3.5 h-3.5 mr-1 text-brand-blue" />
+                <span>Why Flagged</span>
+              </Button>
+            </div>
 
             {!isAcknowledged && (
               <Button
                 variant={canAck ? "secondary" : "outline"}
                 size="sm"
                 onClick={handleAcknowledge}
-                isLoading={ackMutation.isPending}
-                disabled={!canAck}
+                disabled={!canAck || ackMutation.isPending}
                 className="text-xs h-7 px-2.5"
                 title={canAck ? "Acknowledge alert" : "Forecaster or Admin permission required"}
               >

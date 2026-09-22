@@ -106,11 +106,16 @@ async def get_db_conn() -> AsyncGenerator[asyncpg.Connection, None]:
         yield conn
 
 
-async def set_rls_claims(conn: asyncpg.Connection, user_id: str, role: str = "authenticated") -> None:
+async def set_rls_claims(conn: asyncpg.Connection, user_id: Optional[str], role: str = "authenticated") -> None:
     """Configures PostgreSQL session variables so auth.uid() and role evaluate correctly under RLS.
 
     Supabase PostgREST uses `request.jwt.claims` JSON and `role` config.
     """
-    claims = json.dumps({"sub": user_id, "role": role})
-    await conn.execute("SELECT set_config('request.jwt.claims', $1, true);", claims)
-    await conn.execute("SELECT set_config('role', 'authenticated', true);")
+    if role == "anon" or not user_id:
+        claims = json.dumps({"role": "anon"})
+        await conn.execute("SELECT set_config('request.jwt.claims', $1, true);", claims)
+        await conn.execute("SELECT set_config('role', 'anon', true);")
+    else:
+        claims = json.dumps({"sub": str(user_id), "role": role})
+        await conn.execute("SELECT set_config('request.jwt.claims', $1, true);", claims)
+        await conn.execute("SELECT set_config('role', 'authenticated', true);")
