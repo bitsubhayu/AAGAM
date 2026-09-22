@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     OPENMETEO_BASE_FORECAST: str = Field(default="https://api.open-meteo.com/v1/forecast")
     OPENMETEO_BASE_HISTORICAL: str = Field(default="https://archive-api.open-meteo.com/v1/archive")
 
+    # Brevo Email
+    BREVO_API_KEY: Optional[str] = Field(default=None)
+    BREVO_SENDER_EMAIL: str = Field(default="alerts@aagam.org")
+    BREVO_SENDER_NAME: str = Field(default="AAGAM Weather Alerts")
+
     # Timezone & Server
     APP_TZ_DISPLAY: str = Field(default="Asia/Kolkata")
     PORT: int = Field(default=8000)

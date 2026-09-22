@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   MapPin,
   Clock,
+  Bell,
 } from "lucide-react";
 import { useUIStore, VARIABLES } from "@/store/uiStore";
 import { useAlerts } from "@/api/useAlerts";
@@ -19,6 +20,9 @@ import { Badge } from "@/components/ui/Badge";
 import { IndiaForecastMap } from "@/components/map/IndiaForecastMap";
 import { AlertCard } from "@/components/alerts/AlertCard";
 import { AlertEventDetailDrawer } from "@/components/alerts/AlertEventDetailDrawer";
+import { GetAlertsDialog } from "@/components/alerts/GetAlertsDialog";
+import { fetchMySubscription } from "@/api/client";
+import type { Subscription } from "@/api/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export const OverviewPage: React.FC = () => {
@@ -42,6 +46,21 @@ export const OverviewPage: React.FC = () => {
   const [minSeverityFilter, setMinSeverityFilter] = useState<string>("ALL");
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
+
+  // Phase 11 Get Alerts / Subscription state
+  const [isGetAlertsOpen, setIsGetAlertsOpen] = useState<boolean>(false);
+  const [mySubscription, setMySubscription] = useState<Subscription | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(() => localStorage.getItem("aagam_user_email"));
+
+  useEffect(() => {
+    const email = localStorage.getItem("aagam_user_email");
+    const token = localStorage.getItem("aagam_auth_token");
+    if (token && email) {
+      fetchMySubscription()
+        .then((sub) => setMySubscription(sub))
+        .catch(() => {});
+    }
+  }, [isGetAlertsOpen]);
 
   useEffect(() => {
     try {
@@ -284,8 +303,37 @@ export const OverviewPage: React.FC = () => {
                   Public hazard guidance calibrated to IMD criteria
                 </CardDescription>
               </div>
-              <Badge variant="watch">{activeAlertsCount} TOTAL</Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsGetAlertsOpen(true)}
+                  className="text-xs h-7 gap-1 border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
+                >
+                  <Bell className="w-3 h-3" />
+                  <span>{userEmail ? "Your Alerts" : "Get Alerts"}</span>
+                </Button>
+                <Badge variant="watch">{activeAlertsCount} TOTAL</Badge>
+              </div>
             </CardHeader>
+
+            {/* Personalized Subscriber Greeting (PRD §10.4) */}
+            {userEmail && mySubscription?.active && (
+              <div className="mx-4 mt-2 p-2.5 rounded-lg bg-[#3FD0B4]/10 border border-[#3FD0B4]/30 text-xs text-[#E7EDF3] flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-3.5 h-3.5 text-[#3FD0B4]" />
+                  <span>
+                    Hi, <strong className="font-semibold text-[#3FD0B4]">{userEmail.split("@")[0]}</strong> &mdash; showing alerts for your {mySubscription.location_ids.length} saved location(s).
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsGetAlertsOpen(true)}
+                  className="text-[11px] text-[#3FD0B4] underline hover:text-[#3FD0B4]/80 font-medium ml-2 shrink-0"
+                >
+                  Manage
+                </button>
+              </div>
+            )}
 
             {/* Upcoming / Past Window Toggle */}
             <div className="space-y-2 pt-1 border-t border-border/60">
@@ -434,6 +482,16 @@ export const OverviewPage: React.FC = () => {
         onClose={() => {
           setDrawerOpen(false);
           setSelectedEventId(null);
+        }}
+      />
+
+      {/* Phase 11 Get Alerts / Subscription Dialog */}
+      <GetAlertsDialog
+        isOpen={isGetAlertsOpen}
+        onClose={() => setIsGetAlertsOpen(false)}
+        onSubscriptionUpdated={(sub) => {
+          setMySubscription(sub);
+          setUserEmail(localStorage.getItem("aagam_user_email"));
         }}
       />
     </div>

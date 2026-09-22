@@ -30,6 +30,7 @@ from api.app.middleware.rate_limit import custom_rate_limit_exceeded_handler, li
 from api.app.routers import (
     alerts,
     artifacts,
+    auth,
     chat,
     export,
     forecast,
@@ -39,6 +40,7 @@ from api.app.routers import (
     models,
     pipeline,
     skill,
+    subscriptions,
     weights,
 )
 from api.app.routers import (
@@ -183,6 +185,8 @@ app.include_router(map_router.router)
 app.include_router(weights.router)
 app.include_router(skill.router)
 app.include_router(alerts.router)
+app.include_router(auth.router)
+app.include_router(subscriptions.router)
 app.include_router(history.router)
 app.include_router(artifacts.router)
 app.include_router(export.router)

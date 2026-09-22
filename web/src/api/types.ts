@@ -1,4 +1,5 @@
 export interface LocationItem {
+  id?: number;
   slug: string;
   name: string;
   state?: string;
@@ -342,3 +343,49 @@ export interface ErrorEnvelope {
     retry_after?: number | null;
   };
 }
+
+// Phase 11 — Subscriptions & OTP Auth Types
+export interface Subscription {
+  user_id: string;
+  email: string;
+  location_ids: number[];
+  hazards: string[];
+  min_severity: "advisory" | "watch" | "alert";
+  daily_summary: boolean;
+  lifecycle_emails: boolean;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubscriptionUpdate {
+  location_ids?: number[];
+  hazards?: string[];
+  min_severity?: "advisory" | "watch" | "alert";
+  daily_summary?: boolean;
+  lifecycle_emails?: boolean;
+  active?: boolean;
+}
+
+export interface OtpRequest {
+  email: string;
+}
+
+export interface OtpVerifyResponse {
+  status: string;
+  access_token: string;
+  token_type: string;
+  expires_in?: number;
+  refresh_token?: string;
+  user: {
+    id: string;
+    email?: string;
+  };
+}
+
+export interface UnsubscribeResponse {
+  status: string;
+  active: boolean;
+  message: string;
+}
+

@@ -86,3 +86,49 @@ export async function apiFetch<T>(
 
   return (await response.json()) as T;
 }
+
+import type {
+  Subscription,
+  SubscriptionUpdate,
+  OtpVerifyResponse,
+  UnsubscribeResponse,
+} from "./types";
+
+export async function requestOtp(email: string): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>("/auth/otp/request", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function verifyOtp(email: string, token: string): Promise<OtpVerifyResponse> {
+  const resp = await apiFetch<OtpVerifyResponse>("/auth/otp/verify", {
+    method: "POST",
+    body: JSON.stringify({ email, token }),
+  });
+  if (resp.access_token) {
+    localStorage.setItem("aagam_auth_token", resp.access_token);
+    if (resp.user?.email) {
+      localStorage.setItem("aagam_user_email", resp.user.email);
+    }
+  }
+  return resp;
+}
+
+export async function fetchMySubscription(): Promise<Subscription> {
+  return apiFetch<Subscription>("/subscriptions/me");
+}
+
+export async function updateMySubscription(payload: SubscriptionUpdate): Promise<Subscription> {
+  return apiFetch<Subscription>("/subscriptions/me", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function unsubscribeMySubscription(): Promise<UnsubscribeResponse> {
+  return apiFetch<UnsubscribeResponse>("/subscriptions/me", {
+    method: "DELETE",
+  });
+}
+
