@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
+  Sparkles,
 } from "lucide-react";
 import { useAlertEvent } from "@/api/useAlerts";
 import { Badge } from "@/components/ui/Badge";
@@ -230,6 +231,32 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Feature G: How Unusual (Local Extremeness) */}
+            {(data?.rarity_context || data?.rarity_label || childAlerts.some((a) => a.rarity_label)) && (
+              <div className="p-5 bg-gradient-to-br from-[#1b2333]/80 to-[#161b22] border border-brand-blue/30 rounded-xl shadow-lg space-y-2.5">
+                <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-brand-blue" />
+                    <h3 className="text-sm font-bold text-text-primary">
+                      How unusual (Local Extremeness)
+                    </h3>
+                  </div>
+                  <span className="text-[10px] text-brand-blue/90 uppercase font-mono tracking-wider font-semibold bg-brand-blue/10 px-2 py-0.5 rounded border border-brand-blue/20">
+                    15+ Year Climatology
+                  </span>
+                </div>
+
+                <div className="pt-1 space-y-1.5">
+                  <p className="text-sm font-semibold text-text-primary">
+                    {data?.rarity_context || `Also unusual for this location — ${data?.rarity_label || childAlerts.find((a) => a.rarity_label)?.rarity_label}`}
+                  </p>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    Evaluated against the station&apos;s historical day-of-year distribution (±7-day window) across qualifying years of truth observations.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Feature C: What this means */}
             {data?.guidance && (

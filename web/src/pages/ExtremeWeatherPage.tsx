@@ -93,6 +93,7 @@ export const ExtremeWeatherPage: React.FC = () => {
             >
               <option value="ALL">All Hazard Types</option>
               <option value="heavy_rain">Heavy Rainfall (≥ 64.5 mm)</option>
+              <option value="heavy_rain_3day">3-Day Heavy Rain (≥ p90)</option>
               <option value="heatwave">Heatwave Criteria</option>
               <option value="high_wind">High Wind / Gale</option>
             </select>

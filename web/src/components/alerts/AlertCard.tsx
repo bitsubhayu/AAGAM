@@ -46,7 +46,8 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
   };
 
   const getUnit = () => {
-    if (alert.hazard === "heavy_rain" || alert.hazard === "heavy_rain_3day") return "mm/24h";
+    if (alert.hazard === "heavy_rain_3day") return "mm (3-day)";
+    if (alert.hazard === "heavy_rain") return "mm/24h";
     if (alert.hazard === "heatwave") return "°C";
     if (alert.hazard === "high_wind") return "km/h";
     return "";
@@ -148,6 +149,11 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
               {alert.spread > 0 && (
                 <span className="text-[10px] text-text-muted font-mono">
                   Spread σ: {alert.spread.toFixed(1)} {getUnit()}
+                </span>
+              )}
+              {alert.rarity_label && (
+                <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-mono">
+                  {alert.rarity_label}
                 </span>
               )}
             </div>

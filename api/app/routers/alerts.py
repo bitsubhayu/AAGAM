@@ -342,6 +342,27 @@ async def get_alert_event(
         f"— via AAGAM (decision support, not an official IMD warning)"
     )
 
+    # 4. Feature G: Climatology rarity context (PRD §10.4 FR-UI-5)
+    rarity_candidates = [a.rarity_label for a in alerts if a.rarity_label]
+    peak_rarity = None
+    if "roughly a 1-in-100 event" in rarity_candidates:
+        peak_rarity = "roughly a 1-in-100 event"
+    elif "roughly a 1-in-20 event" in rarity_candidates:
+        peak_rarity = "roughly a 1-in-20 event"
+    elif "roughly a 1-in-10 event" in rarity_candidates:
+        peak_rarity = "roughly a 1-in-10 event"
+
+    rarity_context = None
+    if peak_rarity and event_item.start_date:
+        try:
+            import datetime as _dt
+
+            start_dt = _dt.date.fromisoformat(event_item.start_date.split("T")[0])
+            month_name = start_dt.strftime("%B")
+            rarity_context = f"Also unusual for {event_item.location_name} in {month_name} — {peak_rarity}"
+        except Exception:
+            rarity_context = f"Also unusual for {event_item.location_name} — {peak_rarity}"
+
     return AlertEventDetailResponse(
         event=event_item,
         alerts=alerts,
@@ -349,6 +370,8 @@ async def get_alert_event(
         guidance=guidance,
         track_record=track_record,
         share_text=share_text,
+        rarity_label=peak_rarity,
+        rarity_context=rarity_context,
     )
 
 

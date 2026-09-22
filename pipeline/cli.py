@@ -85,6 +85,21 @@ def backup_cmd(
     if result.get("status") == "SUCCESS":
         raise typer.Exit(code=0)
     raise typer.Exit(code=1)
+@app.command("climatology-backfill")
+def climatology_backfill_cmd(
+    truth_path: Optional[str] = typer.Option(None, "--truth-path", "-p", help="Path to Parquet truth observations"),
+    min_years: int = typer.Option(15, "--min-years", "-y", help="Minimum years guard floor"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Calculate without database mutation"),
+):
+    """Run climatology percentiles backfill or annual refresh across stations (Phase 13)."""
+    console.print(f"[bold green]Starting Climatology Percentiles Backfill (min_years={min_years}, dry_run={dry_run})...[/bold green]")
+    from pipeline.climatology.backfill import run_climatology_backfill
+
+    result = run_climatology_backfill(truth_source=truth_path, min_years=min_years, dry_run=dry_run)
+    console.print(f"[bold]Result:[/bold] {result}")
+    if result.get("status") == "SUCCESS":
+        raise typer.Exit(code=0)
+    raise typer.Exit(code=1)
 
 
 

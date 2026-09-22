@@ -25,6 +25,8 @@ REQUIRED_TABLES = [
     "weight_overrides",
     "pipeline_runs",
     "chat_audit",
+    "alert_events",
+    "climatology_percentiles",
 ]
 
 

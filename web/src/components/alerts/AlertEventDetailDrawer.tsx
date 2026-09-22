@@ -16,6 +16,7 @@ import {
   Share2,
   Copy,
   Send,
+  Sparkles,
 } from "lucide-react";
 import { useAlertEvent, useAcknowledgeAlertEvent } from "@/api/useAlerts";
 import { Badge } from "@/components/ui/Badge";
@@ -282,6 +283,30 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                   </div>
                 ))}
               </div>
+
+              {/* 3. How Unusual (PRD §10.4 FR-UI-5, Feature G - Climatology & Local Extremeness) */}
+              {(data?.rarity_context || data?.rarity_label || childAlerts.some((a) => a.rarity_label)) && (
+                <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-[#1b2333]/80 to-[#161b22] rounded-lg border border-brand-blue/30 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                    <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
+                      <Sparkles className="w-4 h-4 text-brand-blue" />
+                      <span>How unusual (Local Extremeness)</span>
+                    </div>
+                    <span className="text-[10px] text-brand-blue/90 uppercase tracking-wider font-mono font-semibold bg-brand-blue/10 px-1.5 py-0.5 rounded border border-brand-blue/20">
+                      15+ Year Climatology
+                    </span>
+                  </div>
+
+                  <div className="pt-1 space-y-1.5">
+                    <p className="text-xs font-semibold text-text-primary flex items-center gap-2">
+                      <span>{data?.rarity_context || `Also unusual for this location — ${data?.rarity_label || childAlerts.find((a) => a.rarity_label)?.rarity_label}`}</span>
+                    </p>
+                    <p className="text-[11px] text-text-muted leading-relaxed">
+                      Evaluated against the station&apos;s historical day-of-year distribution (±7-day window) across qualifying years of truth observations.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* 4. What This Means (PRD §10.4 FR-UI-5, Feature C) */}
               {data?.guidance && (

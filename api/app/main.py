@@ -32,6 +32,7 @@ from api.app.routers import (
     artifacts,
     auth,
     chat,
+    climatology,
     export,
     forecast,
     health,
@@ -185,6 +186,7 @@ app.include_router(map_router.router)
 app.include_router(weights.router)
 app.include_router(skill.router)
 app.include_router(alerts.router)
+app.include_router(climatology.router)
 app.include_router(auth.router)
 app.include_router(subscriptions.router)
 app.include_router(history.router)

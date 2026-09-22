@@ -19,11 +19,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import yaml
 
 from pipeline.blend.climatology import HEATWAVE_DISCLAIMER, TmaxClimatologyEngine, load_or_build_climatology
 from pipeline.blend.uncertainty import HighUncertaintyEngine, load_or_build_uncertainty_engine
+from pipeline.climatology.percentiles import get_rarity_label
 
 logger = logging.getLogger("aagam.pipeline.blend.extremes")
 
@@ -51,7 +53,7 @@ class Alert:
     location_name: str
     terrain: str
     region: str
-    hazard: str  # 'heavy_rain' | 'heatwave' | 'high_wind' | 'high_uncertainty'
+    hazard: str  # 'heavy_rain' | 'heatwave' | 'high_wind' | 'high_uncertainty' | 'heavy_rain_3day'
     severity: str  # 'advisory' | 'watch' | 'alert'
     severity_label: str  # Accessible text label (no color-only reliance)
     value: float  # Forecasted value (mm, °C, km/h, spread)
@@ -62,6 +64,7 @@ class Alert:
     degraded: bool  # True if any NWP model input was missing
     status: str  # 'active' | 'expired'
     expires_at: str
+    rarity_label: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -92,6 +95,48 @@ def load_thresholds_config() -> dict:
         return yaml.safe_load(f)
 
 
+def load_climatology_percentiles_lookup(db_url: Optional[str] = None) -> Dict[Tuple[int, str, str, int], Dict[str, Any]]:
+    """Loads all climatology percentiles from PostgreSQL into memory cache.
+
+    Maps (location_id, variable, metric, doy_window) -> percentile dict.
+    """
+    from core.config import settings
+
+    target_db = db_url or settings.DATABASE_URL
+    if not target_db:
+        return {}
+
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(target_db)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT location_id, variable, metric, doy_window, mean, p90, p95, p99, n_years
+                FROM climatology_percentiles;
+            """)
+            rows = cur.fetchall()
+        conn.close()
+
+        lookup = {}
+        for r in rows:
+            lookup[(r[0], r[1], r[2], r[3])] = {
+                "location_id": r[0],
+                "variable": r[1],
+                "metric": r[2],
+                "doy_window": r[3],
+                "mean": float(r[4]) if r[4] is not None else None,
+                "p90": float(r[5]) if r[5] is not None else None,
+                "p95": float(r[6]) if r[6] is not None else None,
+                "p99": float(r[7]) if r[7] is not None else None,
+                "n_years": int(r[8]),
+            }
+        return lookup
+    except Exception as e:
+        logger.debug(f"Could not load climatology percentiles from DB ({e}); defaulting to empty lookup.")
+        return {}
+
+
 class ExtremeGuidanceEngine:
     """Evaluates multi-hazard extreme weather rules on blended forecasts."""
 
@@ -101,11 +146,17 @@ class ExtremeGuidanceEngine:
         locations_meta: Optional[Dict[int, dict]] = None,
         climatology_engine: Optional[TmaxClimatologyEngine] = None,
         uncertainty_engine: Optional[HighUncertaintyEngine] = None,
+        climatology_percentiles_lookup: Optional[Dict[Tuple[int, str, str, int], Dict[str, Any]]] = None,
     ) -> None:
         self.cfg = thresholds_cfg or load_thresholds_config()
         self.locations_meta = locations_meta or load_locations_metadata()
         self.climatology = climatology_engine or load_or_build_climatology()
         self.uncertainty = uncertainty_engine or load_or_build_uncertainty_engine()
+        self.percentiles_lookup = (
+            climatology_percentiles_lookup
+            if climatology_percentiles_lookup is not None
+            else load_climatology_percentiles_lookup()
+        )
 
     def evaluate_rain_hazard(
         self,
@@ -175,6 +226,15 @@ class ExtremeGuidanceEngine:
         if severity is None:
             return None
 
+        # Climatology percentiles lookup for local extremeness (Phase 13)
+        doy = dt.date.fromisoformat(valid_date_str.split("T")[0]).timetuple().tm_yday
+        climo = self.percentiles_lookup.get((loc_id, "rain_mm", "1day", doy))
+        rarity_label = None
+        if climo and climo.get("n_years", 0) >= 15:
+            rarity_label = get_rarity_label(
+                blended, climo.get("p90"), climo.get("p95"), climo.get("p99"), climo["n_years"]
+            )
+
         exp_time = f"{valid_date_str}T23:59:59Z"
         rule_details = {
             "threshold_mm": thresh_heavy,
@@ -184,6 +244,8 @@ class ExtremeGuidanceEngine:
             "blended_mm": round(blended, 2),
             "ratio_of_threshold": round(blended / thresh_heavy, 3),
         }
+        if rarity_label:
+            rule_details["rarity_label"] = rarity_label
 
         alert_id = f"ALERT-RAIN-{loc_id}-{valid_date_str}-L{lead_days}"
         return Alert(
@@ -207,6 +269,7 @@ class ExtremeGuidanceEngine:
             degraded=degraded,
             status="active",
             expires_at=exp_time,
+            rarity_label=rarity_label,
         )
 
     def evaluate_wind_hazard(
@@ -258,6 +321,15 @@ class ExtremeGuidanceEngine:
         if severity is None:
             return None
 
+        # Climatology percentiles lookup for local extremeness (Phase 13)
+        doy = dt.date.fromisoformat(valid_date_str.split("T")[0]).timetuple().tm_yday
+        climo = self.percentiles_lookup.get((loc_id, "wind_max_kmh", "1day", doy))
+        rarity_label = None
+        if climo and climo.get("n_years", 0) >= 15:
+            rarity_label = get_rarity_label(
+                blended, climo.get("p90"), climo.get("p95"), climo.get("p99"), climo["n_years"]
+            )
+
         exp_time = f"{valid_date_str}T23:59:59Z"
         rule_details = {
             "applied_threshold_kmh": applied_threshold,
@@ -266,6 +338,8 @@ class ExtremeGuidanceEngine:
             "models_over_50kmh": models_over_advisory,
             "scale": "Beaufort scale gale thresholds (IMD/NDMA guidance)",
         }
+        if rarity_label:
+            rule_details["rarity_label"] = rarity_label
 
         alert_id = f"ALERT-WIND-{loc_id}-{valid_date_str}-L{lead_days}"
         return Alert(
@@ -289,6 +363,7 @@ class ExtremeGuidanceEngine:
             degraded=degraded,
             status="active",
             expires_at=exp_time,
+            rarity_label=rarity_label,
         )
 
     def check_heatwave_condition_single_day(
@@ -409,8 +484,19 @@ class ExtremeGuidanceEngine:
                 sev = "advisory"
                 consec_desc = "single day condition met (2nd consecutive day required for Watch/Alert)"
 
+            # Climatology percentiles lookup for local extremeness (Phase 13)
+            doy = dt.date.fromisoformat(valid_date_str.split("T")[0]).timetuple().tm_yday
+            climo = self.percentiles_lookup.get((loc_id, "tmax_c", "1day", doy))
+            rarity_label = None
+            if climo and climo.get("n_years", 0) >= 15:
+                rarity_label = get_rarity_label(
+                    curr["info"]["tmax"], climo.get("p90"), climo.get("p95"), climo.get("p99"), climo["n_years"]
+                )
+
             rule_details = dict(curr["info"])
             rule_details["consecutive_days_status"] = consec_desc
+            if rarity_label:
+                rule_details["rarity_label"] = rarity_label
 
             alert_id = f"ALERT-HEAT-{loc_id}-{valid_date_str}-L{lead_days}"
             alerts.append(
@@ -435,6 +521,7 @@ class ExtremeGuidanceEngine:
                     degraded=degraded,
                     status="active",
                     expires_at=f"{valid_date_str}T23:59:59Z",
+                    rarity_label=rarity_label,
                 )
             )
 
@@ -505,6 +592,136 @@ class ExtremeGuidanceEngine:
             expires_at=f"{valid_date_str}T23:59:59Z",
         )
 
+    def evaluate_heavy_rain_3day_hazards_for_location(
+        self,
+        loc_df: pd.DataFrame,
+        meta: dict,
+        creation_time: dt.datetime,
+    ) -> List[Alert]:
+        """Evaluates PRD §6.11 FR-CLIMO-3 rolling 3-day rainfall sums across forecast horizon.
+
+        Rolling 3-day blended-rain sums across the 7-day horizon (yielding up to 5 overlapping windows)
+        are compared to (location, 'rain_mm', '3day_sum', doy_window).
+        Severity (PRD §8.4):
+          - Alert: 3-day sum >= p99
+          - Watch: 3-day sum >= p95
+          - Advisory: 3-day sum >= p90
+        If climatology is missing or n_years < 15, alerts are suppressed (FR-CLIMO-4).
+        """
+        alerts: List[Alert] = []
+        if loc_df.empty:
+            return alerts
+
+        df_sorted = loc_df.sort_values("valid_date").reset_index(drop=True)
+        n_days = len(df_sorted)
+        if n_days < 3:
+            return alerts
+
+        loc_id = int(meta["id"])
+        dates = [dt.date.fromisoformat(str(d).split("T")[0]) for d in df_sorted["valid_date"]]
+        blended_vals = df_sorted["blended"].to_numpy(dtype=float)
+        leads = df_sorted["lead_days"].to_numpy(dtype=int)
+
+        # Pre-extract model series
+        gfs_vals = df_sorted.get("f_gfs", pd.Series([None] * n_days)).to_numpy(dtype=float)
+        ifs_vals = df_sorted.get("f_ecmwf_ifs", pd.Series([None] * n_days)).to_numpy(dtype=float)
+        icon_vals = df_sorted.get("f_icon", pd.Series([None] * n_days)).to_numpy(dtype=float)
+        aifs_vals = df_sorted.get("f_aifs", pd.Series([None] * n_days)).to_numpy(dtype=float)
+
+        for i in range(n_days - 2):
+            d_start = dates[i]
+            d_end = dates[i + 2]
+
+            # Verify contiguous 3 days
+            if (d_end - d_start).days != 2:
+                continue
+
+            sum_3d = float(blended_vals[i] + blended_vals[i + 1] + blended_vals[i + 2])
+            lead_end = int(leads[i + 2])
+            valid_date_str = str(d_end)
+            doy_end = d_end.timetuple().tm_yday
+
+            # Lookup climatology for 3-day sum
+            climo = self.percentiles_lookup.get((loc_id, "rain_mm", "3day_sum", doy_end))
+            if not climo or climo.get("n_years", 0) < 15 or climo.get("p90") is None:
+                # Suppress alert if insufficient history
+                continue
+
+            p90 = climo["p90"]
+            p95 = climo["p95"]
+            p99 = climo["p99"]
+            n_years = climo["n_years"]
+
+            severity = None
+            if p99 is not None and sum_3d >= p99:
+                severity = "alert"
+            elif p95 is not None and sum_3d >= p95:
+                severity = "watch"
+            elif p90 is not None and sum_3d >= p90:
+                severity = "advisory"
+
+            if severity is None:
+                continue
+
+            rarity_label = get_rarity_label(sum_3d, p90, p95, p99, n_years)
+
+            # Model consensus on 3-day sum
+            m_sums: Dict[str, Optional[float]] = {}
+            for m_name, m_arr in [("gfs", gfs_vals), ("ecmwf_ifs", ifs_vals), ("icon", icon_vals), ("aifs", aifs_vals)]:
+                if not np.isnan(m_arr[i]) and not np.isnan(m_arr[i + 1]) and not np.isnan(m_arr[i + 2]):
+                    m_sums[m_name] = float(m_arr[i] + m_arr[i + 1] + m_arr[i + 2])
+                else:
+                    m_sums[m_name] = None
+
+            valid_m_sums = [v for v in m_sums.values() if v is not None]
+            models_over = sum(1 for v in valid_m_sums if p90 is not None and v >= p90)
+            spread = float(np.std(valid_m_sums)) if len(valid_m_sums) > 1 else 0.0
+
+            thresh_applied = p99 if severity == "alert" else (p95 if severity == "watch" else p90)
+            rule_details = {
+                "window_days": 3,
+                "start_date": str(d_start),
+                "end_date": str(d_end),
+                "sum_3day_mm": round(sum_3d, 2),
+                "p90": p90,
+                "p95": p95,
+                "p99": p99,
+                "n_years": n_years,
+                "threshold_applied": thresh_applied,
+                "condition_met": f"3-day accumulated rainfall ({sum_3d:.1f} mm) >= {severity} threshold ({thresh_applied} mm)",
+            }
+            if rarity_label:
+                rule_details["rarity_label"] = rarity_label
+
+            alert_id = f"ALERT-RAIN3D-{loc_id}-{valid_date_str}-L{lead_end}"
+            alerts.append(
+                Alert(
+                    id=alert_id,
+                    created_at=creation_time.isoformat(),
+                    valid_date=valid_date_str,
+                    lead_days=lead_end,
+                    location_id=loc_id,
+                    location_slug=meta["slug"],
+                    location_name=meta["name"],
+                    terrain=meta["terrain"],
+                    region=meta["region"],
+                    hazard="heavy_rain_3day",
+                    severity=severity,
+                    severity_label=SEVERITY_TEXT_LABELS[severity],
+                    value=round(sum_3d, 2),
+                    agreement=models_over,
+                    spread=round(spread, 3),
+                    rule=rule_details,
+                    source_models={k: round(v, 2) if v is not None else None for k, v in m_sums.items()},
+                    degraded=len(valid_m_sums) < 4,
+                    status="active",
+                    expires_at=f"{valid_date_str}T23:59:59Z",
+                    rarity_label=rarity_label,
+                )
+            )
+
+        return alerts
+
     def evaluate_all(
         self,
         df: pd.DataFrame,
@@ -554,4 +771,11 @@ class ExtremeGuidanceEngine:
                 if a_unc:
                     alerts.append(a_unc)
 
+        # 4. 3-Day Heavy Rainfall hazards evaluated across location sequences (PRD §6.11 FR-CLIMO-3)
+        for loc_id, loc_df in df_rain.groupby("location_id"):
+            meta = self.locations_meta.get(int(loc_id), {"id": int(loc_id), "slug": f"loc_{loc_id}", "name": f"Location {loc_id}", "terrain": "plains", "region": "CENTRAL"})
+            h3_alerts = self.evaluate_heavy_rain_3day_hazards_for_location(loc_df, meta, c_time)
+            alerts.extend(h3_alerts)
+
         return alerts
+

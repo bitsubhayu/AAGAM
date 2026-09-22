@@ -288,6 +288,37 @@ class AlertEventDetailResponse(BaseModel):
     guidance: Optional[Dict[str, Any]] = None
     track_record: Optional[Dict[str, Any]] = None
     share_text: Optional[str] = None
+    rarity_label: Optional[str] = None
+    rarity_context: Optional[str] = None
+
+
+# ==============================================================================
+# Climatology Endpoint (PRD §11.2, §12, Phase 13)
+# ==============================================================================
+class ClimatologyPercentileItem(BaseModel):
+    location_id: int
+    variable: str
+    metric: str
+    doy_window: int
+    mean: Optional[float] = None
+    p90: Optional[float] = None
+    p95: Optional[float] = None
+    p99: Optional[float] = None
+    n_years: int
+    computed_at: Optional[str] = None
+    insufficient_history: bool = False
+
+
+class ClimatologyResponse(BaseModel):
+    location_id: int
+    location_name: Optional[str] = None
+    variable: Optional[str] = None
+    metric: Optional[str] = None
+    doy_window: Optional[int] = None
+    date: Optional[str] = None
+    insufficient_history: bool = False
+    percentiles: List[ClimatologyPercentileItem]
+
 
 
 class AlertEventAckResponse(BaseModel):

@@ -258,6 +258,33 @@ export interface AlertEventDetailResponse {
   guidance?: HazardGuidance | null;
   track_record?: TrackRecord | null;
   share_text?: string | null;
+  rarity_label?: string | null;
+  rarity_context?: string | null;
+}
+
+export interface ClimatologyPercentileItem {
+  location_id: number;
+  variable: string;
+  metric: string;
+  doy_window: number;
+  mean?: number | null;
+  p90?: number | null;
+  p95?: number | null;
+  p99?: number | null;
+  n_years: number;
+  computed_at?: string | null;
+  insufficient_history: boolean;
+}
+
+export interface ClimatologyResponse {
+  location_id: number;
+  location_name?: string | null;
+  variable?: string | null;
+  metric?: string | null;
+  doy_window?: number | null;
+  date?: string | null;
+  insufficient_history: boolean;
+  percentiles: ClimatologyPercentileItem[];
 }
 
 export interface AlertEventAckResponse {

@@ -516,13 +516,14 @@ class LivePipelineRunner:
                         getattr(a, "event_id", None),
                         getattr(a, "lifecycle_state", "new"),
                         getattr(a, "previous_severity", None),
+                        getattr(a, "rarity_label", None),
                     )
                     for a in grouped_alerts
                 ]
                 alert_upsert_query = """
                     INSERT INTO alerts (
                         issue_time, location_id, hazard, severity, valid_date, lead_days,
-                        value, models_over, spread, rule, status, event_id, lifecycle_state, previous_severity
+                        value, models_over, spread, rule, status, event_id, lifecycle_state, previous_severity, rarity_label
                     ) VALUES %s
                     ON CONFLICT (issue_time, location_id, hazard, valid_date, lead_days) DO UPDATE
                     SET severity = EXCLUDED.severity,
@@ -533,7 +534,8 @@ class LivePipelineRunner:
                         status = EXCLUDED.status,
                         event_id = EXCLUDED.event_id,
                         lifecycle_state = EXCLUDED.lifecycle_state,
-                        previous_severity = EXCLUDED.previous_severity;
+                        previous_severity = EXCLUDED.previous_severity,
+                        rarity_label = EXCLUDED.rarity_label;
                 """
                 execute_values(cur, alert_upsert_query, alert_records, page_size=1000)
 
