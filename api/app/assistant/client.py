@@ -35,6 +35,19 @@ def get_groq_client() -> AsyncGroq:
     return _groq_client
 
 
+def _parse_groq_retry_seconds(error_str: str) -> float:
+    """Parses retry delay in seconds from Groq 429 error messages."""
+    m_match = re.search(r"try again in (?:(\d+)m)?([\d\.]+)s", error_str)
+    if m_match:
+        minutes = float(m_match.group(1) or 0)
+        seconds = float(m_match.group(2))
+        return minutes * 60.0 + seconds
+    ms_match = re.search(r"try again in ([\d\.]+)ms", error_str)
+    if ms_match:
+        return float(ms_match.group(1)) / 1000.0
+    return 2.5
+
+
 async def call_groq_completion(
     messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
@@ -161,17 +174,21 @@ async def call_groq_completion(
                 return await _stream_and_build(fallback_model, kwargs)
             except RateLimitError as fb_err:
                 logger.warning(f"Fallback model hit burst rate limit: {fb_err}")
-                match = re.search(r"try again in ([\d\.]+)s", str(fb_err))
-                wait_sec = float(match.group(1)) + 0.5 if match else 2.5
+                wait_sec = _parse_groq_retry_seconds(str(fb_err))
+                if wait_sec > 45.0:
+                    logger.warning(f"Required wait {wait_sec:.1f}s exceeds interactive budget; raising RateLimitError")
+                    raise fb_err
                 logger.info(f"Waiting {wait_sec:.2f}s for TPM refill on {fallback_model}...")
-                await asyncio.sleep(wait_sec)
+                await asyncio.sleep(wait_sec + 0.3)
                 return await _stream_and_build(fallback_model, kwargs)
         else:
             # target_model was already fallback_model (e.g. throttled)
-            match = re.search(r"try again in ([\d\.]+)s", str(e))
-            wait_sec = float(match.group(1)) + 0.5 if match else 2.5
+            wait_sec = _parse_groq_retry_seconds(str(e))
+            if wait_sec > 45.0:
+                logger.warning(f"Required wait {wait_sec:.1f}s exceeds interactive budget; raising RateLimitError")
+                raise e
             logger.info(f"Waiting {wait_sec:.2f}s for TPM refill on {fallback_model}...")
-            await asyncio.sleep(wait_sec)
+            await asyncio.sleep(wait_sec + 0.3)
             return await _stream_and_build(fallback_model, kwargs)
 
 

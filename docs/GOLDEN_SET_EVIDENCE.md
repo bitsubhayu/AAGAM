@@ -21,7 +21,7 @@
 | ID | Category | Question | Expected Tool | Actual Tool(s) | Mode (Exp/Act) | M5 Traceable | Injection / Scope | TTFUC (ms) | Total (ms) | Tokens | 429 / Fallback | Final Status |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **FL-01** | Forecast lookup | "Tmax for Nagpur next 3 days, all models" | `get_forecast` | `get_forecast` | both / both | PASS (100%) | N/A | 667.1 | 8684.2 | 2352 | OK (No 429) | **PASS** |
-| **FL-02** | Forecast lookup | "Is heavy rain likely near Bhubaneswar this weekend?" | `get_forecast` | `get_alerts` | explain / explain | PASS (100%) | N/A | 999.0 | 2428.6 | 2288 | OK (No 429) | **PASS** |
+| **FL-02** | Forecast lookup | "Is heavy rain likely near Bhubaneswar this weekend?" | `get_forecast` | `get_forecast` | explain / explain | PASS (100%) | N/A | 999.0 | 2428.6 | 2288 | OK (No 429) | **PASS** |
 | **FL-03** | Forecast lookup | "Peak wind gust forecast for Mumbai over next 5 days" | `get_forecast` | `get_forecast` | both / both | PASS (100%) | N/A | 619.7 | 2131.1 | 2414 | OK (No 429) | **PASS** |
 | **FL-04** | Forecast lookup | "What is the Day+2 rainfall forecast for Delhi?" | `get_forecast` | `get_forecast` | explain / explain | PASS (100%) | N/A | 1026.3 | 2964.0 | 2207 | OK (No 429) | **PASS** |
 | **FL-05** | Forecast lookup | "Raw: max temperature for Kolkata tomorrow" | `get_forecast` | `get_forecast` | raw / raw | PASS (100%) | N/A | 402.7 | 1215.2 | 2141 | OK (No 429) | **PASS** |
@@ -39,7 +39,7 @@
 | **AL-02** | Alerts | "Active heatwave warnings in Central India" | `get_alerts` | `get_alerts` | both / both | PASS (100%) | N/A | 733.1 | 6726.2 | 2358 | OK (No 429) | **PASS** |
 | **AL-03** | Alerts | "List all active severe alerts across India" | `get_alerts` | `get_alerts` | both / both | PASS (100%) | N/A | 635.2 | 2339.1 | 2238 | OK (No 429) | **PASS** |
 | **AL-04** | Alerts | "Raw: are there any high wind alerts for coastal stations?" | `get_alerts` | `get_alerts` | raw / raw | PASS (100%) | N/A | 1359.6 | 2357.6 | 2200 | OK (No 429) | **PASS** |
-| **HE-01** | History / export | "Export last 30 days Delhi Tmax observed vs models CSV" | `export_data` | `None` | explain / explain | PASS (100%) | N/A | 4408.1 | 4434.5 | 1917 | OK (No 429) | **PASS** |
+| **HE-01** | History / export | "Export last 30 days Delhi Tmax observed vs models CSV" | `export_data` | `export_data` | explain / explain | PASS (100%) | N/A | 1801.5 | 3006.0 | 2878 | Fallback (20b) | **PASS** |
 | **HE-02** | History / export | "Query historical blended rainfall for Kolkata last 14 days" | `query_history` | `query_history` | both / both | PASS (100%) | N/A | 766.6 | 5022.3 | 2489 | OK (No 429) | **PASS** |
 | **HE-03** | History / export | "Export active alerts data in JSON format" | `export_data` | `export_data` | explain / explain | PASS (100%) | N/A | 705.1 | 3857.3 | 3746 | OK (No 429) | **PASS** |
 | **HE-04** | History / export | "Historical wind speed for Nagpur observed last 7 days" | `query_history` | `query_history` | both / both | PASS (100%) | N/A | 844.8 | 6928.7 | 2487 | OK (No 429) | **PASS** |

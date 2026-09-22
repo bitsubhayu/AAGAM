@@ -78,7 +78,10 @@ def verify_signed_export_token(token: str) -> Dict[str, Any]:
 
 class ExportDataTool(BaseTool):
     name = "export_data"
-    description = "Generates a 10-minute signed download URL for bulk weather datasets (forecast, history, skill, alerts)."
+    description = (
+        "Generates a 10-minute signed download URL for bulk weather datasets (forecast, history, skill, weights, alerts). "
+        "Use this whenever the user asks to export, download, or retrieve CSV/JSON files for forecasts, history, skill, weights, or alerts."
+    )
     args_model = ExportDataArgs
 
     async def execute(self, raw_args: Dict[str, Any], context: ToolContext) -> ToolEnvelope:

@@ -22,7 +22,10 @@ logger = logging.getLogger("aagam.assistant.tools.forecast")
 
 class GetForecastTool(BaseTool):
     name = "get_forecast"
-    description = "Latest blended forecast and per-model values for one location."
+    description = (
+        "Latest blended forecast and per-model values for one location (rain_mm, tmax_c, wind_max_kmh). "
+        "Use whenever querying the weather forecast, rain likelihood, or temperature/wind values for a specific city or station."
+    )
     args_model = GetForecastArgs
 
     async def execute(self, raw_args: Dict[str, Any], context: ToolContext) -> ToolEnvelope:

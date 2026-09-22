@@ -123,22 +123,25 @@ async def evaluate_single_turn(
             {}
         )
         tokens_used = done_payload.get("tokens_used", 0)
+        done_model = done_payload.get("model", meta_info.get("model", ""))
         actual_tools = [e["data"]["name"] for e in events if e.get("event") == "tool_call" and isinstance(e.get("data"), dict)]
         actual_mode = meta_info.get("mode", mode)
+        has_error = any(e.get("event") == "error" for e in events)
+        is_ok = (not has_error) and (len(tokens_text) > 0 or tool_calls_count > 0)
 
         return {
-            "ok": True,
+            "ok": is_ok,
             "ttfuc_ms": ttfuc,
             "total_latency_ms": total_latency,
             "cached": meta_info.get("cached", False),
-            "model": meta_info.get("model", ""),
+            "model": done_model,
             "tool_calls": tool_calls_count,
             "actual_tools": actual_tools,
             "actual_mode": actual_mode,
             "tokens_used": tokens_used,
             "warning_emitted": warning_emitted,
             "answer_len": len(full_answer),
-            "traceable": is_valid_traceable,
+            "traceable": is_valid_traceable if is_ok else False,
             "unmatched_count": len(unmatched) if not is_valid_traceable else 0,
             "unmatched_samples": unmatched[:3] if not is_valid_traceable else [],
         }
@@ -273,7 +276,8 @@ async def main():
         traceable_str = "PASS (100%)" if res.get("traceable", False) else "FAIL"
         injection_str = "Refused Safely" if item.category == "Injection / abuse" else ("Location Guard" if item.category == "Out-of-scope" and "London" in item.question else "N/A")
         tokens_str = str(res.get("tokens_used", 0)) if res.get("tokens_used") else "~280"
-        rate_limit_str = "OK (No 429)"
+        is_fallback = "20b" in res.get("model", "")
+        rate_limit_str = "Fallback (20b)" if is_fallback else "OK (No 429)"
         status_str = "**PASS**" if res.get("ok") and res.get("traceable") else "**FAIL**"
 
         row = f"| **{item.id}** | {item.category} | \"{item.question}\" | `{expected_tool}` | `{actual_tool_str}` | {mode_str} | {traceable_str} | {injection_str} | {res['ttfuc_ms']:.1f} | {res['total_latency_ms']:.1f} | {tokens_str} | {rate_limit_str} | {status_str} |"

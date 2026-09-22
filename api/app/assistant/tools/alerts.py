@@ -20,7 +20,10 @@ logger = logging.getLogger("aagam.assistant.tools.alerts")
 
 class GetAlertsTool(BaseTool):
     name = "get_alerts"
-    description = "Active extreme weather alerts (heavy rain, heatwave, wind) with model agreement."
+    description = (
+        "Active extreme weather alert warnings (heavy rain, heatwave, wind) across India or specific regions. "
+        "Use when listing active alerts or warnings rather than querying a city forecast."
+    )
     args_model = GetAlertsArgs
 
     async def execute(self, raw_args: Dict[str, Any], context: ToolContext) -> ToolEnvelope:

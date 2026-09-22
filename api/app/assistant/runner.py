@@ -248,10 +248,12 @@ async def run_assistant_stream(
         except Exception as e:
             logger.error(f"Error during assistant agent loop: {e}", exc_info=True)
             # Check for rate limit error
-            if "rate_limit" in str(e).lower() or "429" in str(e):
+            if "rate_limit" in str(e).lower() or "429" in str(e) or "ratelimit" in type(e).__name__.lower():
                 yield f"event: error\ndata: {json.dumps({'code': 'RATE_LIMITED', 'message': 'Assistant busy — try again in 15 seconds.', 'retry_after': 15})}\n\n"
+                yield f"event: end\ndata: {json.dumps({'status': 'error'})}\n\n"
                 return
             yield f"event: error\ndata: {json.dumps({'code': 'ASSISTANT_ERROR', 'message': f'Assistant error: {str(e)}', 'retry_after': None})}\n\n"
+            yield f"event: end\ndata: {json.dumps({'status': 'error'})}\n\n"
             return
 
     # If loop ended without text (e.g. after max tools), do a final generation call
@@ -332,7 +334,7 @@ async def run_assistant_stream(
     # 11. Done & End events
     latency_ms = int((time.time() - start_time) * 1000)
     total_tokens = total_tokens_in + total_tokens_out
-    yield f"event: done\ndata: {json.dumps({'status': 'completed', 'latency_ms': latency_ms, 'tokens_used': total_tokens})}\n\n"
+    yield f"event: done\ndata: {json.dumps({'status': 'completed', 'latency_ms': latency_ms, 'tokens_used': total_tokens, 'model': model_name})}\n\n"
     yield f"event: end\ndata: {json.dumps({'status': 'completed'})}\n\n"
 
     # Record user usage & chat_audit
