@@ -279,6 +279,15 @@ export interface HealthResponse {
   details?: string;
 }
 
+export interface ArtifactResponse {
+  artifact_id: string;
+  created_at: string;
+  total_records: number;
+  offset: number;
+  limit: number;
+  data: Record<string, any>[];
+}
+
 export interface ErrorEnvelope {
   error: {
     code: string;

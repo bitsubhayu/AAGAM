@@ -16,14 +16,32 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
   onClose,
   currentActiveVersionId,
 }) => {
-  const [targetId, setTargetId] = useState<number>(currentActiveVersionId ?? 1);
+  const [customTargetId, setCustomTargetId] = useState<string | null>(null);
   const activateMutation = useActivateModel();
 
+  const targetId =
+    customTargetId !== null
+      ? customTargetId
+      : currentActiveVersionId !== undefined
+      ? String(currentActiveVersionId)
+      : "";
+
+  const handleClose = () => {
+    setCustomTargetId(null);
+    onClose();
+  };
+
   const handleActivate = async () => {
+    const numericId = parseInt(targetId, 10);
+    if (!targetId.trim() || isNaN(numericId) || numericId <= 0) {
+      toast.error("Please enter a valid numeric model version ID.");
+      return;
+    }
+
     try {
-      await activateMutation.mutateAsync(targetId);
-      toast.success(`Model version #${targetId} successfully activated.`);
-      onClose();
+      await activateMutation.mutateAsync(numericId);
+      toast.success(`Model version #${numericId} successfully activated.`);
+      handleClose();
     } catch (err: any) {
       toast.error(`Model activation failed: ${err.message}`);
     }
@@ -50,7 +68,8 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
           <input
             type="number"
             value={targetId}
-            onChange={(e) => setTargetId(parseInt(e.target.value, 10))}
+            onChange={(e) => setCustomTargetId(e.target.value)}
+            placeholder={currentActiveVersionId ? String(currentActiveVersionId) : "e.g. 1"}
             className="w-full p-2 bg-[#161b22] border border-border rounded text-text-primary font-mono text-sm"
           />
           <p className="text-[11px] text-text-muted">
@@ -67,7 +86,7 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={handleClose}>
             Cancel
           </Button>
           <Button

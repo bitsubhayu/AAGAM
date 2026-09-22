@@ -8,12 +8,14 @@ import {
   Square,
   ThumbsUp,
   ThumbsDown,
+  FileCode,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useUIStore } from "@/store/uiStore";
 import { useAuthStore } from "@/auth/authStore";
 import { Button } from "@/components/ui/Button";
 import { API_BASE, getAuthToken } from "@/api/client";
+import { ArtifactViewerModal } from "./ArtifactViewerModal";
 import { toast } from "sonner";
 
 interface Message {
@@ -40,6 +42,7 @@ export const AssistantDrawer: React.FC = () => {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [mode, setMode] = useState<"explain" | "raw" | "both">("both");
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -219,24 +222,38 @@ export const AssistantDrawer: React.FC = () => {
       </div>
 
       {/* Mode Bar */}
-      <div className="px-4 py-2 border-b border-border/60 bg-[#161b22]/50 flex items-center justify-between text-xs">
+      <div className="px-4 py-2 border-b border-border/60 bg-[#161b22]/50 flex items-center justify-between text-xs flex-wrap gap-2">
         <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">
           Response Mode:
         </span>
-        <div className="flex items-center gap-1 bg-[#21262d] p-0.5 rounded border border-border">
-          {(["explain", "raw", "both"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-colors ${
-                mode === m
-                  ? "bg-brand-blue text-white"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              {m}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-[#21262d] p-0.5 rounded border border-border">
+            {(["explain", "raw", "both"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-colors ${
+                  mode === m
+                    ? "bg-brand-blue text-white"
+                    : "text-text-muted hover:text-text-secondary"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => {
+              const id = window.prompt("Enter Stored Assistant Artifact ID (e.g. art-sample-01):");
+              if (id?.trim()) setSelectedArtifactId(id.trim());
+            }}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-text-primary border border-border bg-[#21262d] transition-colors"
+            title="Inspect stored assistant data artifact (PRD §8.2 / §12)"
+          >
+            <FileCode className="w-3 h-3 text-brand-blue" />
+            <span>Artifacts</span>
+          </button>
         </div>
       </div>
 
@@ -263,7 +280,32 @@ export const AssistantDrawer: React.FC = () => {
                 }`}
               >
                 <div className="markdown-body text-xs leading-relaxed">
-                  <ReactMarkdown>{m.text}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      a: ({ href, children }) => {
+                        if (href?.startsWith("#artifact-") || href?.includes("/artifacts/")) {
+                          const artId = href.split("/").pop()?.replace("#artifact-", "");
+                          return (
+                            <button
+                              onClick={() => setSelectedArtifactId(artId || null)}
+                              className="text-brand-blue underline inline-flex items-center gap-0.5 font-mono cursor-pointer"
+                              title="Inspect stored assistant artifact (PRD §12)"
+                            >
+                              <FileCode className="w-3 h-3 inline" />
+                              <span>{children}</span>
+                            </button>
+                          );
+                        }
+                        return (
+                          <a href={href} target="_blank" rel="noreferrer" className="text-brand-blue underline">
+                            {children}
+                          </a>
+                        );
+                      },
+                    }}
+                  >
+                    {m.text}
+                  </ReactMarkdown>
                 </div>
 
                 <div className="mt-1 flex items-center justify-between text-[10px] opacity-70">
@@ -365,6 +407,12 @@ export const AssistantDrawer: React.FC = () => {
           Ground truth from IMD 0.25° grid · Decision support only
         </p>
       </div>
+
+      <ArtifactViewerModal
+        isOpen={!!selectedArtifactId}
+        onClose={() => setSelectedArtifactId(null)}
+        artifactId={selectedArtifactId}
+      />
     </div>
   );
 };
