@@ -215,3 +215,13 @@ Developed with precision for **Smart India Hackathon 2026**.
 *Repository:* [https://github.com/bitsubhayu/AAGAM](https://github.com/bitsubhayu/AAGAM)  
 *Team:* Subhayu & Contributors  
 *Problem Statement:* SIH 2026 PS 26081 (MoES / NCMRWF)
+
+---
+
+## 9. Roadmap / Future Work
+
+### Future: a CAP-format alert feed
+India's national alert system, NDMA's SACHET, is built on the Common Alerting Protocol (CAP), the international XML standard for exchanging public warnings between systems. AAGAM's alert-event structure (`alert_events`) already carries everything a CAP message needs: a stable id, a status (active/expired/cancelled), a severity, a location, and update/cancellation semantics via `lifecycle_state`.
+
+A natural next step — not built in this version — is to publish AAGAM's alert events as an unofficial, draft CAP feed at a public URL. This would not connect to SACHET directly (that requires approval from NDMA/DoT), but it demonstrates a credible integration path: any state control room or downstream system that already consumes CAP feeds could, in principle, pick up AAGAM's alerts the same way it picks up alerts from IMD, CWC, or other agencies.
+

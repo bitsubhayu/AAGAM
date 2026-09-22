@@ -56,6 +56,9 @@ Blending models by recent skill is **not a new idea** — commercial services al
 - No running our own NWP; no radar/satellite nowcasting.
 - No mobile app (responsive web only).
 - No paid services.
+- **Idea D (Nearest-place lookup):** Dropped — DO NOT BUILD (unnecessary with fixed 40-place list).
+- **Idea H (Hindi/Bengali output):** Dropped — DO NOT BUILD (English interface for technical operations).
+- **Idea E (CAP alert feed):** Dropped from MVP execution — DOCUMENTATION ONLY (roadmap note in README.md; see §14 and README).
 
 ### 2.3 Success metrics (targets, not promises)
 | ID | Metric | Target |
@@ -75,22 +78,25 @@ Blending models by recent skill is **not a new idea** — commercial services al
 
 | Persona | Who | Needs | Role in app |
 |---|---|---|---|
+| **Anonymous visitor** | General public, duty officers, citizens | View dashboards, check alerts, ask assistant, export | None (anonymous) |
+| **Subscriber** | Alert recipient, local stakeholder | Register email, manage location & hazard alert preferences | `viewer` (authenticated) |
 | **Forecaster** ("Dr. Meera") | NCMRWF / IMD duty forecaster | Compare models fast, see weights, override with a reason, export | `forecaster` |
-| **Disaster duty officer** ("Mr. Rao") | State/district disaster-management staff | Clear alerts, plain-language summary, no jargon | `viewer` |
+| **Disaster duty officer** ("Mr. Rao") | State/district disaster-management staff | Clear alerts, plain-language summary, manage alert subscriptions | `viewer` (or `forecaster`) |
 | **Sector analyst** | Agriculture, power, aviation, irrigation | Parameter-specific forecast, history, CSV | `viewer` |
 | **Researcher / developer** | Universities, hackathon judges, tech teams | Raw tables, skill data, API access via chat/export | `viewer` (or `forecaster`) |
 | **Admin** | Our team / NCMRWF IT | Pipeline health, model versions, rollback | `admin` |
 
-| Capability | viewer | forecaster | admin |
-|---|:-:|:-:|:-:|
-| View dashboards, weights, skill, alerts | ✔ | ✔ | ✔ |
-| Chat assistant + export | ✔ | ✔ | ✔ |
-| Acknowledge alerts | – | ✔ | ✔ |
-| Create weight overrides (audited) | – | ✔ | ✔ |
-| View pipeline health | ✔ (read) | ✔ | ✔ |
-| Activate / roll back model version, edit thresholds | – | – | ✔ |
+| Capability | Anonymous (no login) | Subscriber (logged in, viewer role) | forecaster | admin |
+|---|:-:|:-:|:-:|:-:|
+| View dashboards, weights, skill, alerts, map | ✔ | ✔ | ✔ | ✔ |
+| Chat assistant | ✔ (rate-limited per IP) | ✔ (rate-limited per user) | ✔ | ✔ |
+| Export CSV/JSON | ✔ | ✔ | ✔ | ✔ |
+| **Register for alerts (subscribe)** | – | ✔ (this is what makes them a Subscriber) | ✔ | ✔ |
+| Acknowledge alerts | – | – | ✔ | ✔ |
+| Create weight overrides (audited) | – | – | ✔ | ✔ |
+| Activate / roll back model version, edit thresholds | – | – | – | ✔ |
 
-Login: Supabase Auth (email magic link; optionally Google). A shared **demo viewer** account for judges. Public read-only mode is a *stretch* (protects the free chat quota).
+**Public read access model:** There is no separate "must log in to see the site" gate. Anyone can access all core pages, maps, forecasts, weight matrices, verification metrics, and alerts without authentication. Chat assistant and CSV/JSON export are also available to anonymous visitors with per-IP rate limiting. Login is required exclusively for: (a) registering or updating alert notifications (`subscriptions`), and (b) forecaster and administrator operational write actions (overrides, acknowledgements, model activation/rollback). Login uses **Supabase Auth email OTP** (a 6-digit code, not a magic link) delivered via Brevo SMTP (see Tech Stack §8a). The act of first verifying an OTP creates the Supabase Auth user and, in the same flow, upserts their `subscriptions` row (§11) — there is no separate "sign up" step.
 
 ---
 
@@ -122,15 +128,25 @@ Login: Supabase Auth (email magic link; optionally Google). A shared **demo view
 2. Weekly retrain produced a worse validation MAE → new version **not activated** automatically; admin sees the comparison and keeps the previous version (rollback = flip one flag).
 3. Supabase or Open-Meteo hiccup → the UI shows a **stale-data banner** (> 9 h old) instead of pretending everything is fine.
 
+### J5 — First-time visitor registers for alerts
+1. Visitor lands on Overview (no login). Home page already shows the public Alerts section (§10) with real data.
+2. Clicks **Get Alerts** (top of the Alerts section, or in the nav).
+3. Enters email → receives a 6-digit code via Brevo → enters it.
+4. Chooses: which of the 40 locations to watch (multi-select), which hazards (rain / heat / wind / 3-day rain), minimum severity to be notified about, and whether they want the daily summary, lifecycle emails, or both.
+5. Confirmation screen: "You're set. We'll email you at upgrades/downgrades for [locations] and a daily summary at 7 AM IST." A **Manage my alerts** link (re-usable, sends a fresh OTP each time — no persistent password to remember) lets them return and edit or unsubscribe later.
+6. On any later visit, once logged in, the home page shows a **"Hi, [email prefix]"** personalized block above the general alerts section, listing only their chosen locations/hazards.
+
 ---
 
 ## 5. Scope
 
 | Priority | Feature |
 |---|---|
-| **Must (MVP)** | 4-source ingestion; IMD/ERA5 truth; skill scoring; Ridge + LightGBM + baselines; blended forecast for rain/Tmax/wind; extreme flags (rain, heat, wind, uncertainty); Overview, Forecast Explorer, Weight Maps, Skill, Extreme Center; assistant with 6 tools + Raw/Explain modes; auth + roles; scheduled pipeline; weekly retrain + registry; CSV/JSON export; stale-data banner |
+| **Must (MVP)** | 4-source ingestion; IMD/ERA5 truth; skill scoring; Ridge + LightGBM + baselines; blended forecast for rain/Tmax/wind; extreme flags (rain, heat, wind, uncertainty); Overview, Forecast Explorer, Weight Maps, Skill, Extreme Center; assistant with 6 tools + Raw/Explain modes; public read-only access (no login required for viewing/chat/export); OTP email authentication for subscriptions; scheduled pipeline; weekly retrain + registry; CSV/JSON export; stale-data banner |
 | **Should** | Forecaster override + audit; Pipeline Health page; nightly backup; per-location "why flagged"; SHAP-style feature explanation (optional); Tmin |
-| **Could / stretch** | Ensemble spread (Open-Meteo Ensemble API); Hindi assistant replies; public read-only mode; PDF advisory export; tablet-optimised layout; more than 40 points |
+| **Upgrade Pack (Phases 10–13)** | Public access model + event grouping & lifecycle (Phase 10); Brevo email notifications & subscriptions (Phase 11); Trust & context features: track record, what-this-means, share link (Phase 12); Climatology percentiles & 3-day heavy rain (Phase 13) |
+| **Dropped / Do Not Build** | Idea D (nearest-place lookup); Idea H (Hindi/Bengali language output); Idea E (live CAP feed endpoint — documentation only) |
+| **Could / stretch** | Ensemble spread (Open-Meteo Ensemble API); PDF advisory export; tablet-optimised layout; more than 40 points |
 
 ---
 
@@ -177,12 +193,35 @@ Login: Supabase Auth (email magic link; optionally Google). A shared **demo view
 - **FR-OPS-2** New version becomes active **only if** validation MAE is not worse than the active one by more than a tolerance (default 2 %). Admin can roll back with one action.
 - **FR-OPS-3** Nightly Parquet export of key tables to the `backups` bucket.
 - **FR-OPS-4** Retention:
-  - `blended_forecasts`: keep 180 days, storing only the 00Z run. Older rows are exported to Parquet in the nightly backup job.
-  - `skill_scores`: delete `is_weekly = false` rows with `computed_at` before today; delete `is_weekly = true` rows older than 26 weeks.
+  - `blended_forecasts`: 180 days, 00Z issue_time run only (older rows exported to Parquet in the nightly backup job).
+  - `skill_scores`: latest snapshot + `is_weekly = true` rows up to 26 weeks old; older weekly rows and all superseded non-weekly rows are deleted daily.
   - `chat_audit`: 30 days.
+  - `notifications_log`: 90 days (long enough to dedupe and debug, short enough to stay tiny).
+  - `alert_events` / `alerts`: kept indefinitely — this is the track-record dataset (Feature A) and is small (a few thousand rows/year at 40 locations).
 
 ### 6.9 Auth & security — `FR-AUTH`
-- **FR-AUTH-1** JWT verification on every API call except `/health`. **FR-AUTH-2** RLS on all tables. **FR-AUTH-3** Service-role key never shipped to the browser. **FR-AUTH-4** Rate limits per user (chat stricter).
+- **FR-AUTH-1** Public read access: all core GET read endpoints (forecast, map, weights, skill, alerts, pipeline status, data export) are accessible to anonymous visitors without authentication.
+- **FR-AUTH-2** Supabase Auth email OTP (6-digit code delivered via Brevo SMTP) is required for subscribing to notifications (`/subscriptions/me`) and for forecaster/admin operational write actions.
+- **FR-AUTH-3** Row Level Security (RLS) enabled on all tables: public read on meteorological and alert datasets; strictly own-row policies on subscriptions; service-role only access on `notifications_log`.
+- **FR-AUTH-4** Service-role key never shipped to the browser.
+- **FR-AUTH-5** Rate limiting: per-user for authenticated accounts; per-IP rate limiting for anonymous visitors (assistant chat stricter).
+
+### 6.10 Alert event grouping & lifecycle — `FR-EVENT` (Feature B)
+- **FR-EVENT-1** Every extreme-rule evaluation cycle groups consecutive flagged days per `(location, hazard)` into an `alert_events` row per the logic in §11.
+- **FR-EVENT-2** Every `alerts` row this cycle carries a `lifecycle_state` (`new`, `upgraded`, `downgraded`, `unchanged`, `cancelled`) computed against the immediately previous cycle's row for the same `(location, hazard, valid_date)`.
+- **FR-EVENT-3** An event whose flagged dates all drop out before arriving is marked `cancelled`; one whose `end_date` has simply passed is marked `expired`. *AC:* an event is never silently deleted — status always explains what happened to it.
+
+### 6.11 Climatology & local extremeness — `FR-CLIMO` (Feature G)
+- **FR-CLIMO-1** A one-time (then periodic, e.g. annual) job computes `climatology_percentiles` from truth-only history per §11, guarded at `n_years >= 15`.
+- **FR-CLIMO-2** Every blend cycle attaches a `rarity_label` to each day's rain/heat/wind alert by comparing the forecast value to the matching `(location, variable, '1day', doy_window)` row, when available.
+- **FR-CLIMO-3** Every blend cycle computes rolling 3-day blended-rain sums across the 7-day horizon (yielding up to 5 overlapping windows) and compares each to `(location, 'rain_mm', '3day_sum', doy_window)`. A window at or above `p90` creates/extends a `heavy_rain_3day` alert (severity: advisory ≥ p90, watch ≥ p95, alert ≥ p99), grouped into events exactly like the other hazards (§6.10).
+- **FR-CLIMO-4** If climatology data is insufficient for a location (`n_years < 15`), `heavy_rain_3day` and `rarity_label` are simply not produced there — this must never fall back to an invented number.
+
+### 6.12 Notifications & subscriptions — `FR-NOTIFY`
+- **FR-NOTIFY-1** OTP request/verify via Supabase Auth + Brevo SMTP (see Tech Stack §8a).
+- **FR-NOTIFY-2** Daily summary job (~07:00 IST / 01:30 UTC) sends each active subscriber a digest of currently active events matching their `location_ids` / `hazards` / `min_severity`, only if `daily_summary=true`.
+- **FR-NOTIFY-3** Lifecycle job runs as the last step of every 6-hourly ingest cycle: for every alert row with `lifecycle_state in ('new','upgraded','downgraded','cancelled')`, notify matching subscribers (`lifecycle_emails=true`, event's severity ≥ their `min_severity`, event's location in their `location_ids`), deduped per §11.
+- **FR-NOTIFY-4** No email is ever sent for `unchanged` — this is what prevents repeat spam for an ongoing, steady event.
 
 ---
 
@@ -216,6 +255,18 @@ Train = start → (today − ~180 d) · Validation = next 90 d · **Test = last 
 - Reject physically impossible values (rain < 0, Tmax outside −30…55 °C, wind > 250 km/h) and log them.
 - Store `truth_source` (`imd`, `era5`) — mixing sources silently is a bug.
 - Every job logs counts: fetched, missing, rejected.
+
+### 7.6 Scheduled workflows specification
+| Workflow | Cron (UTC) | Function |
+|---|---|---|
+| `ingest-blend.yml` | `17 0,6,12,18 * * *` | Live ingestion (4 models × 40 locations) → aggregation → blending → extreme rules evaluation → DB writes. *Planned Phase 10–13 extensions:* (a) climatology comparison (`rarity_label` + `heavy_rain_3day`), (b) event grouping & lifecycle tagging (`FR-EVENT-1/2`), (c) lifecycle email notification dispatch (`FR-NOTIFY-3`). |
+| `verify-daily.yml` | `23 3 * * *` | Pulls truth for mature forecast dates → updates `skill_scores`. *Planned Phase 12 extension:* computes `alert_events.outcome` (`hit`, `false_alarm`, `unverifiable`) once truth covers the full event window. |
+| `train-weekly.yml` | `47 2 * * 0` | Weekly rolling-origin retraining of Ridge & LightGBM engines. |
+| `backup-nightly.yml` | `41 3 * * *` | Exports key tables to Parquet backups in Supabase Storage. |
+| `notify-daily-summary.yml` *(planned)* | `30 1 * * *` (≈ 07:00 IST) | Runs `FR-NOTIFY-2`: sends daily digest to active subscribers matching preferences (Phase 11). |
+| `climatology-backfill.yml` *(planned)* | manual dispatch + annual schedule | Runs `FR-CLIMO-1`: truth-only downloads (IMD + ERA5) to compute percentiles (Phase 13). |
+
+*(Note: Planned Phase 10–13 workflows and extensions are specifications for future phases and not implemented in base Phases 0–9).*
 
 ---
 
@@ -254,6 +305,15 @@ Rain extra: train on `sqrt(rain)` or use Tweedie; back-transform; clip ≥ 0.
 **Heat wave** (Tmax): apply IMD's absolute thresholds by `terrain` (plains 40 °C, coastal 37 °C, hills 30 °C) **and** departure from normal ≥ 4.5 °C (severe > 6.4), or absolute ≥ 45 °C / ≥ 47 °C. Require the condition on **2 consecutive forecast days** (mirrors IMD's 2-day rule). "Normal" = climatological mean Tmax for that location and day-of-year — from IMD 1° `tmax` (1991–2020) if usable, else ERA5 climatology ⚠️. Label alerts **"indicative — single point, not a sub-division declaration"**.
 
 **High wind** (daily max 10 m): configurable defaults on Beaufort — advisory ≥ 50 km/h, watch ≥ 62 (gale), alert ≥ 75 (strong gale) ⚠️ validate with IMD/NDMA practice.
+
+**3-Day Heavy Rainfall** (`heavy_rain_3day` — Feature G):
+| Severity | `heavy_rain_3day` condition |
+|---|---|
+| Advisory | rolling 3-day blended sum ≥ location's `p90` for that day-of-year window |
+| Watch | ≥ `p95` |
+| Alert | ≥ `p99` |
+
+*Note: This hazard has no official IMD absolute threshold — severity is defined relative to that location's own climate history, and is only shown where at least 15 years of truth data support the percentile (see FR-CLIMO-4).*
 
 **High uncertainty:** spread > P90 of the bucket's historical spread → separate hazard `high_uncertainty`.
 
@@ -459,10 +519,22 @@ Anti-goals: consumer weather-app fluff, crypto-dashboard tropes, decorative grad
 Left sidebar: **Overview · Forecast Explorer · Weight Maps · Skill · Extreme Weather · AAGAM Assistant · Data & Export · Pipeline Health (all can view; admin acts) · Settings**. Top bar: variable selector (Rain / Tmax / Wind), lead-day selector (0–7), "last blended" stamp with freshness colour + icon, user menu. Assistant is also a right-side **drawer** available on every page.
 
 ### 10.4 Page specs
-**FR-UI-1 Overview**
+**FR-UI-1 Overview & Public Alerts Section**
 - KPI row: active alerts · best model this week (per selected variable) · blend skill gain vs best single · data freshness/model version.
 - Main: Leaflet **India map** (official boundary) with blended values for chosen variable/lead as markers or graduated circles; click a point → side panel with mini-chart + "Open in Explorer".
 - Right column: top 5 alerts, mini skill trend.
+- **Home Page Alerts Section:** Visible to **every** visitor, every time, near the top of Overview — not gated behind first-visit detection.
+  - **Default view: Upcoming, next 7 days**, sorted by severity then date.
+  - **Toggle (two groups):**
+    - *Upcoming:* Next 2 days · Next 3 days · **Next 7 days (default)**
+    - *Past:* Last 24 hours · Last 7 days — these rows carry an **Expired** tag, and once verified, a **Hit / False alarm / Pending verification** tag (Feature A).
+    - No 30-day option (forecast horizon is 7 days, so it would just repeat the 7-day view).
+  - **Filters** alongside toggle: hazard (including `heavy_rain_3day`), region/state, minimum severity. Small count badges per severity.
+  - **Empty state:** "No alerts in the next 7 days" — a calm, explicit statement, not a blank space.
+  - Alerts are counted in **whole days** starting from today (matches `valid_date`, an IST calendar day).
+  - **Remember choice:** A returning visitor's last-selected window is restored (client-side storage). A brand-new visitor always starts on Next 7 days.
+  - **Get Alerts control:** Located at the top of this section. Logged out → opens the OTP flow (J5 in §4). Logged in → label changes to **Your Alerts**, and a personalized block appears directly below the general section:
+    > "Hi, [email prefix] — showing alerts for your [N] saved locations." with the same toggle scoped to their `subscriptions.location_ids` / `hazards` / `min_severity`.
 - *AC:* renders with a warm API in < 3 s; shows stale banner if data > 9 h old; keyboard focus order sensible.
 
 **FR-UI-2 Forecast Explorer**
@@ -482,11 +554,25 @@ Left sidebar: **Overview · Forecast Explorer · Weight Maps · Skill · Extreme
 - Bar/line charts: MAE by lead for each model + equal-mean + blend; toggle by region/season; skill-score table; rain POD/FAR/CSI panel at IMD thresholds; date range of the test block and truth source stated.
 - **Honesty banner:** cells where the blend did not beat the best single model are highlighted, not hidden.
 
-**FR-UI-5 Extreme Weather Center**
-- Filters: hazard, region/state, lead window (default 72 h), severity.
+**FR-UI-5 Extreme Weather Center & Alert Event Detail**
+- Filters: hazard, region/state, lead window (default next 7 days / upcoming), severity.
 - Alert cards (icon + label + colour + text): place, valid date/lead, value, agreement chip (e.g. "3/4 models"), spread indicator.
-- **Why flagged** drawer: rule text, each model's value vs threshold, historical spread percentile.
-- Actions: acknowledge (forecaster+), **Explain in plain words** (assistant), copy briefing text.
+- **Alert Event Detail Drawer / Page** (opened from any alert card, presenting structured sections):
+  1. **Lifecycle strip** (Feature B): "New Sat 19 Sep → Upgraded to Watch Sun 20 Sep → currently Alert" — horizontal timeline with state-change nodes.
+  2. **Why flagged** (v1.0): rule text, per-model values vs. threshold, agreement count, spread indicator.
+  3. **How unusual** (Feature G): "Also unusual for [location] in [month] — roughly a 1-in-20 event" when `rarity_label` is set; omitted entirely (not shown as "N/A") when climatology data is insufficient for that location (`n_years < 15`).
+  4. **What this means** (Feature C): headline + 2–3 sentence plain-language body + precaution bullets + link to IMD official warning page (`https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php`), loaded from static `config/hazard_guidance.yaml`.
+  5. **Track record** (Feature A — reserved for Phase 12): "Alerts like this one (same hazard, region, severity) have verified true 7 of 9 times in the last 180 days" or, if `low_sample`, "Not enough past alerts of this type yet to show a track record."
+  6. **Share** (Feature F — reserved for Phase 12): **Copy link** (public `/alerts/e/{id}` URL) and **Copy for WhatsApp** (pre-filled text template).
+- Actions: acknowledge (forecaster+), **Explain in plain words** (assistant), copy briefing text, share.
+
+**Share text template (server-generated as `share_text` in `/alerts/events/{id}`):**
+```
+⚠️ {severity_label} — {hazard_label} for {location_name}
+{valid_date_range}: {headline value, e.g. "up to 95mm rain expected"} ({agreement, e.g. "3 of 4 models agree"})
+Details: {public_url}
+— via AAGAM (decision support, not an official IMD warning)
+```
 
 **FR-UI-6 AAGAM Assistant (drawer + full page)**
 - Mode chips (Explain / Raw / Both); suggested prompts by persona; streaming answer; **data table component** (sortable, sticky header, copy, CSV/JSON download, "showing 500 of N rows" with export link); "Data used" chips (tool, issue time, model version); Stop button; cached-answer badge; busy/retry countdown; feedback thumbs (stored in `chat_audit`).
@@ -610,21 +696,79 @@ create table skill_scores (
   primary key (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly)
 );
 
-create table alerts (
+create table alert_events (
   id            bigserial primary key,
-  created_at    timestamptz not null default now(),
-  issue_time    timestamptz not null,
-  location_id   int not null references locations(id),
-  hazard        text not null check (hazard in ('heavy_rain','heatwave','high_wind','high_uncertainty')),
-  severity      text not null check (severity in ('advisory','watch','alert')),
-  valid_date    date not null,
-  lead_days     smallint not null,
-  value         real,
-  models_over   smallint,
-  spread        real,
-  rule          jsonb not null,       -- inputs that triggered it ("why flagged")
-  status        text not null default 'active' check (status in ('active','expired','acknowledged')),
-  acknowledged_by uuid
+  location_id   int  not null references locations(id),
+  hazard        text not null check (hazard in ('heavy_rain','heatwave','high_wind','high_uncertainty','heavy_rain_3day')),
+  status        text not null default 'active' check (status in ('active','expired','cancelled')),
+  severity_peak text not null check (severity_peak in ('advisory','watch','alert')),
+  value_peak    real,
+  start_date    date not null,
+  end_date      date not null,               -- last valid_date currently covered by this event
+  first_detected_at timestamptz not null default now(),
+  last_updated_at   timestamptz not null default now(),
+  outcome       text not null default 'pending' check (outcome in ('hit','false_alarm','pending','unverifiable')),
+  verified_at   timestamptz
+);
+create index alert_events_loc_hazard_idx on alert_events (location_id, hazard, status);
+
+create table alerts (
+  id                bigserial primary key,
+  created_at        timestamptz not null default now(),
+  issue_time        timestamptz not null,
+  location_id       int not null references locations(id),
+  hazard            text not null check (hazard in ('heavy_rain','heatwave','high_wind','high_uncertainty','heavy_rain_3day')),
+  severity          text not null check (severity in ('advisory','watch','alert')),
+  valid_date        date not null,
+  lead_days         smallint not null,
+  value             real,
+  models_over       smallint,
+  spread            real,
+  rule              jsonb not null,       -- inputs that triggered it ("why flagged")
+  status            text not null default 'active' check (status in ('active','expired','acknowledged')),
+  acknowledged_by   uuid,
+  event_id          bigint references alert_events(id),
+  lifecycle_state   text check (lifecycle_state in ('new','upgraded','downgraded','unchanged','cancelled')),
+  previous_severity text check (previous_severity in ('advisory','watch','alert')),
+  rarity_label      text                  -- Feature G; nullable
+);
+
+create table subscriptions (
+  user_id          uuid primary key references auth.users(id),
+  email            text not null,
+  location_ids     int[] not null default '{}',
+  hazards          text[] not null default '{heavy_rain,heatwave,high_wind,heavy_rain_3day}',
+  min_severity     text not null default 'watch' check (min_severity in ('advisory','watch','alert')),
+  daily_summary    boolean not null default true,
+  lifecycle_emails boolean not null default true,
+  active           boolean not null default true,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+
+create table notifications_log (
+  id          bigserial primary key,
+  user_id     uuid not null references auth.users(id),
+  kind        text not null check (kind in ('otp','daily_summary','lifecycle')),
+  event_id    bigint references alert_events(id),   -- null for otp/daily_summary
+  lifecycle_state text,                              -- set only when kind='lifecycle'
+  sent_at     timestamptz not null default now(),
+  status      text not null default 'sent' check (status in ('sent','failed')),
+  provider_message_id text
+);
+
+create table climatology_percentiles (
+  location_id int  not null references locations(id),
+  variable    text not null check (variable in ('rain_mm','tmax_c','wind_max_kmh')),
+  metric      text not null check (metric in ('1day','3day_sum')),
+  doy_window  smallint not null check (doy_window between 1 and 366),  -- center day-of-year, ±7-day window
+  mean        real,
+  p90         real,
+  p95         real,
+  p99         real,
+  n_years     smallint not null,
+  computed_at timestamptz not null default now(),
+  primary key (location_id, variable, metric, doy_window)
 );
 
 create table profiles (
@@ -656,9 +800,45 @@ create table chat_audit (
 );
 ```
 
-**Row Level Security (RLS) outline:** `enable row level security` on every table. Read policies: `authenticated` can `select` forecast/skill/weights/alerts/locations/pipeline tables. Write policies: **no client writes** except `weight_overrides` (role `forecaster`/`admin`, `created_by = auth.uid()`), `alerts.status` acknowledge (via API), and own `chat_audit.feedback`. Pipeline uses the service role (bypasses RLS). `profiles`: user reads own row; admin reads all.
+### 11.1 Alert Event Grouping Logic
+Implemented in the extreme-rules pipeline step (`FR-EVENT-1` / `FR-EVENT-2`):
+- For each `(location_id, hazard)` freshly flagged at `valid_date`:
+  - If an `alert_events` row with `status = 'active'` and the same `(location_id, hazard)` has `end_date >= valid_date - 1`, attach this alert row to it (`event_id`), extend `end_date` to `valid_date` if later, and update `severity_peak` and `value_peak` if the newly flagged day has higher intensity.
+  - Otherwise create a new `alert_events` row (`start_date = end_date = valid_date`).
+- For every `(location_id, hazard, valid_date)` that was flagged in the previous cycle but is **not** flagged in the current cycle: keep the event; if today is now past its `end_date`, mark the event `status = 'expired'`; if the drop occurs while `valid_date` is still in the future (the danger passed before arrival), mark `status = 'cancelled'` and set corresponding `alerts.lifecycle_state = 'cancelled'` on its last row.
+- `lifecycle_state` per alert row: compare this cycle's severity for `(location_id, hazard, valid_date)` to immediately previous cycle's row for the same key $\to$ `new` (no prior row), `upgraded`, `downgraded`, `unchanged`, or `cancelled`.
 
-**Retention jobs:** keep `blended_forecasts` for 180 days, storing only the 00Z run (older rows exported to Parquet in the nightly backup job); for `skill_scores`: delete `is_weekly = false` rows with `computed_at` before today, and delete `is_weekly = true` rows older than 26 weeks; delete `chat_audit` older than 30 days; expire overrides past `expires_at`.
+### 11.2 Climatology & Minimum-Data Guard
+- Table: `climatology_percentiles` stores historical distributions by location, variable, metric (`1day`, `3day_sum`), and day-of-year window ($\pm 7$ days).
+- **Minimum-data guard:** Only compute/use percentiles where `n_years >= 15`. If fewer than 15 years of observational truth are available for a station, `rarity_label` and `heavy_rain_3day` are omitted for that station — never invent or interpolate percentiles from insufficient data. The UI plainly states "insufficient climate history for this location".
+- **Truth sources:** Rainfall from IMD gridded observations (`imdlib`); temperature and wind from ERA5 reanalysis via Open-Meteo Historical Weather API. Target window is 20–30 years where practical, with a strict minimum floor of 15 years.
+
+### 11.3 Hazard Guidance Content (`config/hazard_guidance.yaml`)
+Editorial, reviewed, static team-authored content (not a database table):
+- Stored in `config/hazard_guidance.yaml`, loaded by the API at startup.
+- Covers each hazard (`heavy_rain`, `heatwave`, `high_wind`, `heavy_rain_3day`) across severities (`advisory`, `watch`, `alert`).
+- Contains headline, 2–3 sentence plain-language body, bulleted precautions, and the official IMD warning portal link (`https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php`).
+- Not AI-generated; reviewed in pull requests like product copy.
+
+### 11.4 Row Level Security (RLS) Policies
+- **Public Read Access:** `enable row level security` on all tables. Public read policies (`for select to anon, authenticated using (true)`) apply to `locations`, `blended_forecasts`, `weights`, `skill_scores`, `alerts`, `alert_events`, `climatology_percentiles`, and `weight_overrides`.
+- **Role-Gated Writes:** Client writes remain strictly prohibited except for:
+  - `weight_overrides`: insert allowed for `forecaster`/`admin` (`created_by = auth.uid()`).
+  - `alerts.status`: acknowledge allowed for `forecaster`/`admin` via API.
+  - `chat_audit.feedback`: update own row.
+- **Subscriptions:** Strictly own-row access:
+  ```sql
+  create policy "own subscription" on subscriptions for all to authenticated
+    using (user_id = auth.uid()) with check (user_id = auth.uid());
+  ```
+- **Notifications Log:** Service-role only (`enable row level security`, no client policies); queried only by backend pipeline jobs.
+
+### 11.5 Retention Specification
+- `blended_forecasts`: 180 days, storing only the 00Z issue_time run (older rows exported to Parquet in nightly backup).
+- `skill_scores`: Latest snapshot + `is_weekly = true` rows up to 26 weeks old; older weekly rows and all superseded non-weekly rows deleted daily.
+- `chat_audit`: 30 days.
+- `notifications_log`: 90 days (sufficient for delivery dedup and debugging).
+- `alert_events` & `alerts`: Retained indefinitely (powers the historical track-record verification dataset, Feature A; volume is small at ~thousands of rows/year).
 
 ---
 
@@ -667,24 +847,49 @@ create table chat_audit (
 | Method & path | Purpose | Role |
 |---|---|---|
 | `GET /health` | Liveness + last successful ingest time (no auth) | public |
-| `GET /meta` | Locations, regions, models, variables, thresholds, active model version, last run | any |
-| `GET /forecast?location=&variable=` | Per-model + blended + spread by valid date (latest issue) | any |
-| `GET /map?variable=&lead_days=` | Latest blended value for all 40 points | any |
-| `GET /weights?variable=&region=&season=&lead_days=` | Weight matrix with n_samples/fallback level | any |
-| `GET /weights/map?variable=&lead_days=&season=` | Dominant model per location | any |
+| `POST /auth/otp/request` `{email}` | Sends a 6-digit code via Supabase Auth (Brevo SMTP) | public |
+| `POST /auth/otp/verify` `{email, token}` | Verifies code, returns a session; creates Supabase Auth user on first use | public |
+| `GET /subscriptions/me` | Current subscriber's alert preferences | authenticated |
+| `PUT /subscriptions/me` | Create/update location_ids, hazards, min_severity, daily_summary, lifecycle_emails | authenticated |
+| `DELETE /subscriptions/me` | Unsubscribe (sets `active=false`, preserves history) | authenticated |
+| `GET /meta` | Locations, regions, models, variables, thresholds, active model version, last run | public |
+| `GET /forecast?location=&variable=` | Per-model + blended + spread by valid date (latest issue) | public |
+| `GET /map?variable=&lead_days=` | Latest blended value for all 40 points | public |
+| `GET /weights?variable=&region=&season=&lead_days=` | Weight matrix with n_samples/fallback level | public |
+| `GET /weights/map?variable=&lead_days=&season=` | Dominant model per location | public |
 | `POST /weights/override` | Create audited override → adjusted blend | forecaster+ |
-| `GET /weights/overrides` | List active/expired overrides | any |
-| `GET /skill?group_by=&variable=&window_days=&region=&season=` | Skill tables/series | any |
-| `GET /alerts?status=&hazard=&region=&min_severity=&max_lead_days=` | Alert list with rule inputs | any |
-| `POST /alerts/{id}/ack` | Acknowledge | forecaster+ |
-| `GET /history?location=&variable=&start=&end=&kind=` | Paginated rows (page size ≤ 1,000; total ≤ 5,000) | any |
+| `GET /weights/overrides` | List active/expired overrides | public |
+| `GET /skill?group_by=&variable=&window_days=&region=&season=` | Skill tables/series | public |
+| `GET /alerts?window=&status=&hazard=&region=&min_severity=` | Alert list with rule inputs. Param `window`: `upcoming_2d` \| `upcoming_3d` \| `upcoming_7d` (default) \| `past_24h` \| `past_7d` | public |
+| `GET /alerts/events/{id}` | Public detail page data for one event: full event record, daily alert rows, lifecycle history, `guidance` block, `track_record` block, `share_text` | public |
+| `POST /alerts/events/{id}/ack` | Acknowledge alert event | forecaster+ |
+| `POST /alerts/{id}/ack` | Legacy per-alert acknowledge | forecaster+ |
+| `GET /history?location=&variable=&start=&end=&kind=` | Paginated rows (page size ≤ 1,000; total ≤ 5,000) | public |
 | `GET /artifacts/{id}?offset=&limit=` | Pages of a stored assistant result | owner |
-| `GET /export?dataset=&format=csv|json&...` | Streaming export (also target of signed URLs) | any |
-| `POST /chat` | Assistant, SSE (see §9.8) | any |
-| `GET /pipeline/status` | Last runs, api-call estimates, model versions | any |
+| `GET /export?dataset=&format=csv|json&...` | Streaming export (also target of signed URLs) | public |
+| `POST /chat` | Assistant, SSE (see §9.8, rate-limited per IP for anon) | public / auth |
+| `GET /pipeline/status` | Last runs, api-call estimates, model versions | public |
 | `POST /models/{id}/activate` | Activate / roll back a model version | admin |
 
 Conventions: ISO-8601 dates; UTC timestamps with explicit `Z`; `valid_date` = IST date; units in field names; errors as `{ "error": {"code": "...", "message": "...", "retry_after": 12} }`; ETag/Cache-Control on read endpoints (short TTL) to soften Render cold starts.
+
+### 12.1 Track Record Block (Feature A)
+Computed at query time (no new table):
+- For the event's `(hazard, location_id's region, severity_peak)`, query `alert_events` over trailing window (default 180 days) where `outcome != 'pending'`:
+  ```
+  hit_rate = count(outcome='hit') / (count(outcome='hit') + count(outcome='false_alarm'))
+  n = count(outcome='hit') + count(outcome='false_alarm')
+  ```
+- Exclude `hazard = 'high_uncertainty'` from this calculation — it represents ensemble spread rather than a binary threshold crossing; return `track_record: null, note: "not applicable to this hazard type"`.
+- If `n < 5`, still return the computed figures with `low_sample: true` so the UI can flag "early data" instead of implying high confidence.
+
+### 12.2 Daily Verification Outcome Computation
+Executed by `verify-daily.yml` once observational truth is available for all dates in an event's `[start_date, end_date]`:
+- `hit`: Observed value on at least one day in range crossed the threshold associated with the event's `severity_peak`.
+- `false_alarm`: Truth available for the full range, but no day crossed that threshold.
+- `unverifiable`: Truth still missing for part of the range after the normal IMD/ERA5 ingestion lag.
+- `pending`: `end_date` has not passed yet.
+- Sets `alert_events.outcome` and `alert_events.verified_at` accordingly.
 
 Example `GET /forecast?location=bhubaneswar&variable=rain_mm`:
 ```json
@@ -792,6 +997,36 @@ Example `GET /forecast?location=bhubaneswar&variable=rain_mm`:
 - [ ] Demo dataset/scenarios frozen; switch Groq to Developer plan; warm Render + un-pause Supabase before demo
 - [ ] Rehearse the §17 script twice
 
+### Phase 10 — Public access model + event grouping & lifecycle (2–3 d)
+- [ ] Apply the RLS changes in §11.4; confirm anonymous (`anon` key) reads work end-to-end from the deployed frontend, not just from the Supabase dashboard
+- [ ] Apply the `alert_events` table and `alerts` column additions (§11)
+- [ ] Implement event grouping + lifecycle-state logic as a pipeline step
+- [ ] Update `/alerts` and add `/alerts/events/{id}` (§12)
+**Done when:** running two consecutive manual pipeline cycles against a seeded scenario produces exactly one event that goes `new` → `upgraded`, visible via `/alerts/events/{id}`.
+
+### Phase 11 — Notifications & subscriptions (4–5 d)
+- [ ] Brevo account + Supabase custom SMTP + OTP template (Tech Stack §8a)
+- [ ] `subscriptions`, `notifications_log` tables + RLS (§11)
+- [ ] `/auth/otp/*`, `/subscriptions/me` endpoints (§12)
+- [ ] Home page Alerts section with the Upcoming/Past toggle and filters (§10.4); Get Alerts / Your Alerts flow
+- [ ] `notify-daily-summary.yml` and the lifecycle-notify pipeline step, with dedup
+**Done when:** a real test email receives an OTP, completes signup with 2 chosen locations, and receives a lifecycle email the next time a seeded event upgrades — with no duplicate sends across repeated unchanged cycles.
+
+### Phase 12 — Trust & context features: A, C, F (3–4 d)
+- [ ] `verify_daily` outcome computation (§12.2); `track_record` query (§12.1)
+- [ ] `config/hazard_guidance.yaml` written and reviewed by the team (not AI-generated) for all hazard × severity combinations, including `heavy_rain_3day`
+- [ ] Alert detail UI additions: lifecycle strip, what-this-means, track record, share (§10.4)
+- [ ] Public `/alerts/e/{id}` share page (read-only, no login)
+**Done when:** an expired, verified event shows a correct hit/false-alarm tag, and a share link opens correctly in an incognito window with no login prompt.
+
+### Phase 13 — Climatology & local extremeness: G (3–4 d, can run in parallel with Phase 10–12 once Phase 1's truth-download code exists)
+- [ ] `climatology-backfill.yml` + `climatology_percentiles` table (§11)
+- [ ] `rarity_label` + `heavy_rain_3day` in the blend cycle (§6.11, §8.4)
+- [ ] "How unusual" line and the new hazard surfaced in the UI (§10.4, home page filters include the new hazard)
+**Done when:** for a handful of hand-checked historical extreme-rain days, the computed percentile rank matches manual spot-checks in a notebook, and a location with too little history correctly shows nothing rather than a guessed number.
+
+**Suggested critical path:** Phase 10 before Phase 11 (lifecycle states are what the notification triggers key off) and before Phase 12 (track record needs events to exist). Phase 13 is independent and can be built by a second person in parallel once the location list and truth-download code from the base Phase 1 exist.
+
 ---
 
 ## 15. Testing & QA
@@ -822,6 +1057,10 @@ Example `GET /forecast?location=bhubaneswar&variable=rain_mm`:
 | "Assimilation" name challenged | Medium | Low | §1.5 phrasing |
 | Point forecasts ≠ sub-division declarations | Certain | Low | "Indicative" labels |
 | Open-Meteo free tier is non-commercial | Certain | Low (hackathon) | State production path (paid plan / self-host / NCMRWF feeds) |
+| Public (anon) read access increases load/egress on free Supabase tier | Medium | Medium | Cache headers on public GETs; short response TTLs; monitor egress in Pipeline Health |
+| Brevo 300/day cap reached during a busy demo period | Low (at hackathon scale) | Medium | Send-count check before each batch send; documented upgrade path |
+| Climatology percentiles built on too few years / gappy IMD history for some locations | Medium | Low | `n_years >= 15` guard (FR-CLIMO-4); feature silently absent rather than wrong where data is thin |
+| Lifecycle notification dedup bug causes repeat emails | Low | Medium (trust/spam) | `notifications_log` uniqueness check is a hard gate before any send, unit-tested |
 
 ### 16.2 Assumptions
 - 40 representative points are enough to prove the concept.
@@ -830,12 +1069,15 @@ Example `GET /forecast?location=bhubaneswar&variable=rain_mm`:
 - Timeline and team size are unknown to me — the plan above is modular so you can cut scope.
 
 ### 16.3 Open questions for the team
-1. Final list of 40 locations (and any NCMRWF-priority regions)?
-2. Do judges need login, or should a public read-only mode exist (protects chat quota)?
+1. Final list of 40 locations? *(Resolved: finalized at 40 locations in `config/locations.yaml`, including Basirhat).*
+2. Do judges need login, or should a public read-only mode exist? *(Resolved: public read access for all core pages, maps, forecasts, weights, skill, alerts; anonymous chat rate-limited per IP; login with OTP only for alert subscriptions and write actions).*
 3. Which coding agent will build the frontend (affects skill install method)?
-4. Is Hindi output needed for the demo?
+4. Is Hindi output needed for the demo? *(Resolved: Dropped — English interface for technical operations).*
 5. Is a phone layout needed, or desktop/tablet only?
 6. Can we obtain any IMD station data (beyond gridded) for a stronger "truth"?
+7. Exact minimum `n_years` to require for climatology (15 is the floor in this spec — raise it if the backfill finishes with more years to spare and the team wants tighter percentiles).
+8. Whether "Manage my alerts" (re-auth via fresh OTP each visit) is acceptable UX, or whether a longer-lived session is wanted for subscribers.
+9. Whether the daily summary send time (07:00 IST) should be configurable per subscriber later, or fixed for MVP (fixed, per this spec).
 
 ---
 
@@ -847,7 +1089,7 @@ Example `GET /forecast?location=bhubaneswar&variable=rain_mm`:
 5. **Extreme Weather (60 s):** a real heavy-rain flag → *Why flagged* (3/4 models, spread).
 6. **Assistant (60 s):** *Raw* → exact table + CSV; *Explain* → 3-sentence briefing for an officer.
 7. **Operations (25 s):** pipeline health, weekly retrain, rollback.
-8. **Close (20 s):** "Open, transparent, government-ownable, India-tuned. Decision support, not an official warning."
+8. **Close (20 s):** "Open, transparent, government-ownable, India-tuned. Decision support, not an official warning." Mention the CAP-format alert feed roadmap item alongside "open, transparent, government-ownable" as evidence the architecture was designed for integration into NDMA/SACHET, not just for a standalone demo.
 Backup plan: pre-recorded 60-second screen capture + cached assistant answers if Wi-Fi or the free tiers fail.
 
 ---

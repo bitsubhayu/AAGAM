@@ -29,6 +29,7 @@
 | Frontend hosting | Vercel Hobby (or Cloudflare Pages / Netlify) | ✅ non-commercial | Zero-config deploy from GitHub |
 | UI quality tooling | **Impeccable**, **Taste-Skill**, **Emil Kowalski's skills** (AI-agent design skills) | ✅ Apache-2.0 / MIT | See §9 |
 | Scheduler / CI | **GitHub Actions** cron | ✅ | Runs ingestion, blending, weekly retraining |
+| Transactional email | **Brevo** (SMTP + API) | ✅ 300 emails/day free | Used for both login OTP codes and alert emails; no domain purchase required to start testing (see §8a caveat) |
 
 **Finalised forecast sources = 4** (3 physics + 1 AI): **GFS**, **ECMWF IFS**, **DWD ICON**, **ECMWF AIFS**. That directly matches the PS wording ("physical NWP models … AI/ML weather models").
 **Finalised decision engines = 2** + a transparent baseline: Ridge, LightGBM, and inverse-error skill weights.
@@ -254,6 +255,24 @@ Numbers in the answer must come from tool results (post-check flags unmatched nu
 
 ---
 
+## 8a. Email (Brevo) and login OTP
+Provider: **Brevo** (https://www.brevo.com)  
+Free tier: 300 emails/day, shared across OTP + daily-summary + lifecycle emails.  
+
+Setup:
+1. Create a Brevo account; verify a sender email address.
+2. Wait for the account to be approved for sending (can take a short review period).
+3. Generate SMTP credentials (Brevo dashboard -> SMTP & API).
+4. In Supabase -> Authentication -> Email -> SMTP Settings: turn on "Enable Custom SMTP" and enter Brevo's SMTP host/port/user/pass. This replaces Supabase's own limited mailer (2 emails/hour) for ALL auth emails, including OTP codes.
+5. In Supabase -> Authentication -> Email Templates -> "Magic Link" template, switch the template to use `{{ .Token }}` (the 6-digit OTP) instead of `{{ .ConfirmationURL }}`, so the user receives a CODE to type in, not a clickable link. ⚠️ Confirm this exact template field name in the current Supabase dashboard before building — it may have moved.
+6. Generate a separate Brevo API key (not the SMTP one) for the pipeline to send daily-summary and lifecycle emails via Brevo's transactional email API (not SMTP), since GitHub Actions jobs are simpler calling a REST API than opening an SMTP socket.
+
+Caveat (⚠️ verify against Brevo's current docs): sending from an unverified/free-email sender domain may get temporarily routed through Brevo's own compliant sender as a stopgap, and can land in spam. For team testing this is fine (check spam folder once). Before a public demo, buy a small domain and verify it in Brevo for reliable delivery.
+
+Budget: 300/day covers OTP + subscriber emails comfortably during hackathon testing (6 team members generate maybe 10–20 sends/day). ⚠️ At real-world scale this cap becomes the limiting factor at roughly 100–150 active subscribers — note this in the pitch as an "upgrade to a paid email tier before public launch" item, not something to solve now.
+
+---
+
 ## 9. Frontend stack and the three UI-quality skill packs
 
 ### 9.1 Libraries
@@ -293,13 +312,15 @@ That page is JavaScript-rendered and I **could not read or see the design**. So 
 ## 10. Scheduling & CI (GitHub Actions)
 | Workflow | Cron (UTC) | Job |
 |---|---|---|
-| `ingest-blend.yml` | `17 0,6,12,18 * * *` | Fetch latest forecasts → aggregate → blend with active model → flag extremes → write DB. (Global models run at 00/06/12/18 UTC and are available ~4–6 h later, hence the offsets ✅) |
-| `verify-daily.yml` | `23 3 * * *` | Pull truth for dates that are now verifiable → update `skill_scores` |
+| `ingest-blend.yml` | `17 0,6,12,18 * * *` | Fetch latest forecasts → aggregate → blend with active model → flag extremes → write DB. (Global models run at 00/06/12/18 UTC and are available ~4–6 h later, hence the offsets ✅). *Planned Phase 10–13 extensions:* climatology comparison (`rarity_label` + `heavy_rain_3day`), event grouping + lifecycle tagging, and lifecycle notification send. |
+| `verify-daily.yml` | `23 3 * * *` | Pull truth for dates that are now verifiable → update `skill_scores`. *Planned Phase 12 extension:* compute `alert_events.outcome` once truth covers the event range. |
 | `train-weekly.yml` | `47 2 * * 0` | Append latest week → retrain Ridge + LightGBM → evaluate → register new `model_versions` → activate only if not worse |
 | `backup-nightly.yml` | `41 3 * * *` | Export key tables to Parquet in Storage |
+| `notify-daily-summary.yml` *(planned)* | `30 1 * * *` (≈ 07:00 IST) | Runs FR-NOTIFY-2: send daily digest to active subscribers matching preferences |
+| `climatology-backfill.yml` *(planned)* | manual dispatch + annual schedule | Runs FR-CLIMO-1: truth-only downloads (IMD + ERA5) to compute percentiles (does not compete with live forecast API caps) |
 | `ci.yml` | on push/PR | ruff + pytest + frontend build + `npx impeccable detect` (optional) |
 
-Notes: unlimited minutes on public repos, 2,000/month on private (per earlier research ✅ — re-check). Scheduled runs are best-effort and can start minutes late; avoid the top of the hour (as above). ⚠️ GitHub disables scheduled workflows in *public* repos after ~60 days without repo activity — push a commit or re-enable before demo. The 6-hourly DB writes also keep the Supabase project from auto-pausing.
+Notes: unlimited minutes on public repos, 2,000/month on private (per earlier research ✅ — re-check). Scheduled runs are best-effort and can start minutes late; avoid the top of the hour (as above). ⚠️ GitHub disables scheduled workflows in *public* repos after ~60 days without repo activity — push a commit or re-enable before demo. The 6-hourly DB writes also keep the Supabase project from auto-pausing. Planned Phase 10–13 workflows and extensions are specifications for future phases and not implemented in base Phases 0–9.
 
 ---
 
@@ -311,6 +332,7 @@ Notes: unlimited minutes on public repos, 2,000/month on private (per earlier re
 | Vercel/Cloudflare (web) | Free / Hobby | ₹0 |
 | GitHub Actions | Free | ₹0 |
 | Open-Meteo | Free (non-commercial) | ₹0 |
+| Brevo | Free (300 emails/day) | ₹0 |
 | Groq | Free for build; **Developer plan on demo days** | pennies |
 | Domain (optional) | — | optional |
 
@@ -331,15 +353,21 @@ aagam/
 │  ├─ skill/{score.py,weights.py}
 │  ├─ models/{ridge.py,lgbm.py,select.py,registry.py}
 │  ├─ blend/{blend.py,extremes.py}
+│  ├─ notify/{daily_summary.py, lifecycle.py, brevo_client.py}  # planned (Phase 11)
+│  ├─ climatology/{backfill.py, percentiles.py}                 # planned (Phase 13)
+│  ├─ events/{group.py, lifecycle_state.py, verify.py}          # planned (Phase 10, 12)
 │  └─ cli.py
 ├─ core/                    # shared: config loader, thresholds, schemas
-├─ config/{locations.yaml,regions.yaml,thresholds.yaml,models.yaml}
+├─ config/
+│  ├─ {locations.yaml,regions.yaml,thresholds.yaml,models.yaml}
+│  └─ hazard_guidance.yaml  # Feature C static content (planned Phase 12)
 ├─ supabase/migrations/     # SQL, versioned
 ├─ docs/{PRD.md,TECH_STACK.md,design-ref/}
 ├─ .github/workflows/
 ├─ PRODUCT.md  DESIGN.md    # Impeccable
 └─ .impeccable/             # shared config only (see §9.2)
 ```
+*(Planned Phase 10–13 directories and files are documented for architecture; do not create before those phases).*
 
 ---
 
@@ -353,6 +381,8 @@ aagam/
 | `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_FALLBACK_MODEL=openai/gpt-oss-20b` | api | no |
 | `OPENMETEO_BASE_*` | pipeline | no |
 | `APP_TZ_DISPLAY=Asia/Kolkata` | web, api | no |
+| `BREVO_SMTP_HOST`, `BREVO_SMTP_USER`, `BREVO_SMTP_PASS` | Supabase Auth SMTP settings (configured in Supabase dashboard) | secret |
+| `BREVO_API_KEY` | pipeline (`notify-daily-summary.yml`, lifecycle notify step) | **SECRET — GitHub Actions secret only** |
 
 `.env.example` committed; real `.env` git-ignored.
 
@@ -369,6 +399,8 @@ aagam/
 | GitHub cron delay/disable | Stale forecasts | "Last updated" stamp in UI; stale-data banner if > 9 h old |
 | Model drift after weekly retrain | Worse skill | Registry + rollback flag; activate only if validation not worse |
 | India boundary on map | Credibility | Verified official GeoJSON |
+| Brevo 300 emails/day cap | Subscriber emails stop sending mid-day | Track daily send count in `notifications_log`; alert admin (log warning) at 80% of cap; fine for hackathon-scale testing |
+| Public (no-login) read traffic raises Supabase egress / API load | Could approach the 5 GB free egress limit or trip rate limits | Cache headers on public GET endpoints; per-IP rate limit on `/chat` for anonymous users |
 
 ---
 
