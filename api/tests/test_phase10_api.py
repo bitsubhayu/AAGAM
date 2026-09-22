@@ -159,3 +159,79 @@ def test_ack_alert_event_admin_allowed(client):
     assert resp.status_code == 404
     data = resp.json()
     assert data["error"]["code"] == "EVENT_NOT_FOUND"
+
+
+def test_ack_alert_event_preserves_status_and_acknowledges_child_alerts(client):
+    """Verify that acknowledgement succeeds, keeps alert_events.status as 'active', and marks child alerts as acknowledged."""
+    import psycopg2
+    conn = psycopg2.connect(settings.DATABASE_URL)
+    conn.autocommit = True
+    seeded_event_id = None
+    seeded_alert_id = None
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO alert_events (
+                    location_id, hazard, status, severity_peak, value_peak,
+                    start_date, end_date, first_detected_at, last_updated_at
+                ) VALUES (1, 'heavy_rain', 'active', 'alert', 110.0, CURRENT_DATE, CURRENT_DATE, NOW(), NOW())
+                RETURNING id;
+                """
+            )
+            seeded_event_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO alerts (
+                    issue_time, location_id, hazard, severity, valid_date, lead_days,
+                    value, models_over, spread, rule, status, event_id
+                ) VALUES (
+                    NOW(), 1, 'heavy_rain', 'alert', CURRENT_DATE, 1,
+                    110.0, 4, 10.0, '{"trigger": "test_ack"}'::jsonb, 'active', %s
+                )
+                RETURNING id;
+                """,
+                (seeded_event_id,),
+            )
+            seeded_alert_id = cur.fetchone()[0]
+
+        # Call acknowledgement endpoint with forecaster role
+        forecaster_token = create_test_jwt(role="forecaster")
+        resp = client.post(
+            f"/api/v1/alerts/events/{seeded_event_id}/ack",
+            headers={"Authorization": f"Bearer {forecaster_token}"},
+        )
+        assert resp.status_code == 200, f"Expected 200 OK, got {resp.status_code}: {resp.text}"
+        data = resp.json()
+        assert data["id"] == seeded_event_id
+        # Status MUST remain a valid event lifecycle status ('active'), NOT 'acknowledged'
+        assert data["status"] == "active"
+        assert data["acknowledged_by"] is not None
+        assert data["acknowledged_at"] is not None
+
+        # Verify database state directly
+        with conn.cursor() as cur:
+            # 1. Event status remains 'active'
+            cur.execute("SELECT status FROM alert_events WHERE id = %s;", (seeded_event_id,))
+            evt_status = cur.fetchone()[0]
+            assert evt_status == "active", f"Expected alert_events.status='active', found {evt_status}"
+
+            # 2. Child alert status is updated to 'acknowledged' with audit fields
+            cur.execute(
+                "SELECT status, acknowledged_by, acknowledged_at FROM alerts WHERE id = %s;",
+                (seeded_alert_id,),
+            )
+            row = cur.fetchone()
+            assert row[0] == "acknowledged"
+            assert row[1] is not None
+            assert row[2] is not None
+
+    finally:
+        with conn.cursor() as cur:
+            if seeded_alert_id:
+                cur.execute("DELETE FROM alerts WHERE id = %s;", (seeded_alert_id,))
+            if seeded_event_id:
+                cur.execute("DELETE FROM alert_events WHERE id = %s;", (seeded_event_id,))
+        conn.close()

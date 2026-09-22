@@ -38,7 +38,9 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
   const childAlerts = data?.alerts || [];
   const lifecycleHistory = data?.lifecycle_history || [];
 
-  const canAck = (role === "forecaster" || role === "admin") && event?.status === "active";
+  const hasActiveAlerts = childAlerts.some((a) => a.status === "active");
+  const isFullyAcknowledged = childAlerts.length > 0 && childAlerts.every((a) => a.status === "acknowledged");
+  const canAck = (role === "forecaster" || role === "admin") && event?.status === "active" && hasActiveAlerts;
 
   const getHazardIcon = (hazard?: string) => {
     switch (hazard) {
@@ -92,6 +94,12 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                     <Badge variant="outline" className="capitalize text-[11px]">
                       {event.status}
                     </Badge>
+                    {isFullyAcknowledged && (
+                      <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        <span>Acknowledged</span>
+                      </span>
+                    )}
                   </>
                 )}
               </div>
@@ -278,6 +286,12 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
             Decision support calibrated to IMD thresholds.
           </span>
           <div className="flex items-center gap-2">
+            {isFullyAcknowledged && (
+              <span className="text-xs text-emerald-400 font-medium flex items-center gap-1 mr-2">
+                <Check className="w-3.5 h-3.5" />
+                <span>Acknowledged</span>
+              </span>
+            )}
             {canAck && (
               <Button
                 size="sm"

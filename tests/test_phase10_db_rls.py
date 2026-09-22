@@ -164,3 +164,21 @@ class TestPhase10RLSPolicies:
                 cur.execute("ROLLBACK;")
         finally:
             conn.close()
+
+    def test_alert_events_status_constraint_rejects_acknowledged(self):
+        """Verify that alert_events.status strictly enforces ('active', 'expired', 'cancelled') and rejects 'acknowledged'."""
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("BEGIN;")
+                with pytest.raises(psycopg2.Error) as exc_info:
+                    cur.execute(
+                        """
+                        INSERT INTO alert_events (location_id, hazard, status, severity_peak, start_date, end_date)
+                        VALUES (1, 'heavy_rain', 'acknowledged', 'watch', CURRENT_DATE, CURRENT_DATE);
+                        """
+                    )
+                assert "alert_events_status_check" in str(exc_info.value)
+                cur.execute("ROLLBACK;")
+        finally:
+            conn.close()

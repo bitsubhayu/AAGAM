@@ -326,8 +326,7 @@ async def acknowledge_alert_event(
     updated_evt = await conn.fetchrow(
         """
         UPDATE alert_events
-        SET status = 'acknowledged',
-            last_updated_at = NOW()
+        SET last_updated_at = NOW()
         WHERE id = $1
         RETURNING id, status, last_updated_at;
         """,
