@@ -1,5 +1,5 @@
-import urllib.request
 import json
+import urllib.request
 
 url = 'https://api.github.com/repos/bitsubhayu/AAGAM/actions/runs?per_page=20'
 req = urllib.request.Request(url, headers={'User-Agent': 'AAGAM-Audit'})

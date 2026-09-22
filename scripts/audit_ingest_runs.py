@@ -1,8 +1,10 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import psycopg2
+
 from core.config import settings
 
 conn = psycopg2.connect(settings.DATABASE_URL)

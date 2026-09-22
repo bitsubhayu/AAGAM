@@ -13,73 +13,68 @@
 
 Phase 9 encompasses operational hardening, disaster recovery drills, system architecture documentation, operational limitations disclosure, and live demonstration readiness for AAGAM.
 
-While all engineering hardening tasks, disaster recovery drills, model rollback mechanisms, and documentation suites have passed with 100% compliance, the **Milestone M4 Reliability Soak** strictly mandates a 14-day continuous evaluation period with $\ge 95\%$ scheduled cycle success (PRD §15). Because the live operational database has been active for **~68 hours** since inception, M4 is honestly and strictly certified as **PENDING / IN PROGRESS**.
+While all engineering hardening tasks, disaster recovery drills, model rollback mechanisms, documentation suites, and quality regression gates have passed with 100% compliance, the **Milestone M4 Reliability Soak** strictly mandates a 14-day continuous evaluation period with $\ge 95\%$ scheduled cycle success in the cloud environment (PRD §15).
 
-In accordance with the M4 Completion Gate rules:
+Because GitHub Actions scheduled cron workflows only execute from the repository's default branch (`main`), which remains strictly locked per project isolation rules, **qualifying automated scheduled cloud executions have not yet started**. 
+
+Therefore, in strict adherence to project bookkeeping rules:
 ```
 ======================================================================
 PHASE 9 STATUS:
 PHASE 9 NOT READY — M4 PENDING
-(Awaiting completion of the full 14-day continuous reliability soak)
+(Qualifying 14-day scheduled cloud soak has not started)
 ======================================================================
 ```
 
 ---
 
-## 2. Completed Phase 9 Engineering & Documentation Work
+## 2. Audit of Completed Phase 9 Engineering Work
 
-The following technical components of Phase 9 have been executed, verified, and audited:
+All technical, engineering, security, drill, and documentation requirements of Phase 9 have been audited and confirmed complete:
 
-### 2.1 Disaster Recovery Backup Restoration Drill
-- **Execution Script:** [`scripts/drill_backup_restore.py`](file:///scripts/drill_backup_restore.py)
-- **Source Archive:** `data/backups/20260921/blended_forecasts.parquet` (21,677 bytes).
-- **Staging Table:** `_drill_restored_blended_forecasts` in live Supabase PostgreSQL.
-- **Performance:** 1,680 rows restored and verified in **562.54 ms** (total drill time 1,469.44 ms).
-- **Integrity Check:** 5/5 spot checks verified exact equality ($|\Delta| < 10^{-4}$) for floating-point fields.
-- **Cleanup:** Temporary staging table cleanly dropped; zero residual database footprint.
-- **Status:** **PASS**.
+| Component | Target Requirement | Measured Verification Result | Audit Status |
+|---|---|---|---|
+| **Disaster Recovery Backup Drill** | Restore Parquet backup to staging table, verify row count & values, drop staging | 1,680 rows restored in **562.54 ms**; 5/5 spot checks identical ($|\Delta| < 10^{-4}$); staging table cleanly dropped; zero residual footprint | **COMPLETE** |
+| **Model Rollback Drill** | Atomic switch between active versions, single active version constraint, cache invalidation | Rollback to v1 in **332.70 ms**; cache invalidated; v2 restored in **385.42 ms**; partial index constraint enforced | **COMPLETE** |
+| **Active Model Version Cache** | In-memory 60s cache with immediate invalidation upon activation | Invalidation verified in `api.app.db.model_versions._ACTIVE_VERSION_CACHE` | **COMPLETE** |
+| **Database Retention Engine** | Purge expired overrides, chat audit, and non-00Z forecasts older than 90d | Verified in `pipeline.maintenance.retention.RetentionEngine` and test suite | **COMPLETE** |
+| **429 Rate Limit Hardening** | Tenacity exponential backoff with jitter on Open-Meteo API | Verified in `pipeline.clients.openmeteo.OpenMeteoClient` (`multiplier=1, min=1, max=4`) | **COMPLETE** |
+| **Circuit Breaker** | Track 429 timestamps, sleep for `Retry-After`, halt if $\ge 2$ in 1 hour | `_handle_429()` halts with `OpenMeteoRateLimitHaltError` | **COMPLETE** |
+| **No-Partial-Write Protection** | Abort write transaction on fetch failure; zero corrupt/partial records | Verified: zero partial records written to `blended_forecasts` on halt | **COMPLETE** |
+| **Freshness Banner Monitoring** | Display advisory if data $> 9$h old; clear immediately upon fresh run | Verified in `FreshnessBanner.tsx` and `api.app.routers.meta` | **COMPLETE** |
+| **Security & RLS Checks** | No plaintext credentials in repo, `.env` gitignored, RLS enabled | 100% verified across source code, git history, and database migrations | **COMPLETE** |
+| **Python Regression Suite** | PRD §12 & §15 contract & unit testing | **182 passed**, 0 failures, 9 deprecation warnings in 72.99s | **COMPLETE** |
+| **Python Code Quality** | PEP 8 & Ruff strict compliance | `ruff check .` $\to$ **All checks passed** (0 errors) | **COMPLETE** |
+| **Frontend Code Quality** | Oxlint / TypeScript static validation | `oxlint` $\to$ **0 errors, 0 warnings** across 53 files in 44ms | **COMPLETE** |
+| **Frontend Production Build** | `tsc -b && vite build` | **Clean production bundle** generated in 1.67s | **COMPLETE** |
+| **Architecture Documentation** | Complete end-to-end data flow & Mermaid diagram | Authored [`docs/ARCHITECTURE.md`](file:///docs/ARCHITECTURE.md) | **COMPLETE** |
+| **Operational Limitations** | 40 stations scope, non-official disclaimer, DA terminology | Authored [`docs/LIMITATIONS.md`](file:///docs/LIMITATIONS.md) | **COMPLETE** |
+| **Demo Readiness Runbook** | Pre-flight timing, cloud warmup, offline contingency | Authored [`docs/DEMO_READINESS.md`](file:///docs/DEMO_READINESS.md) | **COMPLETE** |
+| **Demo Rehearsal Script** | PRD §17 7-step storyline, 5-minute timed pitch, Q&A | Authored [`docs/DEMO_SCRIPT.md`](file:///docs/DEMO_SCRIPT.md) | **COMPLETE** |
+| **Repository README** | ~5-minute quickstart, architecture, local ops guide | Overhauled [`README.md`](file:///README.md) | **COMPLETE** |
+| **Audit Scripts** | Diagnostic & verification utilities committed in `scripts/` | 6 audit scripts active in [`scripts/`](file:///scripts/) | **COMPLETE** |
 
-### 2.2 Zero-Downtime Model Rollback Drill
-- **Execution Script:** [`scripts/drill_model_rollback.py`](file:///scripts/drill_model_rollback.py)
-- **Rollback Operation:** Switched active model version from Version ID 2 (`models/20260921/`) to Version ID 1 in **332.70 ms**.
-- **Constraint Enforcement:** PostgreSQL partial unique index `one_active_version` strictly maintained (exactly 1 active version).
-- **Cache Invalidation:** In-memory cache `_ACTIVE_VERSION_CACHE` in `api.app.db.model_versions` invalidated and verified pointing to Version 1.
-- **Restoration Operation:** Re-activated Version ID 2 in **385.42 ms**; database and cache verified restored.
-- **Status:** **PASS**.
-
-### 2.3 Documentation Suite
-- **[`README.md`](file:///README.md):** Overhauled with project badges, 5-minute quickstart guide, architecture diagrams, local environment commands, testing procedures, data attribution, and operational disclaimers.
-- **[`docs/ARCHITECTURE.md`](file:///docs/ARCHITECTURE.md):** Complete architectural specification featuring end-to-end Mermaid data-flow diagrams, ingestion pipelines, Ridge/LightGBM stacking hierarchy, Supabase RLS security, and Groq agent loop with Number Guard interceptors.
-- **[`docs/LIMITATIONS.md`](file:///docs/LIMITATIONS.md):** Transparent disclosure of 40 synoptic stations scope, legal disclaimer emphasizing that AAGAM is not an official IMD warning system, clarification of AI statistical assimilation vs. Navier-Stokes physical DA, and free-tier hosting limits.
-- **[`docs/DEMO_READINESS.md`](file:///docs/DEMO_READINESS.md):** Pre-flight operational runbook (T-60m to T-0), cloud warmup procedures (Render cold-start mitigation, Supabase unpausing), Groq quota monitoring, and an instant local offline contingency plan.
-- **[`docs/DEMO_SCRIPT.md`](file:///docs/DEMO_SCRIPT.md):** 5-minute timed presentation rehearsal script based on PRD §17 7-step storyline with speaker notes and judge Q&A preparation.
-
-### 2.4 Regression Quality Gates
-- **Pytest Suite:** **182 passed**, 0 failures, 9 deprecation warnings in 72.99s.
-- **Ruff Linter:** `ruff check .` $\to$ **All checks passed** (0 errors).
-- **Oxlint / Frontend Quality:** `oxlint` $\to$ **0 errors, 0 warnings** across 53 files in 44ms.
-- **Vite Production Build:** `tsc -b && vite build` $\to$ **Clean build** generated in 1.67s.
+**Conclusion on Remaining Work:** Zero engineering or documentation tasks remain. Only the operational cloud soak gate (M4) is pending.
 
 ---
 
-## 3. Phase 5 Operational Recheck & Six-Hour Pipeline Calling Mechanism
-
-A focused operational re-check was conducted on the Phase 5 automated six-hour pipeline mechanism.
+## 3. Phase 5 Operational Recheck & Calling Mechanism
 
 ### 3.1 Schedule & Cron Configuration Inspection
 - **Workflow File:** [`.github/workflows/ingest-blend.yml`](file:///.github/workflows/ingest-blend.yml)
-- **Authoritative Cron Schedule:** `17 0,6,12,18 * * *` (6-hourly cycles: 00Z, 06Z, 12Z, 18Z with a 4-hour 17-minute NWP availability offset).
+- **Authoritative Cron Schedule:** `17 0,6,12,18 * * *` (6-hourly cycles: 00Z, 06Z, 12Z, 18Z with a 4-hour 17-minute offset for upstream NWP model distribution).
 - **Other Workflows:**
-  - `verify-daily.yml`: `23 3 * * *` (03:23 UTC / 08:53 IST)
-  - `backup-nightly.yml`: `41 3 * * *` (03:41 UTC / 09:11 IST)
-  - `train-weekly.yml`: `47 2 * * 0` (Sun 02:47 UTC / 08:17 IST)
+  - `backup-nightly.yml`: `cron: '41 3 * * *'` (03:41 UTC)
+  - `verify-daily.yml`: `cron: '23 3 * * *'` (03:23 UTC)
+  - `train-weekly.yml`: `cron: '47 2 * * 0'` (Sun 02:47 UTC)
 
 ### 3.2 Real Deployed Environment & GitHub Actions Inspection
 - Queried GitHub REST API (`https://api.github.com/repos/bitsubhayu/AAGAM/actions/runs`):
   - Exactly 4 workflow runs exist on GitHub, all triggered by push events on `phase-0/setup`.
   - **Zero automated cloud cron runs have fired from GitHub Actions.**
 - **Root Cause & Technical Constraint:**  
-  GitHub Actions strictly enforces that `schedule` events only execute against the repository's **default branch** (`main`). Because `main` is locked and untouched at commit `66b09b6` to preserve release stability, the workflow file on feature branches is not evaluated by GitHub's cloud scheduler.
+  GitHub Actions enforces a hard platform rule: **scheduled workflows (`schedule: - cron: '...'`) only execute on the repository's default branch (`main`)**.  
+  Because `main` is strictly locked and untouched at `66b09b6` to preserve release stability, the workflow files present on feature branches are not evaluated by GitHub's cloud scheduler.
 
 ### 3.3 Database State & Operational Execution Clusters
 In the production PostgreSQL database (`pipeline_runs`), 258 total runs were audited. Excluding rapid automated pytest test loops, 6 distinct operational execution sessions were identified:
@@ -92,9 +87,9 @@ In the production PostgreSQL database (`pipeline_runs`), 258 total runs were aud
 
 ### 3.4 Operational Cycle Classification
 To ensure complete transparency, executions are strictly categorized:
-- **True Scheduled Cloud Cycles (GitHub Actions Cron):** 0 runs (blocked by default-branch rule).
-- **Manual / CLI Operational Invocations (`python -m pipeline ingest-live`):** 6 operational clusters executed and verified.
-- **Rescheduled / Recovery Runs:** 1 run (Run #5 on 2026-09-20 06:45:00 UTC, recovering from the 429 halt).
+- **True Scheduled Cloud Cycles (GitHub Actions Cron):** **0** runs (blocked by default-branch rule).
+- **Manual / CLI Operational Invocations (`python -m pipeline ingest-live`):** **6** operational clusters executed and verified.
+- **Rescheduled / Recovery Runs:** **1** run (Run #5 on 2026-09-20 06:45:00 UTC, recovering from the 429 halt).
 - **Automated Test Executions:** Pytest runs verifying 429 halts, backup aborts, and retention cleanup.
 
 ### 3.5 Phase 5 Acceptance Status Determination
@@ -104,25 +99,27 @@ To ensure complete transparency, executions are strictly categorized:
 
 ---
 
-## 4. Actual Soak Evidence (Operational Run Telemetry)
+## 4. Manual / CLI Operational Execution Evidence
 
-Below is the verified record of all distinct operational cycles logged in the production PostgreSQL database (`pipeline_runs`) during the observation window:
+The following operational executions were performed manually via CLI (`python -m pipeline ingest-live`) and verified in the live Supabase PostgreSQL database:
 
-| Cycle # | Scheduled Time (UTC) | Actual Start / End (UTC) | Job Name | Status | Rows Written | API Calls Est. | Message / Telemetry | Data Freshness | Degraded Flag |
-|---|---|---|---|---|---|---|---|---|---|
-| **0** | Baseline | 2026-09-19 13:17:54<br/>2026-09-19 13:48:30 | `previous_runs_backfill` | **SUCCESS** | 1,111,040 | 1,360 | Historical backfill across 40 stations; 1,360 chunks archived to Parquet without data corruption. | Fresh | `false` |
-| **1** | 2026-09-19 12:17:00 | 2026-09-19 14:02:11<br/>2026-09-19 14:03:45 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 28 alerts across 40 locations in 94.2s (active version 2). | Fresh | `false` |
-| **2** | 2026-09-19 18:17:00 | 2026-09-19 18:31:02<br/>2026-09-19 18:32:15 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 31 alerts across 40 locations in 73.1s (active version 2). | Fresh | `false` |
-| **3** | 2026-09-20 00:17:00 | 2026-09-20 00:32:10<br/>2026-09-20 00:33:48 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 29 alerts across 40 locations in 98.4s (active version 2). | Fresh | `false` |
-| **4** | 2026-09-20 06:17:00 | 2026-09-20 06:31:44<br/>2026-09-20 06:32:12 | `operational_blend` | **HALTED** | 140 | 160 | HALTED: HTTP 429 quota reached at amritsar. Pipeline halted cleanly without corrupting DB state. | Stale | `false` (halted) |
-| **5** | 2026-09-20 06:45:00 (Reschedule) | 2026-09-20 06:45:00<br/>2026-09-20 06:46:25 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 34 alerts across 40 locations in 85.0s (active version 2). | Fresh | `false` |
-| **6** | 2026-09-20 12:17:00 | 2026-09-20 12:30:55<br/>2026-09-20 12:32:20 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 32 alerts across 40 locations in 85.3s (active version 2). | Fresh | `false` |
-| **M-1** | Maintenance | 2026-09-20 15:00:12<br/>2026-09-20 15:08:44 | `model_training` | **SUCCESS** | 1,280 | 0 | Ridge & LightGBM hierarchical stacking weights trained across 7 regions and 4 seasons in 512.0s. | N/A | N/A |
-| **M-2** | Maintenance | 2026-09-20 15:10:00<br/>2026-09-20 15:12:30 | `skill_evaluation` | **SUCCESS** | 840 | 0 | Historical verification skill scores (MAE, RMSE, Bias, POD, FAR, CSI) updated across lead times 1-7. | N/A | N/A |
-| **M-3** | 2026-09-21 03:41:00 | 2026-09-21 03:09:00<br/>2026-09-21 03:09:48 | `backup_nightly` | **SUCCESS** | 6 tables | 0 | Nightly backup exported 13,693 rows across 6 tables in 48.0s to data/backups/20260921/. | N/A | N/A |
-| **M-4** | 2026-09-21 03:45:00 | 2026-09-21 03:10:00<br/>2026-09-21 03:10:15 | `retention_cleanup` | **SUCCESS** | 0 | 0 | Retention policy verified: non-00Z forecasts older than 90d purged; 0 stale rows found. | N/A | N/A |
-| **7** | 2026-09-21 06:17:00 | 2026-09-21 06:30:10<br/>2026-09-21 06:31:35 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 34 alerts across 40 locations in 85.1s (active version 2). | Fresh | `false` |
-| **8** | Ad-hoc | 2026-09-21 09:42:00<br/>2026-09-21 09:43:26 | `operational_blend` | **SUCCESS** | 1,680 | 160 | Successfully blended 1,680 forecasts and generated 35 alerts across 40 locations in 86.2s (active version 2). | Fresh | `false` |
+| Cycle # | Intended Slot (UTC) | Execution Time (UTC) | Job Name | Status | Rows Written | Telemetry Notes |
+|---|---|---|---|---|---|---|
+| **0** | Baseline | 2026-09-19 13:17:54 | `previous_runs_backfill` | **SUCCESS** | 1,111,040 | Historical backfill across 40 stations; 1,360 chunks archived to Parquet without data corruption. |
+| **1** | 12Z Window | 2026-09-19 14:02:11 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 28 alerts generated across 40 locations in 94.2s (active version 2). |
+| **2** | 18Z Window | 2026-09-19 18:31:02 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 31 alerts generated across 40 locations in 73.1s (active version 2). |
+| **3** | 00Z Window | 2026-09-20 00:32:10 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 29 alerts generated across 40 locations in 98.4s (active version 2). |
+| **4** | 06Z Window | 2026-09-20 06:31:44 | `operational_blend` | **HALTED** | 140 | HALTED: HTTP 429 quota reached at amritsar. Clean halt without corrupting DB state. |
+| **5** | Recovery | 2026-09-20 06:45:00 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 34 alerts generated across 40 locations in 85.0s (active version 2). |
+| **6** | 12Z Window | 2026-09-20 12:30:55 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 32 alerts generated across 40 locations in 85.3s (active version 2). |
+| **M-1**| Maintenance | 2026-09-20 15:00:12 | `model_training` | **SUCCESS** | 1,280 | Ridge & LightGBM hierarchical stacking weights trained across 7 regions and 4 seasons. |
+| **M-2**| Maintenance | 2026-09-20 15:10:00 | `skill_evaluation` | **SUCCESS** | 840 | Historical verification skill scores (MAE, RMSE, Bias, POD, FAR, CSI) updated across lead times 1-7. |
+| **M-3**| Maintenance | 2026-09-21 03:09:00 | `backup_nightly` | **SUCCESS** | 6 tables | Nightly backup exported 13,693 rows across 6 tables in 48.0s to data/backups/20260921/. |
+| **M-4**| Maintenance | 2026-09-21 03:10:00 | `retention_cleanup` | **SUCCESS** | 0 | Retention policy verified: non-00Z forecasts older than 90d purged; 0 stale rows found. |
+| **7** | 06Z Window | 2026-09-21 06:30:10 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 34 alerts generated across 40 locations in 85.1s (active version 2). |
+| **8** | Ad-hoc | 2026-09-21 09:42:00 | `operational_blend` | **SUCCESS** | 1,680 | Blended 1,680 forecasts; 35 alerts generated across 40 locations in 86.2s (active version 2). |
+
+*Note: The 5/6 operational success ratio (83.33%) reflects manual/CLI execution and must NOT be counted as the formal M4 scheduled cloud soak metric.*
 
 ---
 
@@ -160,40 +157,56 @@ Below is the verified record of all distinct operational cycles logged in the pr
 
 ---
 
-## 7. Milestone M4 Reliability Soak Calculation
+## 7. Corrected Milestone M4 Accounting
 
-### 7.1 Mathematical Definition
-Per PRD §15 and Tech Stack §9:
-$$\text{success\_rate} = \frac{\text{successful scheduled cycles}}{\text{total scheduled cycles}} \times 100$$
+In strict accordance with the M4 acceptance definition (PRD §15):
 
-### 7.2 Current Empirical Metrics (~68 Hours Observed)
-- **Total Operational Scheduled Cycles Evaluated:** 6
-- **Successful Cycles:** 5
-- **Failed / Halted Cycles:** 1 (429 rate limit incident)
-- **Partial Cycles Claimed as Success:** 0
-- **Skipped / Unavailable Cycles:** 0
-- **Recovery Rate After Failure:** 1 / 1 (100%)
-- **Raw Observed Success Rate:** $\frac{5}{6} \times 100 = 83.33\%$
-
-### 7.3 Milestone M4 Status Rule
-> [!IMPORTANT]
-> **Strict M4 Enforcement:**
-> Milestone M4 requires $\ge 95\%$ success over a **14-day continuous cloud soak** (56 scheduled 6-hourly cycles).
-> Extrapolating ~68 hours of empirical data into a 14-day pass is strictly rejected.
-
-**Milestone M4 Status:** **`PENDING`**  
-**Remaining Soak Duration:** ~11.2 days (~45 cycles remaining).
+| M4 Accounting Field | Correct Value | Audit Rationale |
+|---|---|---|
+| **Qualifying Scheduled Cycles Observed** | **0** | GitHub Actions cron runs from `phase-9/hardening` = 0. |
+| **Successful Qualifying Cycles** | **0** | No automated cloud cron runs have fired. |
+| **Failed Qualifying Cycles** | **0** | No automated cloud cron runs have failed. |
+| **Authoritative M4 Success Percentage** | **N/A** | Cannot compute a percentage with zero denominator ($0 / 0$). |
+| **Elapsed Soak Period** | **0 Days** | Qualifying cloud soak has not yet started. |
+| **Remaining Required Cycles** | **56 Cycles** | All 56 six-hourly cycles over 14 continuous days remain. |
+| **Milestone M4 Status** | **PENDING** | **Qualifying 14-day scheduled cloud soak has not started.** |
 
 ---
 
-## 8. Final Phase 9 Certification
+## 8. Scheduler Blocker Investigation
 
-In accordance with user instructions (*"FINAL STATUS MUST BE: PHASE 9 NOT READY — M4 PENDING. Do not claim the phase is fully complete while M4 remains pending"*):
+### 8.1 Investigation Scope
+Investigated whether the existing authoritative AAGAM architecture provides any already-approved mechanism that can produce genuine automated cloud executions for the six-hour pipeline without:
+- Modifying `main`
+- Adding Upgrade Pack features (e.g. AWS Lambda, Cloudflare Cron Triggers, GCP Cloud Scheduler)
+- Replacing the documented scheduler architecture
+- Inventing a new production architecture
+
+### 8.2 Finding & Architectural Conclusion
+No already-supported mechanism exists within the isolated branch architecture:
+- GitHub Actions is platform-hardcoded to evaluate `schedule:` events **only on the default branch** (`main`).
+- The documented AAGAM architecture relies entirely on `.github/workflows/ingest-blend.yml`.
+- Because `main` is strictly locked to prevent unreviewed changes, GitHub Actions cloud scheduler cannot fire.
 
 ```
 ======================================================================
-PHASE 9 COMPLETION GATE:
+PHASE 5 / M4 OPERATIONAL SCHEDULER BLOCKER:
+GitHub Actions scheduled workflows cannot begin qualifying execution
+while the workflow remains only on a non-default branch and main is locked.
+======================================================================
+```
+*(No workaround implemented per task instructions).*
+
+---
+
+## 9. Final Phase 9 Certification
+
+Because Milestone M4 remains pending and the qualifying scheduled cloud soak has not started:
+
+```
+======================================================================
+FINAL PHASE 9 COMPLETION GATE:
 PHASE 9 NOT READY — M4 PENDING
-HEAD COMMIT: 1e49864 on branch phase-9/hardening
+HEAD COMMIT: 01fdf21 on branch phase-9/hardening
 ======================================================================
 ```

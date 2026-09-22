@@ -1,8 +1,10 @@
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import psycopg2
+
 from core.config import settings
 
 conn = psycopg2.connect(settings.DATABASE_URL)
@@ -18,7 +20,7 @@ with conn.cursor() as cur:
     rows = cur.fetchall()
     cols = [d[0] for d in cur.description]
     print(f"Total successful ingest-blend runs: {len(rows)}")
-    
+
     # Group runs into clusters by timestamp (runs separated by > 30 minutes)
     clusters = []
     current_cluster = []
@@ -36,7 +38,7 @@ with conn.cursor() as cur:
                 current_cluster.append(d)
     if current_cluster:
         clusters.append(current_cluster)
-        
+
     print(f"\nIdentified {len(clusters)} distinct operational run clusters / sessions:")
     for idx, cl in enumerate(clusters, 1):
         first_run = cl[0]
