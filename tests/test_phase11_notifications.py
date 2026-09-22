@@ -23,8 +23,9 @@ def db_conn():
     conn.close()
 
 
-def test_brevo_client_mock_dry_run():
+def test_brevo_client_mock_dry_run(monkeypatch):
     """Verify that BrevoClient cleanly generates mock IDs when run without an API key."""
+    monkeypatch.setattr(settings, "BREVO_API_KEY", None)
     client = BrevoClient(api_key=None)
     res = client.send_email(
         to_email="test@example.com",
