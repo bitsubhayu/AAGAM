@@ -19,6 +19,18 @@ import { AssistantPage } from "@/pages/AssistantPage";
 import { PipelineHealthPage } from "@/pages/PipelineHealthPage";
 import { DataExportPage } from "@/pages/DataExportPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { PublicEventSharePage } from "@/pages/PublicEventSharePage";
+
+function parsePublicEventId(): number | null {
+  if (typeof window === "undefined") return null;
+  const path = window.location.pathname;
+  const match = path.match(/^\/alerts\/(?:e|events)\/(\d+)\/?$/);
+  if (match && match[1]) {
+    const parsed = parseInt(match[1], 10);
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +45,15 @@ function DashboardContent() {
   const { activeTab } = useUIStore();
   const { isLoading: healthLoading } = useHealth();
   const [secondsElapsed, setSecondsElapsed] = useState(0);
+  const [publicEventId, setPublicEventId] = useState<number | null>(parsePublicEventId);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPublicEventId(parsePublicEventId());
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!healthLoading) return;
@@ -43,6 +64,18 @@ function DashboardContent() {
   }, [healthLoading]);
 
   const isWakingUp = healthLoading && secondsElapsed >= 4;
+
+  if (publicEventId !== null) {
+    return (
+      <PublicEventSharePage
+        eventId={publicEventId}
+        onNavigateHome={() => {
+          window.history.pushState({}, "", "/");
+          setPublicEventId(null);
+        }}
+      />
+    );
+  }
 
   const renderActiveTab = () => {
     switch (activeTab) {

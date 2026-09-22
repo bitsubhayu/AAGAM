@@ -226,12 +226,37 @@ export interface LifecycleEventNode {
   value?: number | null;
 }
 
+export interface HazardGuidance {
+  hazard: string;
+  severity: string;
+  headline: string;
+  body: string;
+  precautions: string[];
+  official_link: string;
+  source: string;
+}
+
+export interface TrackRecord {
+  applicable: boolean;
+  hazard: string;
+  region: string;
+  severity: string;
+  window_days: number;
+  n: number;
+  hits: number;
+  false_alarms: number;
+  hit_rate?: number | null;
+  low_sample: boolean;
+  note?: string | null;
+  summary_text: string;
+}
+
 export interface AlertEventDetailResponse {
   event: AlertEventItem;
   alerts: AlertItem[];
   lifecycle_history: LifecycleEventNode[];
-  guidance?: any;
-  track_record?: any;
+  guidance?: HazardGuidance | null;
+  track_record?: TrackRecord | null;
   share_text?: string | null;
 }
 

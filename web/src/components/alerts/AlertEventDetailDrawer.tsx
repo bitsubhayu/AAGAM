@@ -10,6 +10,12 @@ import {
   Activity,
   Info,
   Check,
+  HelpCircle,
+  ExternalLink,
+  ShieldCheck,
+  Share2,
+  Copy,
+  Send,
 } from "lucide-react";
 import { useAlertEvent, useAcknowledgeAlertEvent } from "@/api/useAlerts";
 import { Badge } from "@/components/ui/Badge";
@@ -275,6 +281,176 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                     )}
                   </div>
                 ))}
+              </div>
+
+              {/* 4. What This Means (PRD §10.4 FR-UI-5, Feature C) */}
+              {data?.guidance && (
+                <div className="space-y-2.5 p-3.5 bg-[#21262d]/50 rounded-lg border border-border">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                    <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
+                      <HelpCircle className="w-4 h-4 text-emerald-400" />
+                      <span>What this means</span>
+                    </div>
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider font-mono">
+                      IMD Calibrated
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <h4 className="text-xs font-bold text-text-primary">
+                      {data.guidance.headline}
+                    </h4>
+                    <p className="text-[11px] text-text-secondary leading-relaxed">
+                      {data.guidance.body}
+                    </p>
+
+                    {data.guidance.precautions && data.guidance.precautions.length > 0 && (
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wider block">
+                          Recommended Precautions:
+                        </span>
+                        <ul className="space-y-1 text-[11px] text-text-secondary list-disc list-inside">
+                          {data.guidance.precautions.map((p, idx) => (
+                            <li key={idx} className="leading-normal">
+                              {p}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-border/40 flex items-center justify-between">
+                      <a
+                        href={data.guidance.official_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-brand-blue hover:underline inline-flex items-center gap-1 font-medium"
+                      >
+                        <span>Official IMD Warning Portal (GIS)</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <span className="text-[10px] text-text-muted">
+                        Decision support, not official warning
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Track Record (PRD §10.4 FR-UI-5, Feature A) */}
+              {data?.track_record && (
+                <div className="space-y-2.5 p-3.5 bg-[#21262d]/50 rounded-lg border border-border">
+                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                    <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
+                      <ShieldCheck className="w-4 h-4 text-brand-teal" />
+                      <span>Historical Track Record (180 Days)</span>
+                    </div>
+                    <span className="text-[10px] text-text-muted font-mono">
+                      Region: {event.region}
+                    </span>
+                  </div>
+
+                  {!data.track_record.applicable ? (
+                    <div className="p-2.5 rounded bg-[#161b22] border border-border/60 text-text-muted text-[11px]">
+                      {data.track_record.summary_text}
+                    </div>
+                  ) : data.track_record.low_sample ? (
+                    <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] space-y-1">
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Early Sample Data (n &lt; 5)</span>
+                      </div>
+                      <p className="text-[10px] text-amber-200/80">
+                        {data.track_record.summary_text} (Evaluated {data.track_record.n} past events in last 180 days).
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-text-primary font-medium">
+                          {data.track_record.summary_text}
+                        </span>
+                        <span className="text-base font-bold font-mono text-emerald-400">
+                          {data.track_record.hit_rate !== null && data.track_record.hit_rate !== undefined
+                            ? `${(data.track_record.hit_rate * 100).toFixed(0)}%`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
+                        <span className="px-2 py-0.5 rounded bg-[#161b22] border border-border">
+                          Hits: {data.track_record.hits}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-[#161b22] border border-border">
+                          False Alarms: {data.track_record.false_alarms}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-[#161b22] border border-border">
+                          Total (n): {data.track_record.n}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 6. Share (PRD §10.4 FR-UI-5, Feature F) */}
+              <div className="space-y-2 p-3.5 bg-[#21262d]/50 rounded-lg border border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
+                    <Share2 className="w-4 h-4 text-brand-orange" />
+                    <span>Share Alert Event (Public URL)</span>
+                  </div>
+                  <span className="text-[10px] text-text-muted">
+                    No login required
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const url = `${window.location.origin}/alerts/e/${event.id}`;
+                      navigator.clipboard.writeText(url);
+                      toast.success("Permanent event link copied to clipboard!");
+                    }}
+                    className="text-xs h-7 gap-1"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy Link</span>
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (data?.share_text) {
+                        navigator.clipboard.writeText(data.share_text);
+                        toast.success("Share text copied to clipboard!");
+                      }
+                    }}
+                    className="text-xs h-7 gap-1"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Copy Text</span>
+                  </Button>
+
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                      data?.share_text
+                        ? data.share_text.replace(
+                            `/alerts/e/${event.id}`,
+                            `${window.location.origin}/alerts/e/${event.id}`
+                          )
+                        : `${window.location.origin}/alerts/e/${event.id}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white h-7 transition-colors"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Share on WhatsApp</span>
+                  </a>
+                </div>
               </div>
             </>
           )}

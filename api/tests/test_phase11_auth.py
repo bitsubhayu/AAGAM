@@ -32,7 +32,10 @@ def test_request_otp_success(client, monkeypatch):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["status"] == "ok"
-    mock_supabase.auth.sign_in_with_otp.assert_called_once_with({"email": "officer@example.gov.in"})
+    mock_supabase.auth.sign_in_with_otp.assert_called_once_with({
+        "email": "officer@example.gov.in",
+        "options": {"email_redirect_to": "http://localhost:3000"},
+    })
 
 
 def test_request_otp_invalid_email(client):

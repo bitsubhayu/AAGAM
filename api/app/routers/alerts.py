@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 
 from api.app.auth.dependencies import CurrentUser, require_role
 from api.app.db.pool import get_db_conn, set_rls_claims
+from api.app.services.hazard_guidance import get_hazard_guidance
+from api.app.services.track_record import fetch_track_record
 from core.config import settings
 from core.schemas import (
     AlertAckResponse,
@@ -294,13 +296,78 @@ async def get_alert_event(
                 )
             )
 
+    # 1. Feature C: Static team-authored "What this means" hazard guidance
+    guidance = get_hazard_guidance(event_item.hazard, event_item.severity_peak)
+
+    # 2. Feature A: Trailing 180-day verification track record
+    track_record = await fetch_track_record(
+        conn=conn,
+        hazard=event_item.hazard,
+        region=event_item.region or "ALL",
+        severity=event_item.severity_peak,
+        window_days=180,
+    )
+
+    # 3. Feature F: Public Share Text formatted strictly per PRD §10.4 FR-UI-5
+    headline_val = ""
+    if event_item.value_peak is not None:
+        if event_item.hazard in ("heavy_rain", "heavy_rain_3day"):
+            headline_val = f"up to {event_item.value_peak}mm rain expected"
+        elif event_item.hazard == "heatwave":
+            headline_val = f"up to {event_item.value_peak}°C expected"
+        elif event_item.hazard == "high_wind":
+            headline_val = f"gusts up to {event_item.value_peak} km/h expected"
+        else:
+            headline_val = f"peak value {event_item.value_peak} expected"
+    else:
+        headline_val = "extreme weather conditions expected"
+
+    max_models = max([a.models_over for a in alerts if a.models_over is not None] or [0])
+    agreement_str = f"{max_models} of 4 models agree" if max_models > 0 else "multi-model consensus"
+
+    date_range_str = (
+        event_item.start_date
+        if event_item.start_date == event_item.end_date
+        else f"{event_item.start_date} to {event_item.end_date}"
+    )
+
+    hazard_label = event_item.hazard.replace("_", " ").title()
+    severity_label = event_item.severity_peak.upper()
+    public_url = f"/alerts/e/{event_item.id}"
+
+    share_text = (
+        f"⚠️ {severity_label} — {hazard_label} for {event_item.location_name}\n"
+        f"{date_range_str}: {headline_val} ({agreement_str})\n"
+        f"Details: {public_url}\n"
+        f"— via AAGAM (decision support, not an official IMD warning)"
+    )
+
     return AlertEventDetailResponse(
         event=event_item,
         alerts=alerts,
         lifecycle_history=lifecycle_history,
-        guidance=None,
-        track_record=None,
-        share_text=None,
+        guidance=guidance,
+        track_record=track_record,
+        share_text=share_text,
+    )
+
+
+@router.get("/alerts/track-record")
+async def get_track_record_endpoint(
+    hazard: str = Query(..., description="Hazard type"),
+    region: str = Query(..., description="Geographic region"),
+    severity: str = Query(..., description="Severity peak"),
+    window_days: int = Query(180, description="Trailing window in days (default 180)"),
+    current_user: CurrentUser = Depends(require_role("public")),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> Dict[str, Any]:
+    """Evaluates trailing 180-day track record for given criteria (PRD §12.1)."""
+    return await fetch_track_record(
+        conn=conn,
+        hazard=hazard,
+        region=region,
+        severity=severity,
+        window_days=window_days,
     )
 
 

@@ -1,0 +1,121 @@
+# ==============================================================================
+# AAGAM — Static Team-Authored Hazard Guidance (config/hazard_guidance.yaml)
+# Authoritative Specification: AAGAM_PRD.md §11.3, Upgrade Pack v1.1 Feature C
+# Note: Team-authored editorial guidance calibrated to IMD thresholds.
+# NOT AI/LLM-generated.
+# ==============================================================================
+
+imd_warning_portal:
+  url: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+  label: "IMD District Warning Portal (GIS)"
+  source: "India Meteorological Department (IMD), Ministry of Earth Sciences"
+
+guidance:
+  heavy_rain:
+    advisory:
+      headline: "Heavy Rainfall Advisory — Be Aware"
+      body: "Numerical weather models indicate an early signal for isolated heavy rainfall (64.5 mm or higher) within the forecast window. While model spread remains present, conditions favor localized waterlogging in low-lying urban areas and slower road transport. Monitor local weather updates as consensus evolves."
+      precautions:
+        - "Check local municipal drainage and waterlogging advisories before traveling."
+        - "Avoid parking vehicles in basements or low-lying stormwater transit zones."
+        - "Keep emergency torches and power banks charged in case of localized outages."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    watch:
+      headline: "Heavy Rainfall Watch — Be Prepared"
+      body: "Multi-model consensus confirms significant rainfall crossing IMD heavy thresholds (64.5 to 115.5 mm/24h) with strong agreement among ensemble members. Expect significant urban inundation, disruption to traffic corridors, and water accumulation on agricultural lands. Prepare contingency routes and secure essential goods."
+      precautions:
+        - "Avoid venturing into waterlogged roads, open drains, or flood-prone underpasses."
+        - "Protect stored harvest and clear domestic agricultural drainage channels."
+        - "Follow district administration and State Disaster Management Authority (SDMA) bulletins."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    alert:
+      headline: "Heavy Rainfall Alert — Take Action"
+      body: "High-confidence forecast indicates widespread heavy to very heavy rainfall exceeding IMD critical safety thresholds. High risk of flash flooding, severe municipal drainage overflow, road washouts, and localized landslides in hilly terrain. Immediate preventive action and heightened readiness are advised."
+      precautions:
+        - "Stay indoors unless instructed to relocate by civil defense authorities."
+        - "Avoid crossing inundated bridges, causeways, or swollen rural streams."
+        - "Unplug major electrical appliances and keep vital documents in waterproof containers."
+        - "Keep emergency helpline numbers (112, 1070/1077) accessible."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+
+  heatwave:
+    advisory:
+      headline: "Heatwave Advisory — Watch Temperatures"
+      body: "Forecast maximum temperatures are approaching heatwave thresholds with positive departures from climatological normals. Moderate heat stress is likely during peak afternoon hours, particularly for outdoor laborers, elderly persons, and infants. Plan daily outdoor activities during early morning or evening hours."
+      precautions:
+        - "Drink adequate water and traditional fluids (ORS, lassi, lemon water, buttermilk) even if not thirsty."
+        - "Wear loose, lightweight, light-colored cotton clothing."
+        - "Avoid leaving children or pets unattended inside parked vehicles."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    watch:
+      headline: "Heatwave Watch — Be Prepared"
+      body: "Sustained high temperatures crossing 40°C in plains (or 4.5°C above seasonal normal) are forecast for two or more consecutive days. High risk of heat illness, dehydration, and sunstroke under prolonged sun exposure. Authorities and vulnerable populations should implement heat protection measures."
+      precautions:
+        - "Avoid direct sunlight between 12:00 PM and 3:30 PM."
+        - "Provide shaded rest areas and drinking water at outdoor workplaces."
+        - "Cover your head with a cloth, hat, or umbrella when stepping outdoors."
+        - "Watch for signs of heat exhaustion: dizziness, nausea, excessive sweating, or weakness."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    alert:
+      headline: "Severe Heatwave Alert — Take Action"
+      body: "Extreme maximum temperatures crossing 45°C or departures exceeding 6.4°C above normal are strongly indicated across multiple models. Severe risk of life-threatening heat stroke for all age groups, strain on power grids, and livestock distress. Extreme caution and strict avoidance of sun exposure are vital."
+      precautions:
+        - "Strictly suspend heavy outdoor labor during peak daytime hours."
+        - "Keep domestic livestock and pets in well-ventilated, shaded enclosures with ample water."
+        - "Immediately move any person experiencing high body temperature and delirium to shade and apply cold sponging."
+        - "Seek immediate medical attention for suspected heat stroke."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+
+  high_wind:
+    advisory:
+      headline: "High Wind Advisory — Be Aware"
+      body: "Gusty wind speeds exceeding 50 km/h (Beaufort 7 moderate gale) are forecast in association with passing convective storms or seasonal pressure gradients. Expect minor structural stress, swaying branches, and loose outdoor items being displaced. Secure outdoor fixtures and exercise care on highways."
+      precautions:
+        - "Fasten or move loose rooftop items, sheet roofing, and potted plants indoors."
+        - "Take caution while driving two-wheelers on open elevated bridges or highways."
+        - "Stay clear of dilapidated boundary walls and aging structures."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    watch:
+      headline: "Gale Wind Watch — Be Prepared"
+      body: "Sustained winds between 62 and 74 km/h (Beaufort 8 gale) are indicated with high model consensus. High risk of breaking tree branches, damage to unanchored temporary structures, and hazardous conditions for small marine vessels or coastal fishing craft. Pre-position municipal tree-clearing crews."
+      precautions:
+        - "Fishermen and small craft operators should avoid venturing into deep sea or large reservoirs."
+        - "Avoid parking beneath tall trees, weak billboards, or high-tension overhead cables."
+        - "Inspect and reinforce temporary tin sheds and construction scaffolding."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    alert:
+      headline: "Strong Gale / Storm Wind Alert — Take Action"
+      body: "Dangerous wind speeds exceeding 75 km/h (Beaufort 9+ strong gale/storm force) are forecast. High probability of extensive damage to thatched/tin houses, uprooted large trees, snapped overhead power/telecom lines, and widespread transportation disruption. Remain indoors in sturdy masonry structures."
+      precautions:
+        - "Remain indoors in safe, reinforced masonry buildings away from glass windows."
+        - "Total suspension of all maritime, harbor, and offshore operations."
+        - "Expect potential communication and power outages; keep battery-operated radios handy."
+        - "Report snapped electric wires immediately to local power distribution boards and do not approach them."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+
+  heavy_rain_3day:
+    advisory:
+      headline: "Prolonged 3-Day Rainfall Advisory — Be Aware"
+      body: "Forecast cumulative rainfall over a 72-hour window indicates substantial multi-day precipitation. While single-day totals may remain moderate, soil saturation will progressively increase, elevating surface runoff and river catchment inflow. Hydrological observers should monitor basin levels."
+      precautions:
+        - "Monitor local reservoir and drainage channel discharge bulletins."
+        - "Farmers should ensure proper outlet channels in standing crops to prevent waterlogging."
+        - "Check roadside storm drains for blockages from leaves and solid waste."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    watch:
+      headline: "Prolonged 3-Day Rainfall Watch — Be Prepared"
+      body: "High cumulative 3-day rainfall totals are forecast across ensemble predictions, indicating ground saturation and prolonged runoff. High likelihood of low-lying agricultural flooding, sub-surface seepage in basements, and elevated water levels in municipal canals and regional streams. Prepare flood barriers if in low-lying zones."
+      precautions:
+        - "Store emergency drinking water and provisions in case municipal supply is disrupted."
+        - "Move livestock and farm equipment to elevated ground away from natural water channels."
+        - "Avoid travel on rural river causeways prone to submerged roadways."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+    alert:
+      headline: "Extreme 3-Day Cumulative Rainfall Alert — Take Action"
+      body: "Severe multi-day rainfall accumulation is forecast with high model agreement, presenting major catchment flooding and riverbank breach potential. Ground will reach total saturation with near 100% surface runoff, creating acute risk of prolonged inundation and infrastructure submergence across the district. Evacuation preparedness required."
+      precautions:
+        - "Follow district collectorate and emergency services evacuation notices without delay."
+        - "Do not attempt to walk, swim, or drive through flowing floodwaters of any depth."
+        - "Shut off domestic gas connections and turn off main electrical switches before evacuation."
+        - "Head immediately to designated higher ground or municipal flood shelter centers."
+      official_link: "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"

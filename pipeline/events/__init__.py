@@ -6,6 +6,11 @@ from pipeline.events.lifecycle_state import (
     compute_lifecycle_states,
     update_event_cancellations_and_expiries,
 )
+from pipeline.events.verify import (
+    batch_verify_events,
+    evaluate_event_outcome,
+    get_hazard_threshold,
+)
 
 __all__ = [
     "AlertEventRecord",
@@ -13,4 +18,8 @@ __all__ = [
     "compute_lifecycle_states",
     "update_event_cancellations_and_expiries",
     "SEVERITY_RANKS",
+    "evaluate_event_outcome",
+    "batch_verify_events",
+    "get_hazard_threshold",
 ]
+
