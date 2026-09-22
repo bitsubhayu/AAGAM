@@ -15,6 +15,7 @@ import { ForecastExplorerPage } from "@/pages/ForecastExplorerPage";
 import { WeightMapsPage } from "@/pages/WeightMapsPage";
 import { SkillPage } from "@/pages/SkillPage";
 import { ExtremeWeatherPage } from "@/pages/ExtremeWeatherPage";
+import { AssistantPage } from "@/pages/AssistantPage";
 import { PipelineHealthPage } from "@/pages/PipelineHealthPage";
 import { DataExportPage } from "@/pages/DataExportPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -47,6 +48,8 @@ function DashboardContent() {
     switch (activeTab) {
       case "overview":
         return <OverviewPage />;
+      case "assistant":
+        return <AssistantPage />;
       case "forecast":
         return <ForecastExplorerPage />;
       case "weights":

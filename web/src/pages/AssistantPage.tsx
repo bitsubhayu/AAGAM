@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
-  X,
   Send,
   Sparkles,
   Bot,
@@ -11,14 +10,14 @@ import {
   FileCode,
   AlertTriangle,
   Zap,
+  RotateCcw,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useUIStore } from "@/store/uiStore";
-import { useAuthStore } from "@/auth/authStore";
 import { Button } from "@/components/ui/Button";
 import { API_BASE, getAuthToken } from "@/api/client";
-import { ArtifactViewerModal } from "./ArtifactViewerModal";
-import { DataTableWidget, type DataTablePayload } from "./DataTableWidget";
+import { ArtifactViewerModal } from "@/components/assistant/ArtifactViewerModal";
+import { DataTableWidget, type DataTablePayload } from "@/components/assistant/DataTableWidget";
 import { toast } from "sonner";
 
 interface Message {
@@ -39,15 +38,14 @@ interface Message {
   error?: { code: string; message: string; retry_after?: number };
 }
 
-export const AssistantDrawer: React.FC = () => {
-  const { isAssistantOpen, setAssistantOpen, assistantPrompt } = useUIStore();
-  const { role } = useAuthStore();
+export const AssistantPage: React.FC = () => {
+  const { assistantPrompt } = useUIStore();
 
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome-1",
       sender: "assistant",
-      text: "Namaste! I am the **AAGAM Weather Decision Assistant**. Ask me about model agreements, regional heavy rainfall risks, extreme weather rules, or request raw multi-model forecast comparisons.\n\n*Notice: Decision support, not an official IMD warning.*",
+      text: "Namaste! I am the **AAGAM Weather Decision Assistant** (NCMRWF / MoES PS 26081).\n\nI can retrieve calibrated multi-model forecasts (GFS, ECMWF IFS, DWD ICON, ECMWF AIFS), model weight matrices, verification skill metrics, and active extreme alerts across AAGAM's 40 configured locations. Every figure is traceable to tool outputs.\n\n*Notice: Decision support, not an official IMD warning.*",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       model: "openai/gpt-oss-120b",
     },
@@ -60,12 +58,31 @@ export const AssistantDrawer: React.FC = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Suggested prompts tailored to persona
-  const samplePrompts = [
-    "What is the blended rainfall forecast for Bhubaneswar over the next 3 days?",
-    "Compare ECMWF IFS vs GFS skill across coastal stations this week.",
-    "Are there any severe heatwave thresholds triggered in the Central region?",
-    "Explain the dominant model weights for Day+3 forecast in East & North-East.",
+  const personaPrompts = [
+    {
+      category: "Forecaster (Dr. Meera)",
+      prompts: [
+        "Tmax for Nagpur next 3 days, all models",
+        "Which model do we trust for South monsoon rain at day 3?",
+        "MAE of AIFS vs ICON for wind by lead, last 60 days",
+      ],
+    },
+    {
+      category: "Disaster Duty Officer (Mr. Rao)",
+      prompts: [
+        "Is heavy rain likely near Bhubaneswar this weekend?",
+        "Any heavy-rain alerts for the next 48 h on the East coast?",
+        "Active heatwave warnings in Central India",
+      ],
+    },
+    {
+      category: "Analyst / Researcher",
+      prompts: [
+        "Export last 30 days Delhi Tmax observed vs models CSV",
+        "Raw: bias of models across regions for wind",
+        "Query historical blended rainfall for Kolkata last 14 days",
+      ],
+    },
   ];
 
   const handleSend = useCallback(
@@ -206,6 +223,7 @@ export const AssistantDrawer: React.FC = () => {
                     );
                   }
                 } catch {
+                  // Fallback plain chunk
                   if (currentEvent === "token" || currentEvent === "text") {
                     accumulatedText += rawData;
                     setMessages((prev) =>
@@ -264,7 +282,7 @@ export const AssistantDrawer: React.FC = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsStreaming(false);
-      toast.info("Assistant stream halted.");
+      toast.info("Assistant stream stopped.");
     }
   };
 
@@ -272,56 +290,42 @@ export const AssistantDrawer: React.FC = () => {
     setMessages((prev) =>
       prev.map((m) => (m.id === msgId ? { ...m, feedback: type } : m))
     );
-    toast.success("Feedback recorded");
+    toast.success("Feedback recorded to chat_audit");
   };
 
-  if (!isAssistantOpen) return null;
-
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[500px] bg-surface border-l border-border shadow-2xl flex flex-col font-sans animate-in slide-in-from-right duration-200">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-border bg-[#161b22] flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-blue-500/10 border border-blue-500/30 rounded text-brand-blue">
-            <Sparkles className="w-4 h-4 text-brand-orange" />
+    <div className="flex flex-col h-[calc(100vh-8.5rem)] bg-[#0d1117] rounded-lg border border-border overflow-hidden">
+      {/* Workstation Header Bar */}
+      <div className="px-5 py-3 bg-[#161b22] border-b border-border flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-brand-blue">
+            <Sparkles className="w-5 h-5 text-brand-orange" />
           </div>
           <div>
-            <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+            <h1 className="text-sm font-bold text-text-primary flex items-center gap-2">
               <span>AAGAM Meteorological Assistant</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#21262d] text-brand-blue font-mono border border-blue-500/30">
-                Groq 120B
+              <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-brand-blue font-mono border border-blue-500/30">
+                Groq openai/gpt-oss-120b
               </span>
-            </h3>
-            <p className="text-[10px] text-text-muted">
-              Role: <span className="capitalize text-text-secondary">{role}</span> ·
-              Decision support, not official warning
+            </h1>
+            <p className="text-[11px] text-text-muted">
+              Operational decision support · 6 read-only tools · 100% numerical traceability (M5)
             </p>
           </div>
         </div>
 
-        <button
-          onClick={() => setAssistantOpen(false)}
-          className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-[#21262d] transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Mode Bar */}
-      <div className="px-4 py-2 border-b border-border/60 bg-[#161b22]/50 flex items-center justify-between text-xs flex-wrap gap-2">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">
-          Response Mode:
-        </span>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-[#21262d] p-0.5 rounded border border-border">
+        {/* Toolbar & Response Mode Selector */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 bg-[#21262d] p-1 rounded border border-border text-xs">
+            <span className="text-[10px] text-text-muted font-semibold px-1">MODE:</span>
             {(["explain", "raw", "both"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-colors ${
+                className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors ${
                   mode === m
-                    ? "bg-brand-blue text-white"
-                    : "text-text-muted hover:text-text-secondary"
+                    ? "bg-brand-blue text-white shadow-sm"
+                    : "text-text-secondary hover:text-text-primary hover:bg-[#30363d]"
                 }`}
               >
                 {m}
@@ -334,74 +338,86 @@ export const AssistantDrawer: React.FC = () => {
               const id = window.prompt("Enter Stored Assistant Artifact ID (e.g. art_sample):");
               if (id?.trim()) setSelectedArtifactId(id.trim());
             }}
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-text-primary border border-border bg-[#21262d] transition-colors"
-            title="Inspect stored assistant data artifact"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] border border-border text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
-            <FileCode className="w-3 h-3 text-brand-blue" />
+            <FileCode className="w-3.5 h-3.5 text-brand-blue" />
             <span>Artifacts</span>
+          </button>
+
+          <button
+            onClick={() => {
+              if (window.confirm("Clear conversation history?")) {
+                setMessages([messages[0]]);
+              }
+            }}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] border border-border text-xs text-text-muted hover:text-text-primary transition-colors"
+            title="Reset conversation"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Messages Feed */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 text-xs select-text">
+      {/* Messages Scroll Area */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 select-text">
         {messages.map((m) => {
           const isUser = m.sender === "user";
           return (
             <div
               key={m.id}
-              className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
+              className={`flex gap-3.5 ${isUser ? "justify-end" : "justify-start"}`}
             >
               {!isUser && (
-                <div className="w-6 h-6 rounded bg-brand-blue/15 border border-brand-blue/30 flex items-center justify-center text-brand-blue shrink-0 mt-0.5">
-                  <Bot className="w-3.5 h-3.5" />
+                <div className="w-8 h-8 rounded-full bg-brand-blue/15 border border-brand-blue/30 flex items-center justify-center text-brand-blue shrink-0 mt-0.5 shadow-sm">
+                  <Bot className="w-4 h-4" />
                 </div>
               )}
 
               <div
-                className={`max-w-[90%] rounded-lg p-3 space-y-2.5 ${
+                className={`max-w-[85%] rounded-lg p-4 space-y-3 ${
                   isUser
-                    ? "bg-brand-blue text-white"
-                    : "bg-[#21262d] text-text-secondary border border-border"
+                    ? "bg-brand-blue text-white shadow"
+                    : "bg-[#161b22] text-text-primary border border-border shadow-sm"
                 }`}
               >
-                {/* Meta Header */}
+                {/* Assistant Metadata Header */}
                 {!isUser && (
-                  <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-border/40 text-[10px] text-text-muted">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border/40 text-[11px] text-text-muted">
+                    <div className="flex items-center gap-2">
                       <span className="font-mono text-brand-blue font-semibold">
-                        {m.model || "openai/gpt-oss-120b"}
+                        {m.model || "AAGAM Agent"}
                       </span>
                       {m.cached && (
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-0.5">
-                          <Zap className="w-2.5 h-2.5" /> Cached
+                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px]">
+                          <Zap className="w-2.5 h-2.5" /> Cached (10m TTL)
                         </span>
                       )}
                     </div>
                     {m.latency_ms && (
-                      <span className="font-mono text-[9px] opacity-70">
-                        {m.latency_ms}ms · {m.tokens_used || 50}t
-                      </span>
+                      <div className="flex items-center gap-2 font-mono text-[10px]">
+                        <span>{m.latency_ms} ms</span>
+                        {m.tokens_used && <span>· {m.tokens_used} tokens</span>}
+                      </div>
                     )}
                   </div>
                 )}
 
-                {/* Tool calls badges */}
+                {/* Tool Call Chips */}
                 {!isUser && m.toolCalls && m.toolCalls.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {m.toolCalls.map((tc, idx) => (
                       <span
                         key={idx}
-                        className="px-1.5 py-0.5 rounded bg-[#161b22] border border-border text-[10px] font-mono text-text-secondary flex items-center gap-1"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#21262d] border border-border text-[11px] font-mono text-text-secondary"
                       >
-                        <Zap className="w-2.5 h-2.5 text-brand-orange" />
+                        <Zap className="w-3 h-3 text-brand-orange" />
                         <span>tool: {tc.name}</span>
                       </span>
                     ))}
                   </div>
                 )}
 
-                {/* Data Table Widget */}
+                {/* Interactive Data Table Component */}
                 {!isUser && m.dataTable && (
                   <DataTableWidget
                     dataTable={m.dataTable}
@@ -409,8 +425,8 @@ export const AssistantDrawer: React.FC = () => {
                   />
                 )}
 
-                {/* Markdown Text Body */}
-                <div className="markdown-body text-xs leading-relaxed text-text-primary">
+                {/* Markdown Prose Response */}
+                <div className="markdown-body text-xs leading-relaxed">
                   <ReactMarkdown
                     components={{
                       a: ({ href, children }) => {
@@ -420,7 +436,6 @@ export const AssistantDrawer: React.FC = () => {
                             <button
                               onClick={() => setSelectedArtifactId(artId || null)}
                               className="text-brand-blue underline inline-flex items-center gap-0.5 font-mono cursor-pointer"
-                              title="Inspect stored assistant artifact (PRD §12)"
                             >
                               <FileCode className="w-3 h-3 inline" />
                               <span>{children}</span>
@@ -439,22 +454,22 @@ export const AssistantDrawer: React.FC = () => {
                   </ReactMarkdown>
                 </div>
 
-                {/* Warning Alert */}
+                {/* Warning Banner */}
                 {!isUser && m.warning && (
-                  <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 flex items-center gap-1.5 text-[11px] text-amber-300">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-xs text-amber-300">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                     <span>{m.warning}</span>
                   </div>
                 )}
 
-                {/* Citations */}
+                {/* Citations Chips */}
                 {!isUser && m.citations && m.citations.length > 0 && (
-                  <div className="pt-1.5 border-t border-border/40 flex flex-wrap items-center gap-1.5 text-[9px] text-text-muted">
-                    <span className="font-semibold">Data used:</span>
+                  <div className="pt-2 border-t border-border/40 flex flex-wrap items-center gap-2 text-[10px] text-text-muted">
+                    <span className="font-semibold">Data Used:</span>
                     {m.citations.map((c, idx) => (
                       <span
                         key={idx}
-                        className="px-1.5 py-0.5 rounded bg-[#161b22] border border-border font-mono text-text-secondary"
+                        className="px-2 py-0.5 rounded bg-[#21262d] border border-border font-mono text-text-secondary"
                       >
                         {c.tool} (v: {c.model_version})
                       </span>
@@ -462,15 +477,15 @@ export const AssistantDrawer: React.FC = () => {
                   </div>
                 )}
 
-                {/* Footer: Timestamp & Feedback */}
-                <div className="mt-1 flex items-center justify-between text-[10px] opacity-70">
+                {/* Message Footer: Timestamp & Feedback */}
+                <div className="flex items-center justify-between text-[10px] opacity-70 pt-1">
                   <span>{m.timestamp}</span>
                   {!isUser && (
-                    <div className="flex items-center gap-1 ml-4">
+                    <div className="flex items-center gap-1.5 ml-4">
                       <button
                         onClick={() => handleFeedback(m.id, "up")}
-                        className={`hover:text-text-primary transition-colors ${
-                          m.feedback === "up" ? "text-emerald-400" : ""
+                        className={`p-1 rounded hover:bg-[#21262d] transition-colors ${
+                          m.feedback === "up" ? "text-emerald-400" : "hover:text-text-primary"
                         }`}
                         title="Helpful"
                       >
@@ -478,8 +493,8 @@ export const AssistantDrawer: React.FC = () => {
                       </button>
                       <button
                         onClick={() => handleFeedback(m.id, "down")}
-                        className={`hover:text-text-primary transition-colors ${
-                          m.feedback === "down" ? "text-rose-400" : ""
+                        className={`p-1 rounded hover:bg-[#21262d] transition-colors ${
+                          m.feedback === "down" ? "text-rose-400" : "hover:text-text-primary"
                         }`}
                         title="Not helpful"
                       >
@@ -491,8 +506,8 @@ export const AssistantDrawer: React.FC = () => {
               </div>
 
               {isUser && (
-                <div className="w-6 h-6 rounded bg-[#21262d] border border-border flex items-center justify-center text-text-muted shrink-0 mt-0.5">
-                  <User className="w-3.5 h-3.5" />
+                <div className="w-8 h-8 rounded-full bg-[#21262d] border border-border flex items-center justify-center text-text-muted shrink-0 mt-0.5 shadow-sm">
+                  <User className="w-4 h-4" />
                 </div>
               )}
             </div>
@@ -500,28 +515,36 @@ export const AssistantDrawer: React.FC = () => {
         })}
       </div>
 
-      {/* Suggested Starters */}
+      {/* Suggested Starters Grid (shown when conversation is brief) */}
       {messages.length <= 2 && (
-        <div className="px-4 py-2 border-t border-border/40 bg-[#161b22]/30 space-y-1.5">
-          <span className="text-[10px] text-text-muted uppercase font-semibold block">
-            Suggested Briefings:
+        <div className="px-6 py-3 border-t border-border/60 bg-[#161b22]/40">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-2">
+            Persona-Tailored Prompt Starters:
           </span>
-          <div className="space-y-1">
-            {samplePrompts.map((p, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSend(p)}
-                className="w-full text-left px-2.5 py-1.5 rounded bg-[#21262d]/60 hover:bg-[#21262d] border border-border/40 text-[11px] text-text-secondary hover:text-text-primary transition-colors truncate block"
-              >
-                {p}
-              </button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {personaPrompts.map((group) => (
+              <div key={group.category} className="space-y-1">
+                <span className="text-[10px] font-semibold text-text-secondary block">
+                  {group.category}
+                </span>
+                {group.prompts.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handleSend(p)}
+                    className="w-full text-left px-2.5 py-1.5 rounded bg-[#21262d]/70 hover:bg-[#21262d] border border-border/60 text-[11px] text-text-secondary hover:text-text-primary transition-colors truncate"
+                    title={p}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Input Footer */}
-      <div className="p-3 border-t border-border bg-[#161b22]">
+      {/* Query Input Footer */}
+      <div className="p-4 border-t border-border bg-[#161b22]">
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -533,9 +556,9 @@ export const AssistantDrawer: React.FC = () => {
                 handleSend(input);
               }
             }}
-            placeholder="Ask AAGAM Assistant about forecasts, weights, skill, alerts..."
+            placeholder="Ask AAGAM Assistant about model agreements, regional rain, weights, skill, or alerts..."
             disabled={isStreaming}
-            className="flex-1 bg-[#0d1117] border border-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-blue"
+            className="flex-1 bg-[#0d1117] border border-border rounded-lg px-4 py-2.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-blue"
           />
 
           {isStreaming ? (
@@ -543,7 +566,7 @@ export const AssistantDrawer: React.FC = () => {
               variant="outline"
               size="sm"
               onClick={handleStop}
-              className="border-rose-500/40 text-rose-400 hover:bg-rose-500/10 px-3"
+              className="border-rose-500/40 text-rose-400 hover:bg-rose-500/10 px-4 h-9"
             >
               <Square className="w-3.5 h-3.5 mr-1" />
               <span>Stop</span>
@@ -554,9 +577,10 @@ export const AssistantDrawer: React.FC = () => {
               size="sm"
               onClick={() => handleSend(input)}
               disabled={!input.trim()}
-              className="px-3"
+              className="px-5 h-9"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-3.5 h-3.5 mr-1.5" />
+              <span>Ask</span>
             </Button>
           )}
         </div>

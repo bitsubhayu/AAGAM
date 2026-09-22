@@ -19,29 +19,43 @@ from core.config import settings
 logger = logging.getLogger("aagam.api.export")
 router = APIRouter(prefix=settings.API_V1_STR, tags=["Export"])
 
-VALID_DATASETS = {"forecasts", "alerts", "weights", "skill"}
+VALID_DATASETS = {"forecasts", "alerts", "weights", "skill", "forecast", "history"}
 VALID_FORMATS = {"csv", "json"}
 
 
 @router.get("/export")
 async def export_dataset(
-    dataset: str = Query(..., description="Dataset to export: forecasts, alerts, weights, skill"),
+    dataset: str = Query(..., description="Dataset to export: forecasts, alerts, weights, skill, history"),
     format: str = Query("csv", description="Output format: csv or json"),
     variable: Optional[str] = Query(None, description="Variable filter"),
     location: Optional[str] = Query(None, description="Location slug filter"),
+    token: Optional[str] = Query(None, description="Signed export token for download URLs"),
     current_user: CurrentUser = Depends(require_role("any")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> StreamingResponse:
     """Streams data exports as CSV or JSON (PRD §12, role: any)."""
     dataset_clean = dataset.lower().strip()
+    if dataset_clean in ("forecast", "history"):
+        dataset_clean = "forecasts"
+
     format_clean = format.lower().strip()
 
-    if dataset_clean not in VALID_DATASETS:
+    if token:
+        from api.app.assistant.tools.export import verify_signed_export_token
+        try:
+            verify_signed_export_token(token)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "EXPIRED_OR_INVALID_TOKEN", "message": str(ve), "retry_after": None},
+            )
+
+    if dataset_clean not in {"forecasts", "alerts", "weights", "skill"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "INVALID_DATASET",
-                "message": f"Invalid dataset '{dataset}'. Must be one of: {list(VALID_DATASETS)}",
+                "message": f"Invalid dataset '{dataset}'. Must be one of: forecasts, alerts, weights, skill",
                 "retry_after": None,
             },
         )

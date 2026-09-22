@@ -1,4 +1,3 @@
-import React from "react";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -6,6 +5,7 @@ import {
   Sliders,
   AlertTriangle,
   Activity,
+  Bot,
   Download,
   Settings,
   ChevronLeft,
@@ -32,6 +32,7 @@ export const Sidebar: React.FC = () => {
     { id: "weights", label: "Weight Maps", icon: Sliders },
     { id: "skill", label: "Skill & Verification", icon: Activity },
     { id: "alerts", label: "Extreme Weather", icon: AlertTriangle, badge: "Active" },
+    { id: "assistant", label: "AAGAM Assistant", icon: Bot, badge: "AI" },
     { id: "pipeline", label: "Pipeline Health", icon: MapPin },
     { id: "export", label: "Data & Export", icon: Download },
     { id: "settings", label: "Settings", icon: Settings },
