@@ -199,14 +199,55 @@ while the workflow remains only on a non-default branch and main is locked.
 
 ---
 
-## 9. Final Phase 9 Certification
+## 9. Phase 9 Certification Baseline
 
-Because Milestone M4 remains pending and the qualifying scheduled cloud soak has not started:
+Because Milestone M4 requires a 14-day / 56-cycle qualifying scheduled cloud soak, Phase 9 remains open and is NOT frozen:
 
 ```
 ======================================================================
-FINAL PHASE 9 COMPLETION GATE:
-PHASE 9 NOT READY — M4 PENDING
-HEAD COMMIT: 01fdf21 on branch phase-9/hardening
+PHASE 9 STATUS: ACTIVE / SOAK IN PROGRESS — M4 PENDING
+HEAD COMMIT: 90b8cbd on branch phase-9/hardening
 ======================================================================
 ```
+
+---
+
+## 10. Authorized Temporary Default-Branch Transition & Scheduled Soak Launch
+
+### 10.1 Authorization & Transition Execution
+Pursuant to formal authorization to unblock GitHub Actions scheduled cron executions without modifying or merging into `main`:
+1. **Old Default Branch:** `main`
+2. **New Default Branch:** `phase-9/hardening`
+3. **Execution Date & Time:** `2026-09-22 04:00 UTC` (`2026-09-22 09:30 IST`)
+4. **API Endpoint Invocation:** `PATCH /repos/bitsubhayu/AAGAM` with `{"default_branch": "phase-9/hardening"}`
+5. **Remote Main Integrity:** `66b09b693e9ece968dcb3be412979705507967b0` (verified unchanged before and after transition)
+6. **Remote Phase 9 HEAD:** `90b8cbd8577c885b9ce2b860882c433de6791f08`
+
+### 10.2 Prerequisite Verification Summary
+All 10 required prerequisites passed prior to the transition:
+- [x] 1. Current default branch was `main`.
+- [x] 2. `main` commit SHA verified at `66b09b693e9ece968dcb3be412979705507967b0`.
+- [x] 3. Remote `phase-9/hardening` exists and matches intended HEAD.
+- [x] 4. Working tree verified clean.
+- [x] 5. Three GitHub Actions secrets configured and active (`DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`).
+- [x] 6. `.github/workflows/ingest-blend.yml` present on `phase-9/hardening`.
+- [x] 7. Cron schedule verified: `17 0,6,12,18 * * *`.
+- [x] 8. Workflow valid and recognized by GitHub Actions (Workflow ID: `363910223`, State: `active`).
+- [x] 9. No open PRs or merge conflicts.
+- [x] 10. Atomically transitioned default branch on GitHub repository settings.
+
+### 10.3 Next Scheduled Cloud Executions
+- **Workflow:** `.github/workflows/ingest-blend.yml` (`AAGAM Scheduled Ingest & Blend`)
+- **Cron Schedule:** `17 0,6,12,18 * * *` (UTC)
+- **First Upcoming Scheduled Cycle:** **2026-09-22 06:17 UTC (11:47 IST)**
+- **Subsequent Daily Cycles:**
+  - Cycle 2: `2026-09-22 12:17 UTC` (`17:47 IST`)
+  - Cycle 3: `2026-09-22 18:17 UTC` (`23:47 IST`)
+  - Cycle 4: `2026-09-23 00:17 UTC` (`05:47 IST`)
+
+### 10.4 Operational Progress Tracking
+- **Phase 5 Scheduled Acceptance:** `0/3` consecutive successful scheduled cloud cycles (requires 3 consecutive genuine GitHub Actions cron executions).
+- **Phase 9 Milestone M4 Soak:** `0/56` qualifying scheduled cloud cycles (requires $\ge 95\%$ success over 14 continuous days, PENDING).
+- **Scheduled Runs Counted:** Strictly automated cloud executions initiated by `event == 'schedule'`. No manual, CLI, retry, or recovery runs counted.
+- **Default Branch Policy:** `phase-9/hardening` will remain the default branch throughout the 14-day M4 soak period. `main` will not be touched or merged into.
+
