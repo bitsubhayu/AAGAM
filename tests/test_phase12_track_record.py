@@ -27,6 +27,7 @@ def test_high_uncertainty_exclusion():
         severity="watch",
     )
     assert stats["applicable"] is False
+    assert stats["track_record"] is None
     assert stats["note"] == "not applicable to this hazard type"
     assert "uncertainty" in stats["summary_text"].lower()
     assert stats["n"] == 0

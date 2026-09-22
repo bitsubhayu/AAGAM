@@ -43,6 +43,7 @@ def calculate_track_record_stats(
     if hazard == "high_uncertainty":
         return {
             "applicable": False,
+            "track_record": None,
             "hazard": hazard,
             "region": region,
             "severity": severity,
@@ -68,7 +69,9 @@ def calculate_track_record_stats(
             continue
         if e.get("region") != region:
             continue
-        if e.get("severity_peak") != severity:
+        # Support both 'severity_peak' (db schema) and 'severity' (PRD phrasing)
+        evt_sev = e.get("severity_peak") or e.get("severity")
+        if evt_sev != severity:
             continue
 
         # Check date in trailing window
@@ -125,6 +128,7 @@ async def fetch_track_record(
     if hazard == "high_uncertainty":
         return {
             "applicable": False,
+            "track_record": None,
             "hazard": hazard,
             "region": region,
             "severity": severity,
