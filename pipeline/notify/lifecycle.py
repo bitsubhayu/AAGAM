@@ -161,19 +161,25 @@ def process_lifecycle_notifications(
                     # Deduplication key formulation
                     dedup_key = f"lifecycle:{event_record['id']}:{lifecycle_state}:{user_id}"
 
-                    # Check if already notified
+                    # Atomic reservation to guarantee concurrency safety (race-condition free)
                     cur.execute(
                         """
-                        SELECT id FROM notifications_log
-                        WHERE dedup_key = %s AND status = 'sent'
-                        LIMIT 1;
+                        INSERT INTO notifications_log (
+                            user_id, kind, event_id, lifecycle_state, sent_at,
+                            status, dedup_key
+                        ) VALUES (%s, 'lifecycle', %s, %s, NOW(), 'sent', %s)
+                        ON CONFLICT (dedup_key) DO NOTHING
+                        RETURNING id;
                         """,
-                        (dedup_key,),
+                        (user_id, event_record.get("id"), lifecycle_state, dedup_key),
                     )
-                    if cur.fetchone():
-                        logger.debug(f"Suppressed duplicate lifecycle notification: {dedup_key}")
+                    claim = cur.fetchone()
+                    if not claim:
+                        logger.debug(f"Suppressed duplicate/concurrent lifecycle notification: {dedup_key}")
                         results["deduped"] += 1
                         continue
+
+                    log_id = claim["id"] if isinstance(claim, dict) else claim[0]
 
                     # Format and deliver email
                     subject, html_body, text_body = format_lifecycle_email(
@@ -192,38 +198,17 @@ def process_lifecycle_notifications(
                         )
                         msg_id = send_res.get("messageId")
 
-                        # Record in notifications_log
+                        # Record provider_message_id
                         cur.execute(
-                            """
-                            INSERT INTO notifications_log (
-                                user_id, kind, event_id, lifecycle_state, sent_at,
-                                status, provider_message_id, dedup_key
-                            ) VALUES (%s, 'lifecycle', %s, %s, NOW(), 'sent', %s, %s);
-                            """,
-                            (
-                                user_id,
-                                event_record.get("id"),
-                                lifecycle_state,
-                                msg_id,
-                                dedup_key,
-                            ),
+                            "UPDATE notifications_log SET provider_message_id = %s WHERE id = %s;",
+                            (msg_id, log_id),
                         )
                         results["sent"] += 1
                     except Exception as err:
                         logger.error(f"Error sending lifecycle notification to {user_email}: {err}")
                         cur.execute(
-                            """
-                            INSERT INTO notifications_log (
-                                user_id, kind, event_id, lifecycle_state, sent_at,
-                                status, dedup_key
-                            ) VALUES (%s, 'lifecycle', %s, %s, NOW(), 'failed', %s);
-                            """,
-                            (
-                                user_id,
-                                event_record.get("id"),
-                                lifecycle_state,
-                                dedup_key,
-                            ),
+                            "UPDATE notifications_log SET status = 'failed' WHERE id = %s;",
+                            (log_id,),
                         )
                         results["failed"] += 1
 

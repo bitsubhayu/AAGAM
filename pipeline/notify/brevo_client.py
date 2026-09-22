@@ -45,7 +45,7 @@ class BrevoClient:
 
         If api_key is not set (e.g. in development/tests), logs and returns a mock ID.
         """
-        if not self.api_key or self.api_key.startswith("mock") or self.api_key.startswith("xkeysib-..."):
+        if not self.api_key or self.api_key.startswith("mock") or self.api_key in ("xkeysib-...", "placeholder"):
             mock_id = f"mock-{uuid.uuid4()}"
             logger.info(
                 f"[MOCK EMAIL] To: {to_email} | Subject: {subject} | Mock MsgID: {mock_id}"

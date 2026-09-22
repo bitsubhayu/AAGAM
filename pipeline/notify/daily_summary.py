@@ -108,19 +108,24 @@ def run_daily_summary_job(
                 # Deduplication key for today
                 dedup_key = f"daily_summary:{user_id}:{today_ist}"
 
-                # Check deduplication
+                # Atomic reservation to guarantee concurrency safety (race-condition free)
                 cur.execute(
                     """
-                    SELECT id FROM notifications_log
-                    WHERE dedup_key = %s AND status = 'sent'
-                    LIMIT 1;
+                    INSERT INTO notifications_log (
+                        user_id, kind, sent_at, status, dedup_key
+                    ) VALUES (%s, 'daily_summary', NOW(), 'sent', %s)
+                    ON CONFLICT (dedup_key) DO NOTHING
+                    RETURNING id;
                     """,
-                    (dedup_key,),
+                    (user_id, dedup_key),
                 )
-                if cur.fetchone():
-                    logger.debug(f"Daily summary already sent today to {user_email} (key={dedup_key})")
+                claim = cur.fetchone()
+                if not claim:
+                    logger.debug(f"Daily summary already claimed/sent today for {user_email} (key={dedup_key})")
                     results["deduped"] += 1
                     continue
+
+                log_id = claim["id"] if isinstance(claim, dict) else claim[0]
 
                 # Filter active events matching subscriber preferences
                 matching_events = []
@@ -151,23 +156,15 @@ def run_daily_summary_job(
                     msg_id = send_res.get("messageId")
 
                     cur.execute(
-                        """
-                        INSERT INTO notifications_log (
-                            user_id, kind, sent_at, status, provider_message_id, dedup_key
-                        ) VALUES (%s, 'daily_summary', NOW(), 'sent', %s, %s);
-                        """,
-                        (user_id, msg_id, dedup_key),
+                        "UPDATE notifications_log SET provider_message_id = %s WHERE id = %s;",
+                        (msg_id, log_id),
                     )
                     results["sent"] += 1
                 except Exception as err:
                     logger.error(f"Failed to deliver daily summary to {user_email}: {err}")
                     cur.execute(
-                        """
-                        INSERT INTO notifications_log (
-                            user_id, kind, sent_at, status, dedup_key
-                        ) VALUES (%s, 'daily_summary', NOW(), 'failed', %s);
-                        """,
-                        (user_id, dedup_key),
+                        "UPDATE notifications_log SET status = 'failed' WHERE id = %s;",
+                        (log_id,),
                     )
                     results["failed"] += 1
 

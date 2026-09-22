@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS notifications_log (
     dedup_key           TEXT
 );
 
-CREATE INDEX IF NOT EXISTS notifications_log_dedup_idx ON notifications_log (dedup_key);
+CREATE UNIQUE INDEX IF NOT EXISTS notifications_log_dedup_key_uniq ON notifications_log (dedup_key);
 CREATE INDEX IF NOT EXISTS notifications_log_user_kind_idx ON notifications_log (user_id, kind, sent_at);
 CREATE INDEX IF NOT EXISTS notifications_log_event_idx ON notifications_log (event_id);
 

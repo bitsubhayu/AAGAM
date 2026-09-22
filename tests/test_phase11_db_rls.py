@@ -196,3 +196,122 @@ class TestPhase11RowLevelSecurity:
                 cur.execute("ROLLBACK;")
         finally:
             conn.close()
+
+
+class TestPhase11AuthOtpEndpoints:
+    def test_request_otp_invalid_email(self):
+        from fastapi.testclient import TestClient
+
+        from api.app.main import app
+
+        with TestClient(app) as client:
+            resp = client.post("/api/v1/auth/otp/request", json={"email": "not-an-email"})
+            assert resp.status_code == 422
+
+    def test_request_otp_success(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from fastapi.testclient import TestClient
+
+        from api.app.main import app
+
+        mock_supabase = MagicMock()
+        mock_supabase.auth.sign_in_with_otp.return_value = None
+        monkeypatch.setattr("api.app.routers.auth.get_supabase_client", lambda: mock_supabase)
+
+        with TestClient(app) as client:
+            resp = client.post("/api/v1/auth/otp/request", json={"email": "officer@sdma.gov.in"})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "ok"
+            assert "verification code" in data["message"]
+            mock_supabase.auth.sign_in_with_otp.assert_called_once_with({"email": "officer@sdma.gov.in"})
+
+    def test_verify_otp_invalid_token(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from fastapi.testclient import TestClient
+
+        from api.app.main import app
+
+        mock_supabase = MagicMock()
+        mock_supabase.auth.verify_otp.side_effect = Exception("Token has expired or is invalid")
+        monkeypatch.setattr("api.app.routers.auth.get_supabase_client", lambda: mock_supabase)
+
+        with TestClient(app) as client:
+            resp = client.post("/api/v1/auth/otp/verify", json={"email": "officer@sdma.gov.in", "token": "000000"})
+            assert resp.status_code == 401
+            assert resp.json()["error"]["code"] == "INVALID_OTP"
+
+    def test_verify_otp_success_and_subscription_initialization(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from fastapi.testclient import TestClient
+
+        from api.app.main import app
+
+        test_uid = str(uuid.uuid4())
+        test_email = f"officer_{uuid.uuid4().hex[:6]}@sdma.gov.in"
+
+        # Mock Supabase Auth response
+        mock_user = MagicMock()
+        mock_user.id = test_uid
+        mock_user.email = test_email
+
+        mock_session = MagicMock()
+        mock_session.access_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test-jwt-token"
+        mock_session.token_type = "bearer"
+        mock_session.expires_in = 3600
+        mock_session.refresh_token = "refresh-test-token"
+
+        mock_auth_resp = MagicMock()
+        mock_auth_resp.session = mock_session
+        mock_auth_resp.user = mock_user
+
+        mock_supabase = MagicMock()
+        mock_supabase.auth.verify_otp.return_value = mock_auth_resp
+        monkeypatch.setattr("api.app.routers.auth.get_supabase_client", lambda: mock_supabase)
+
+        conn = get_db_connection()
+        try:
+            # Clean before test
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO auth.users (id, email) VALUES (%s, %s);", (test_uid, test_email))
+            conn.commit()
+
+            with TestClient(app) as client:
+                resp = client.post(
+                    "/api/v1/auth/otp/verify",
+                    json={"email": test_email, "token": "123456"},
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "ok"
+                assert data["access_token"] == "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test-jwt-token"
+                assert data["user"]["id"] == test_uid
+                assert data["user"]["email"] == test_email
+
+            # Verify that subscription record was initialized with intended defaults
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT location_ids, hazards, min_severity, daily_summary, lifecycle_emails, active
+                    FROM subscriptions WHERE user_id = %s;
+                    """,
+                    (test_uid,),
+                )
+                sub_row = cur.fetchone()
+                assert sub_row is not None, "Subscription must be initialized upon first OTP verification"
+                assert sub_row[0] == []
+                assert set(sub_row[1]) == {"heavy_rain", "heatwave", "high_wind", "heavy_rain_3day"}
+                assert sub_row[2] == "watch"
+                assert sub_row[3] is True
+                assert sub_row[4] is True
+                assert sub_row[5] is True
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM subscriptions WHERE user_id = %s;", (test_uid,))
+                cur.execute("DELETE FROM auth.users WHERE id = %s;", (test_uid,))
+            conn.commit()
+            conn.close()
+
