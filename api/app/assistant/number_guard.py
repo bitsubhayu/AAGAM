@@ -45,6 +45,9 @@ def extract_numbers_from_text(text: str) -> List[float]:
     # Clean out obvious date patterns like YYYY-MM-DD or HH:MM to avoid splitting on hyphens/colons
     cleaned = re.sub(r"(\d{4})-(\d{2})-(\d{2})", r" \1 \2 \3 ", cleaned)
     cleaned = re.sub(r"(\d{2}):(\d{2})", r" \1 \2 ", cleaned)
+    # Clean out geographic coordinate notations (e.g. 28.6°N, 77.2°E, lat: 28.6)
+    cleaned = re.sub(r"\b\d+(?:\.\d+)?\s*°?\s*[NESW]\b", " ", cleaned)
+    cleaned = re.sub(r"(?:lat|lon|coord)\w*\s*[:=]?\s*\d+(?:\.\d+)?", " ", cleaned, flags=re.IGNORECASE)
 
     matches = NUMBER_REGEX.findall(cleaned)
     numbers: List[float] = []

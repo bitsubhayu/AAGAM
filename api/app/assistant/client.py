@@ -8,13 +8,15 @@ Telemetry: parses x-ratelimit-remaining-tokens and retry-after headers
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 from groq import AsyncGroq, RateLimitError
 
-from api.app.assistant.rate_limiter import is_groq_currently_throttled
+from api.app.assistant.rate_limiter import is_groq_currently_throttled, set_groq_throttle
 from core.config import settings
 
 logger = logging.getLogger("aagam.assistant.client")
@@ -29,7 +31,7 @@ def get_groq_client() -> AsyncGroq:
         api_key = settings.GROQ_API_KEY
         if not api_key:
             logger.warning("GROQ_API_KEY is not set. Groq client will operate with mock or raise on execution.")
-        _groq_client = AsyncGroq(api_key=api_key or "gsk_missing_key_for_testing")
+        _groq_client = AsyncGroq(api_key=api_key or "gsk_missing_key_for_testing", max_retries=0)
     return _groq_client
 
 
@@ -83,55 +85,66 @@ async def call_groq_completion(
         tokens_in = 0
         tokens_out = 0
 
-        async for chunk in response_stream:
-            if hasattr(chunk, "usage") and chunk.usage:
-                tokens_in = chunk.usage.prompt_tokens or tokens_in
-                tokens_out = chunk.usage.completion_tokens or tokens_out
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            if delta.content:
-                content_chunks.append(delta.content)
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_calls_dict:
-                        tool_calls_dict[idx] = {"id": tc.id or "", "name": "", "arguments": ""}
-                    if tc.id:
-                        tool_calls_dict[idx]["id"] = tc.id
-                    if tc.function:
-                        if tc.function.name:
-                            tool_calls_dict[idx]["name"] += tc.function.name
-                        if tc.function.arguments:
-                            tool_calls_dict[idx]["arguments"] += tc.function.arguments
+        try:
+            async for chunk in response_stream:
+                if hasattr(chunk, "usage") and chunk.usage:
+                    tokens_in = chunk.usage.prompt_tokens or tokens_in
+                    tokens_out = chunk.usage.completion_tokens or tokens_out
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    content_chunks.append(delta.content)
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_dict:
+                            tool_calls_dict[idx] = {"id": tc.id or "", "name": "", "arguments": ""}
+                        if tc.id:
+                            tool_calls_dict[idx]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                tool_calls_dict[idx]["name"] += tc.function.name
+                            if tc.function.arguments:
+                                tool_calls_dict[idx]["arguments"] += tc.function.arguments
 
-        tool_calls = [
-            SimpleNamespace(
-                id=tc["id"],
-                type="function",
-                function=SimpleNamespace(
-                    name=tc["name"],
-                    arguments=tc["arguments"],
+            tool_calls = [
+                SimpleNamespace(
+                    id=tc["id"],
+                    type="function",
+                    function=SimpleNamespace(
+                        name=tc["name"],
+                        arguments=tc["arguments"],
+                    ),
+                )
+                for tc in tool_calls_dict.values()
+            ] if tool_calls_dict else None
+
+            message = SimpleNamespace(
+                role="assistant",
+                content="".join(content_chunks) if content_chunks else None,
+                tool_calls=tool_calls,
+            )
+            response = SimpleNamespace(
+                choices=[SimpleNamespace(message=message)],
+                usage=SimpleNamespace(
+                    prompt_tokens=tokens_in,
+                    completion_tokens=tokens_out,
+                    total_tokens=tokens_in + tokens_out,
                 ),
             )
-            for tc in tool_calls_dict.values()
-        ] if tool_calls_dict else None
-
-        message = SimpleNamespace(
-            role="assistant",
-            content="".join(content_chunks) if content_chunks else None,
-            tool_calls=tool_calls,
-        )
-        response = SimpleNamespace(
-            choices=[SimpleNamespace(message=message)],
-            usage=SimpleNamespace(
-                prompt_tokens=tokens_in,
-                completion_tokens=tokens_out,
-                total_tokens=tokens_in + tokens_out,
-            ),
-        )
-        metrics = {"tokens_in": tokens_in, "tokens_out": tokens_out}
-        return response, model_to_use, metrics
+            metrics = {"tokens_in": tokens_in, "tokens_out": tokens_out}
+            return response, model_to_use, metrics
+        except RateLimitError:
+            raise
+        except Exception as stream_err:
+            logger.warning(f"Streaming failed ({stream_err}); falling back to standard completion on {model_to_use}")
+            call_kwargs_non_stream = dict(call_kwargs)
+            call_kwargs_non_stream.pop("stream", None)
+            resp = await client.chat.completions.create(**call_kwargs_non_stream)
+            tokens_in = resp.usage.prompt_tokens if resp.usage else 0
+            tokens_out = resp.usage.completion_tokens if resp.usage else 0
+            return resp, model_to_use, {"tokens_in": tokens_in, "tokens_out": tokens_out}
 
     try:
         return await _stream_and_build(target_model, kwargs)
@@ -140,15 +153,26 @@ async def call_groq_completion(
         logger.warning(f"Groq RateLimitError on {target_model}: {e}")
         # Try fallback model if we haven't already
         if target_model != fallback_model:
+            set_groq_throttle(300.0)
             logger.info(f"Falling back to {fallback_model} due to 429...")
             kwargs["model"] = fallback_model
             kwargs.pop("reasoning_effort", None)
             try:
                 return await _stream_and_build(fallback_model, kwargs)
             except RateLimitError as fb_err:
-                logger.error(f"Fallback model also rate limited: {fb_err}")
-                raise fb_err
-        raise e
+                logger.warning(f"Fallback model hit burst rate limit: {fb_err}")
+                match = re.search(r"try again in ([\d\.]+)s", str(fb_err))
+                wait_sec = float(match.group(1)) + 0.5 if match else 2.5
+                logger.info(f"Waiting {wait_sec:.2f}s for TPM refill on {fallback_model}...")
+                await asyncio.sleep(wait_sec)
+                return await _stream_and_build(fallback_model, kwargs)
+        else:
+            # target_model was already fallback_model (e.g. throttled)
+            match = re.search(r"try again in ([\d\.]+)s", str(e))
+            wait_sec = float(match.group(1)) + 0.5 if match else 2.5
+            logger.info(f"Waiting {wait_sec:.2f}s for TPM refill on {fallback_model}...")
+            await asyncio.sleep(wait_sec)
+            return await _stream_and_build(fallback_model, kwargs)
 
 
 async def stream_groq_completion(

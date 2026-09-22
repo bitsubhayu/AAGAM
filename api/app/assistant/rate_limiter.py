@@ -91,6 +91,12 @@ def is_groq_currently_throttled() -> Tuple[bool, int]:
     return False, 0
 
 
+def set_groq_throttle(delay_seconds: float = 300.0) -> None:
+    """Explicitly sets Groq throttle cooldown period upon 429."""
+    global _GLOBAL_RETRY_AFTER_UNTIL
+    _GLOBAL_RETRY_AFTER_UNTIL = max(_GLOBAL_RETRY_AFTER_UNTIL, time.time() + delay_seconds)
+
+
 def reset_rate_limits_for_testing() -> None:
     """Resets all limiters (used in tests)."""
     global _USER_CALL_TIMESTAMPS, _GLOBAL_RATE_LIMIT_REMAINING_TOKENS, _GLOBAL_RETRY_AFTER_UNTIL
