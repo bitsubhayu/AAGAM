@@ -562,10 +562,11 @@ class ExtremeGuidanceEngine:
         }
 
         rule_details = {
+            "variable": var,
             "spread": round(spread, 3),
             "p90_threshold": round(p90, 3),
             "bucket_used": bucket_desc,
-            "condition_met": f"model spread ({spread:.2f}) exceeds historical P90 ({p90:.2f})",
+            "condition_met": f"model spread ({spread:.2f}) exceeds historical P90 ({p90:.2f}) for {var}",
         }
 
         alert_id = f"ALERT-UNCERT-{var}-{loc_id}-{valid_date_str}-L{lead}"
@@ -777,5 +778,31 @@ class ExtremeGuidanceEngine:
             h3_alerts = self.evaluate_heavy_rain_3day_hazards_for_location(loc_df, meta, c_time)
             alerts.extend(h3_alerts)
 
-        return alerts
+        # Deduplicate and merge alerts by unique occurrence key (location_id, hazard, valid_date, lead_days)
+        # to ensure compatibility with database unique constraint
+        deduped: Dict[Tuple[int, str, str, int], Alert] = {}
+        for a in alerts:
+            key = (int(a.location_id), str(a.hazard), str(a.valid_date), int(a.lead_days))
+            if key not in deduped:
+                deduped[key] = a
+            else:
+                existing = deduped[key]
+                if a.hazard == "high_uncertainty":
+                    if (a.spread or 0) > (existing.spread or 0):
+                        if isinstance(existing.rule, dict) and isinstance(a.rule, dict):
+                            prev_vars = existing.rule.get("variables", [existing.rule.get("variable")])
+                            a.rule["variables"] = list(dict.fromkeys(prev_vars + [a.rule.get("variable")]))
+                        deduped[key] = a
+                    else:
+                        if isinstance(existing.rule, dict) and isinstance(a.rule, dict):
+                            curr_vars = a.rule.get("variables", [a.rule.get("variable")])
+                            existing.rule["variables"] = list(dict.fromkeys(existing.rule.get("variables", [existing.rule.get("variable")]) + curr_vars))
+                else:
+                    rank_new = SEVERITY_RANKS.get(str(a.severity).lower(), 0)
+                    rank_old = SEVERITY_RANKS.get(str(existing.severity).lower(), 0)
+                    if rank_new > rank_old or (rank_new == rank_old and (a.value or 0) > (existing.value or 0)):
+                        deduped[key] = a
+
+        return list(deduped.values())
+
 

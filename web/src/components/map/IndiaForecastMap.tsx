@@ -1,5 +1,6 @@
 import React from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import { MapContainer, CircleMarker, Popup } from "react-leaflet";
+import { MapTilerVectorBasemap } from "./MapTilerVectorBasemap";
 import { useUIStore, VARIABLES } from "@/store/uiStore";
 import { useMap } from "@/api/useMap";
 import { Button } from "@/components/ui/Button";
@@ -84,18 +85,7 @@ export const IndiaForecastMap: React.FC = () => {
         scrollWheelZoom={false}
         className="w-full h-full"
       >
-        <TileLayer
-          attribution={
-            import.meta.env.VITE_MAPTILER_KEY && import.meta.env.VITE_MAPTILER_KEY !== "your-maptiler-key"
-              ? '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          }
-          url={
-            import.meta.env.VITE_MAPTILER_KEY && import.meta.env.VITE_MAPTILER_KEY !== "your-maptiler-key"
-              ? `https://api.maptiler.com/maps/dataviz-light/{z}/{x}/{y}.png?key=${import.meta.env.VITE_MAPTILER_KEY}`
-              : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          }
-        />
+        <MapTilerVectorBasemap style="dataviz-light" />
 
         {mapData.points.map((pt) => {
           const style = getHazardStyle(pt.blended_value);

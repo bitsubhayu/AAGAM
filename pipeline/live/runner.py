@@ -500,8 +500,12 @@ class LivePipelineRunner:
             # Upsert enriched alerts into database
             if grouped_alerts:
                 logger.info(f"Upserting {len(grouped_alerts)} alerts with lifecycle states into database...")
-                alert_records = [
-                    (
+                # Deduplicate by constraint key (started_at, location_id, hazard, valid_date, lead_days)
+                # to prevent CardinalityViolation in Postgres execute_values
+                alert_records_dict = {}
+                for a in grouped_alerts:
+                    record_key = (started_at, int(a.location_id), str(a.hazard), str(a.valid_date), int(a.lead_days))
+                    alert_records_dict[record_key] = (
                         started_at,
                         a.location_id,
                         a.hazard,
@@ -518,8 +522,7 @@ class LivePipelineRunner:
                         getattr(a, "previous_severity", None),
                         getattr(a, "rarity_label", None),
                     )
-                    for a in grouped_alerts
-                ]
+                alert_records = list(alert_records_dict.values())
                 alert_upsert_query = """
                     INSERT INTO alerts (
                         issue_time, location_id, hazard, severity, valid_date, lead_days,
