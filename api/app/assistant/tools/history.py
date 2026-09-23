@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
 from api.app.assistant.location_resolver import resolve_location
@@ -78,7 +79,43 @@ class QueryHistoryTool(BaseTool):
         columns = ["date", "lead_days", "variable", "value", "kind", "source"]
         full_rows: List[Dict[str, Any]] = []
 
-        if context.conn is not None:
+        if args.kind == "observed":
+            # Query verified ground-truth observations from data/truth.parquet
+            truth_path = Path(__file__).resolve().parents[4] / "data" / "truth.parquet"
+            if truth_path.exists():
+                try:
+                    import pandas as pd
+                    var_col = "rain_truth" if args.variable == "rain_mm" else ("tmax_truth" if args.variable == "tmax_c" else "wind_max_truth")
+                    src_col = "rain_truth_source" if args.variable == "rain_mm" else ("temp_truth_source" if args.variable == "tmax_c" else "wind_truth_source")
+
+                    df = pd.read_parquet(truth_path, columns=["location_id", "valid_date", var_col, src_col])
+                    df["valid_date_str"] = df["valid_date"].astype(str)
+                    mask = (df["location_id"] == location_id) & (df["valid_date_str"] >= args.start) & (df["valid_date_str"] <= args.end)
+                    sub = df[mask].sort_values("valid_date_str")
+                    for _, row in sub.head(ROW_CAP).iterrows():
+                        val = row[var_col]
+                        if pd.notna(val):
+                            full_rows.append({
+                                "date": str(row["valid_date_str"]),
+                                "lead_days": 0,
+                                "variable": args.variable,
+                                "value": round(float(val), 1),
+                                "kind": "observed",
+                                "source": str(row[src_col]) if pd.notna(row[src_col]) else "truth_dataset",
+                            })
+                except Exception as e:
+                    logger.error(f"Failed to query observed data from truth.parquet: {e}")
+                    return ToolEnvelope(
+                        ok=False,
+                        artifact_id="none",
+                        title=f"Failed to query observed data for {location_name}",
+                        columns=["status", "error"],
+                        n_rows=1,
+                        preview=[["error", f"Error reading ground-truth observations: {str(e)}"]],
+                        stats={},
+                        meta={"location": location_name, "error": str(e)},
+                    )
+        elif context.conn is not None:
             try:
                 if args.kind == "blended":
                     q = """
@@ -119,22 +156,41 @@ class QueryHistoryTool(BaseTool):
                             "source": r["model"],
                         })
             except Exception as e:
-                logger.warning(f"Failed to query history from DB: {e}")
+                logger.error(f"Failed to query history from DB: {e}")
+                return ToolEnvelope(
+                    ok=False,
+                    artifact_id="none",
+                    title=f"History query failed for {location_name}",
+                    columns=["status", "error"],
+                    n_rows=1,
+                    preview=[["error", f"Database query failed: {str(e)}"]],
+                    stats={},
+                    meta={"location": location_name, "error": str(e)},
+                )
 
-        # Fallback if empty
         if not full_rows:
-            from datetime import timedelta
-            start_dt = datetime.strptime(args.start, "%Y-%m-%d").date() if "d_start" in locals() else datetime.now().date()
-            for i in range(min(day_count, 14)):
-                cur_d = str(start_dt + timedelta(days=i))
-                full_rows.append({
-                    "date": cur_d,
-                    "lead_days": 1,
+            return ToolEnvelope(
+                ok=True,
+                artifact_id="none",
+                title=f"Historical {args.kind.title()} — {location_name}, {args.variable} ({args.start} to {args.end})",
+                columns=columns,
+                n_rows=0,
+                preview=[],
+                stats={
+                    "total_rows": 0,
+                    "location": location_name,
+                    "message": f"No historical {args.kind} data found for the specified location and date range",
+                    "unit": "mm" if args.variable == "rain_mm" else ("°C" if args.variable == "tmax_c" else "km/h"),
+                },
+                meta={
+                    "location": location_name,
+                    "location_id": location_id,
                     "variable": args.variable,
-                    "value": round(24.5 + (i * 0.8), 1),
+                    "start": args.start,
+                    "end": args.end,
                     "kind": args.kind,
-                    "source": "AAGAM Blend",
-                })
+                },
+            )
 
         vals = [r["value"] for r in full_rows]
         stats = {

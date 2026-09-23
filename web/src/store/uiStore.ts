@@ -53,6 +53,7 @@ interface UIState {
   setActiveTab: (tab: string) => void;
   setAssistantOpen: (open: boolean) => void;
   openAssistantWithPrompt: (prompt: string) => void;
+  clearAssistantPrompt: () => void;
   toggleSidebar: () => void;
 }
 
@@ -76,6 +77,7 @@ export const useUIStore = create<UIState>((set) => ({
   setAssistantOpen: (isAssistantOpen) => set({ isAssistantOpen }),
   openAssistantWithPrompt: (assistantPrompt) =>
     set({ isAssistantOpen: true, assistantPrompt }),
+  clearAssistantPrompt: () => set({ assistantPrompt: null }),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 }));

@@ -39,6 +39,22 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
   const { data, isLoading, error } = useAlertEvent(isOpen ? eventId : null);
   const ackMutation = useAcknowledgeAlertEvent();
 
+  React.useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = "unset";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const event = data?.event;
@@ -47,7 +63,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
 
   const hasActiveAlerts = childAlerts.some((a) => a.status === "active");
   const isFullyAcknowledged = childAlerts.length > 0 && childAlerts.every((a) => a.status === "acknowledged");
-  const canAck = (role === "forecaster" || role === "admin") && event?.status === "active" && hasActiveAlerts;
+  const canAck = (role === "forecaster" || role === "coordinator") && event?.status === "active" && hasActiveAlerts;
 
   const getHazardIcon = (hazard?: string) => {
     switch (hazard) {
@@ -80,12 +96,12 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-xl h-full bg-[#161b22] border-l border-border flex flex-col shadow-2xl overflow-hidden font-sans">
+    <div className="fixed inset-0 z-[2000] flex justify-end bg-[rgba(26,23,18,0.45)] backdrop-blur-sm animate-in fade-in">
+      <div className="relative w-full max-w-xl h-full bg-surface border-l border-[rgba(26,23,18,0.10)] flex flex-col shadow-2xl overflow-hidden font-sans">
         {/* Drawer Header */}
-        <div className="p-4 border-b border-border flex items-start justify-between gap-3 bg-[#0d1117]/80">
+        <div className="p-4 border-b border-[rgba(26,23,18,0.10)] flex items-start justify-between gap-3 bg-canvas/80">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-[#21262d] rounded-lg border border-border">
+            <div className="p-2 bg-[#F0EDE7] rounded-lg border border-[rgba(26,23,18,0.10)]">
               {getHazardIcon(event?.hazard)}
             </div>
             <div>
@@ -120,7 +136,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-[#21262d] transition-colors"
+            className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-[#F0EDE7] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -130,9 +146,9 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
         <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
           {isLoading ? (
             <div className="space-y-4 animate-pulse">
-              <div className="h-20 bg-[#21262d] rounded-lg" />
-              <div className="h-32 bg-[#21262d] rounded-lg" />
-              <div className="h-40 bg-[#21262d] rounded-lg" />
+              <div className="h-20 bg-[#F0EDE7] rounded-lg" />
+              <div className="h-32 bg-[#F0EDE7] rounded-lg" />
+              <div className="h-40 bg-[#F0EDE7] rounded-lg" />
             </div>
           ) : error || !event ? (
             <div className="p-6 text-center text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-lg">
@@ -141,7 +157,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
           ) : (
             <>
               {/* Event Overview Card */}
-              <div className="p-3.5 bg-[#21262d]/70 rounded-lg border border-border grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div className="p-3.5 bg-[#F0EDE7]/70 rounded-lg border border-[rgba(26,23,18,0.10)] grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                 <div>
                   <span className="text-[11px] text-text-muted block">Duration</span>
                   <span className="font-semibold text-text-primary font-mono text-xs">
@@ -172,13 +188,13 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
 
               {/* 1. Lifecycle Strip (PRD §10.4 FR-UI-5) */}
               <div className="space-y-2.5">
-                <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs border-b border-border/60 pb-1.5">
+                <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs border-b border-[rgba(26,23,18,0.07)] pb-1.5">
                   <Activity className="w-4 h-4 text-brand-blue" />
                   <span>Lifecycle Timeline</span>
                 </div>
 
                 {lifecycleHistory.length === 0 ? (
-                  <div className="p-3 bg-[#21262d]/40 rounded border border-border text-text-muted text-[11px]">
+                  <div className="p-3 bg-[#F0EDE7]/40 rounded border border-[rgba(26,23,18,0.10)] text-text-muted text-[11px]">
                     No recorded lifecycle transitions yet.
                   </div>
                 ) : (
@@ -191,10 +207,10 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                             className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border ${
                               isLatest
                                 ? "bg-brand-blue border-brand-blue ring-4 ring-brand-blue/20"
-                                : "bg-[#21262d] border-text-muted"
+                                : "bg-[#F0EDE7] border-text-muted"
                             }`}
                           />
-                          <div className="p-2.5 rounded bg-[#21262d]/50 border border-border/80 flex items-center justify-between gap-2">
+                          <div className="p-2.5 rounded bg-[#F0EDE7]/50 border border-[rgba(26,23,18,0.09)] flex items-center justify-between gap-2">
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-text-primary uppercase text-[11px]">
@@ -229,13 +245,13 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
 
               {/* 2. Why Flagged (PRD §10.4 FR-UI-5) */}
               <div className="space-y-2.5">
-                <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs border-b border-border/60 pb-1.5">
+                <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs border-b border-[rgba(26,23,18,0.07)] pb-1.5">
                   <Info className="w-4 h-4 text-brand-orange" />
                   <span>Why Flagged (Meteorological Rules & Consensus)</span>
                 </div>
 
                 {childAlerts.map((alert) => (
-                  <div key={alert.id} className="p-3 bg-[#21262d]/60 rounded-lg border border-border space-y-2">
+                  <div key={alert.id} className="p-3 bg-[#F0EDE7]/60 rounded-lg border border-[rgba(26,23,18,0.10)] space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-3.5 h-3.5 text-text-muted" />
@@ -248,24 +264,24 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] pt-1">
-                      <div className="bg-[#161b22] p-2 rounded border border-border/60">
+                      <div className="bg-surface p-2 rounded border border-[rgba(26,23,18,0.07)]">
                         <span className="text-text-muted block text-[10px]">Consensus Value</span>
                         <span className="font-bold text-text-primary font-mono">{alert.value ?? "—"}</span>
                       </div>
-                      <div className="bg-[#161b22] p-2 rounded border border-border/60">
+                      <div className="bg-surface p-2 rounded border border-[rgba(26,23,18,0.07)]">
                         <span className="text-text-muted block text-[10px]">Model Agreement</span>
                         <span className="font-bold text-text-primary font-mono">
                           {alert.models_over} / 4 models
                         </span>
                       </div>
-                      <div className="bg-[#161b22] p-2 rounded border border-border/60">
+                      <div className="bg-surface p-2 rounded border border-[rgba(26,23,18,0.07)]">
                         <span className="text-text-muted block text-[10px]">Forecast Spread</span>
                         <span className="font-bold text-text-primary font-mono">±{alert.spread ?? "—"}</span>
                       </div>
                     </div>
 
                     {alert.rule && (
-                      <div className="p-2 bg-[#161b22] rounded border border-border/60 text-[11px] font-mono text-text-secondary space-y-1">
+                      <div className="p-2 bg-surface rounded border border-[rgba(26,23,18,0.07)] text-[11px] font-mono text-text-secondary space-y-1">
                         <div className="text-[10px] text-text-muted uppercase">Rule Evaluation:</div>
                         {typeof alert.rule === "object" ? (
                           <ul className="space-y-0.5 list-disc list-inside">
@@ -287,7 +303,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
               {/* 3. How Unusual (PRD §10.4 FR-UI-5, Feature G - Climatology & Local Extremeness) */}
               {(data?.rarity_context || data?.rarity_label || childAlerts.some((a) => a.rarity_label)) && (
                 <div className="space-y-2.5 p-3.5 bg-gradient-to-br from-[#1b2333]/80 to-[#161b22] rounded-lg border border-brand-blue/30 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                  <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2">
                     <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
                       <Sparkles className="w-4 h-4 text-brand-blue" />
                       <span>How unusual (Local Extremeness)</span>
@@ -310,8 +326,8 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
 
               {/* 4. What This Means (PRD §10.4 FR-UI-5, Feature C) */}
               {data?.guidance && (
-                <div className="space-y-2.5 p-3.5 bg-[#21262d]/50 rounded-lg border border-border">
-                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                <div className="space-y-2.5 p-3.5 bg-[#F0EDE7]/50 rounded-lg border border-[rgba(26,23,18,0.10)]">
+                  <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2">
                     <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
                       <HelpCircle className="w-4 h-4 text-emerald-400" />
                       <span>What this means</span>
@@ -364,8 +380,8 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
 
               {/* 5. Track Record (PRD §10.4 FR-UI-5, Feature A) */}
               {data?.track_record && (
-                <div className="space-y-2.5 p-3.5 bg-[#21262d]/50 rounded-lg border border-border">
-                  <div className="flex items-center justify-between border-b border-border/60 pb-2">
+                <div className="space-y-2.5 p-3.5 bg-[#F0EDE7]/50 rounded-lg border border-[rgba(26,23,18,0.10)]">
+                  <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2">
                     <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
                       <ShieldCheck className="w-4 h-4 text-brand-teal" />
                       <span>Historical Track Record (180 Days)</span>
@@ -376,7 +392,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                   </div>
 
                   {!data.track_record.applicable ? (
-                    <div className="p-2.5 rounded bg-[#161b22] border border-border/60 text-text-muted text-[11px]">
+                    <div className="p-2.5 rounded bg-surface border border-[rgba(26,23,18,0.07)] text-text-muted text-[11px]">
                       {data.track_record.summary_text}
                     </div>
                   ) : data.track_record.low_sample ? (
@@ -402,13 +418,13 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
-                        <span className="px-2 py-0.5 rounded bg-[#161b22] border border-border">
+                        <span className="px-2 py-0.5 rounded bg-surface border border-[rgba(26,23,18,0.10)]">
                           Hits: {data.track_record.hits}
                         </span>
-                        <span className="px-2 py-0.5 rounded bg-[#161b22] border border-border">
+                        <span className="px-2 py-0.5 rounded bg-surface border border-[rgba(26,23,18,0.10)]">
                           False Alarms: {data.track_record.false_alarms}
                         </span>
-                        <span className="px-2 py-0.5 rounded bg-[#161b22] border border-border">
+                        <span className="px-2 py-0.5 rounded bg-surface border border-[rgba(26,23,18,0.10)]">
                           Total (n): {data.track_record.n}
                         </span>
                       </div>
@@ -418,7 +434,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
               )}
 
               {/* 6. Share (PRD §10.4 FR-UI-5, Feature F) */}
-              <div className="space-y-2 p-3.5 bg-[#21262d]/50 rounded-lg border border-border">
+              <div className="space-y-2 p-3.5 bg-[#F0EDE7]/50 rounded-lg border border-[rgba(26,23,18,0.10)]">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-text-primary font-semibold text-xs">
                     <Share2 className="w-4 h-4 text-brand-orange" />
@@ -482,7 +498,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
         </div>
 
         {/* Drawer Footer / Forecaster Actions */}
-        <div className="p-3.5 border-t border-border bg-[#0d1117]/80 flex items-center justify-between gap-3">
+        <div className="p-3.5 border-t border-[rgba(26,23,18,0.10)] bg-canvas/80 flex items-center justify-between gap-3">
           <span className="text-[11px] text-text-muted">
             Decision support calibrated to IMD thresholds.
           </span>

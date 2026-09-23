@@ -41,9 +41,9 @@ async def get_weights(
     variable: Optional[str] = Query(None, description="Weather variable filter"),
     region: Optional[str] = Query(None, description="Regional domain filter"),
     season: Optional[str] = Query(None, description="Season filter"),
-    lead_days: Optional[int] = Query(None, ge=1, le=8, description="Lead day filter (1-8)"),
+    lead_days: Optional[int] = Query(None, ge=0, le=7, description="Lead day filter (0-7)"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> WeightsResponse:
     """Returns the adaptive weight matrix with n_samples and fallback level for the active model version."""
@@ -75,10 +75,10 @@ async def get_weights(
 @router.get("/weights/map", response_model=WeightsMapResponse)
 async def get_weights_map(
     variable: str = Query("rain_mm", description="Weather variable"),
-    lead_days: int = Query(1, ge=1, le=8, description="Lead day (1-8)"),
+    lead_days: int = Query(0, ge=0, le=7, description="Lead day (0-7)"),
     season: str = Query("monsoon", description="Season identifier"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> WeightsMapResponse:
     """Returns the dominant model and all model weights for each of the 40 locations."""
@@ -239,7 +239,7 @@ async def list_weight_overrides(
     variable: Optional[str] = Query(None, description="Variable filter"),
     region: Optional[str] = Query(None, description="Region filter"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> List[WeightOverrideResponse]:
     """Lists active and historical weight overrides (PRD §12, role: any)."""

@@ -202,7 +202,7 @@ GOLDEN_EVALUATION_SET: List[GoldenTestCase] = [
         question="Active heatwave warnings in Central India",
         mode="both",
         expected_tool="get_alerts",
-        expected_args={"hazard": "heat_wave", "region": "CENTRAL"},
+        expected_args={"hazard": "heatwave", "region": "CENTRAL"},
         must_contain_phrases=["decision support, not an official IMD warning"],
     ),
     GoldenTestCase(

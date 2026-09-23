@@ -73,9 +73,9 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-text-primary flex flex-col font-sans select-text">
+    <div className="min-h-screen bg-canvas text-text-primary flex flex-col font-sans select-text">
       {/* Top Banner */}
-      <header className="border-b border-border bg-[#161b22]/90 backdrop-blur sticky top-0 z-40 px-4 py-3">
+      <header className="border-b border-[rgba(26,23,18,0.10)] bg-surface/90 backdrop-blur sticky top-0 z-40 px-4 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded bg-brand-teal/20 border border-brand-teal/40 flex items-center justify-center font-mono font-bold text-brand-teal text-sm">
@@ -133,9 +133,9 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
 
         {isLoading ? (
           <div className="p-12 text-center text-text-muted animate-pulse space-y-3">
-            <div className="h-6 w-48 bg-[#21262d] rounded mx-auto" />
-            <div className="h-24 bg-[#21262d] rounded" />
-            <div className="h-32 bg-[#21262d] rounded" />
+            <div className="h-6 w-48 bg-[#F0EDE7] rounded mx-auto" />
+            <div className="h-24 bg-[#F0EDE7] rounded" />
+            <div className="h-32 bg-[#F0EDE7] rounded" />
           </div>
         ) : error || !event ? (
           <div className="p-8 text-center bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400 space-y-2">
@@ -148,10 +148,10 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
         ) : (
           <>
             {/* Event Primary Hero Card */}
-            <div className="p-5 bg-[#161b22] border border-border rounded-xl shadow-lg space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-4">
+            <div className="p-5 bg-surface border border-[rgba(26,23,18,0.10)] rounded-xl shadow-lg space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[rgba(26,23,18,0.07)] pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-[#21262d] rounded-xl border border-border">
+                  <div className="p-3 bg-[#F0EDE7] rounded-xl border border-[rgba(26,23,18,0.10)]">
                     {getHazardIcon(event.hazard)}
                   </div>
                   <div>
@@ -194,7 +194,7 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                       False Alarm
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#21262d] border border-border text-text-muted font-mono text-xs capitalize">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] text-text-muted font-mono text-xs capitalize">
                       {event.outcome}
                     </span>
                   )}
@@ -203,7 +203,7 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
 
               {/* Grid Summary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                <div className="p-2.5 bg-[#21262d]/60 rounded-lg border border-border/60">
+                <div className="p-2.5 bg-[#F0EDE7]/60 rounded-lg border border-[rgba(26,23,18,0.07)]">
                   <span className="text-[10px] text-text-muted block uppercase">Valid Window</span>
                   <span className="font-mono text-xs font-semibold text-text-primary">
                     {event.start_date === event.end_date
@@ -211,19 +211,19 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                       : `${event.start_date} → ${event.end_date}`}
                   </span>
                 </div>
-                <div className="p-2.5 bg-[#21262d]/60 rounded-lg border border-border/60">
+                <div className="p-2.5 bg-[#F0EDE7]/60 rounded-lg border border-[rgba(26,23,18,0.07)]">
                   <span className="text-[10px] text-text-muted block uppercase">Peak Intensity</span>
                   <span className="font-mono text-xs font-semibold text-text-primary">
                     {event.value_peak !== null && event.value_peak !== undefined ? event.value_peak : "—"}
                   </span>
                 </div>
-                <div className="p-2.5 bg-[#21262d]/60 rounded-lg border border-border/60">
+                <div className="p-2.5 bg-[#F0EDE7]/60 rounded-lg border border-[rgba(26,23,18,0.07)]">
                   <span className="text-[10px] text-text-muted block uppercase">First Detected</span>
                   <span className="font-mono text-xs font-semibold text-text-primary">
                     {event.first_detected_at ? new Date(event.first_detected_at).toLocaleDateString() : "—"}
                   </span>
                 </div>
-                <div className="p-2.5 bg-[#21262d]/60 rounded-lg border border-border/60">
+                <div className="p-2.5 bg-[#F0EDE7]/60 rounded-lg border border-[rgba(26,23,18,0.07)]">
                   <span className="text-[10px] text-text-muted block uppercase">Verified Date</span>
                   <span className="font-mono text-xs font-semibold text-text-primary">
                     {event.verified_at ? new Date(event.verified_at).toLocaleDateString() : "Pending"}
@@ -235,7 +235,7 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
             {/* Feature G: How Unusual (Local Extremeness) */}
             {(data?.rarity_context || data?.rarity_label || childAlerts.some((a) => a.rarity_label)) && (
               <div className="p-5 bg-gradient-to-br from-[#1b2333]/80 to-[#161b22] border border-brand-blue/30 rounded-xl shadow-lg space-y-2.5">
-                <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+                <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2.5">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-brand-blue" />
                     <h3 className="text-sm font-bold text-text-primary">
@@ -260,8 +260,8 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
 
             {/* Feature C: What this means */}
             {data?.guidance && (
-              <div className="p-5 bg-[#161b22] border border-border rounded-xl shadow-lg space-y-3">
-                <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+              <div className="p-5 bg-surface border border-[rgba(26,23,18,0.10)] rounded-xl shadow-lg space-y-3">
+                <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2.5">
                   <div className="flex items-center gap-2">
                     <HelpCircle className="w-5 h-5 text-emerald-400" />
                     <h3 className="text-sm font-bold text-text-primary">
@@ -316,8 +316,8 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
 
             {/* Feature A: Track Record */}
             {data?.track_record && (
-              <div className="p-5 bg-[#161b22] border border-border rounded-xl shadow-lg space-y-3">
-                <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+              <div className="p-5 bg-surface border border-[rgba(26,23,18,0.10)] rounded-xl shadow-lg space-y-3">
+                <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2.5">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-5 h-5 text-brand-teal" />
                     <h3 className="text-sm font-bold text-text-primary">
@@ -330,7 +330,7 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                 </div>
 
                 {!data.track_record.applicable ? (
-                  <div className="p-3 bg-[#21262d] rounded-lg border border-border text-xs text-text-muted">
+                  <div className="p-3 bg-[#F0EDE7] rounded-lg border border-[rgba(26,23,18,0.10)] text-xs text-text-muted">
                     {data.track_record.summary_text}
                   </div>
                 ) : data.track_record.low_sample ? (
@@ -356,13 +356,13 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-mono text-text-muted">
-                      <span className="px-2.5 py-1 rounded bg-[#21262d] border border-border">
+                      <span className="px-2.5 py-1 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)]">
                         Hits: {data.track_record.hits}
                       </span>
-                      <span className="px-2.5 py-1 rounded bg-[#21262d] border border-border">
+                      <span className="px-2.5 py-1 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)]">
                         False Alarms: {data.track_record.false_alarms}
                       </span>
-                      <span className="px-2.5 py-1 rounded bg-[#21262d] border border-border">
+                      <span className="px-2.5 py-1 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)]">
                         Total Evaluated (n): {data.track_record.n}
                       </span>
                     </div>
@@ -372,8 +372,8 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
             )}
 
             {/* Feature F: Public Share Action Card */}
-            <div className="p-5 bg-[#161b22] border border-border rounded-xl shadow-lg space-y-3">
-              <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+            <div className="p-5 bg-surface border border-[rgba(26,23,18,0.10)] rounded-xl shadow-lg space-y-3">
+              <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2.5">
                 <div className="flex items-center gap-2">
                   <Share2 className="w-5 h-5 text-brand-orange" />
                   <h3 className="text-sm font-bold text-text-primary">
@@ -430,8 +430,8 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
             </div>
 
             {/* Lifecycle Timeline */}
-            <div className="p-5 bg-[#161b22] border border-border rounded-xl shadow-lg space-y-3">
-              <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+            <div className="p-5 bg-surface border border-[rgba(26,23,18,0.10)] rounded-xl shadow-lg space-y-3">
+              <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.07)] pb-2.5">
                 <div className="flex items-center gap-2">
                   <Activity className="w-5 h-5 text-brand-blue" />
                   <h3 className="text-sm font-bold text-text-primary">
@@ -452,7 +452,7 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                   {lifecycleHistory.map((node, i) => (
                     <div key={i} className="relative">
                       <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-brand-blue border border-brand-blue" />
-                      <div className="p-3 rounded bg-[#21262d]/60 border border-border flex items-center justify-between gap-2">
+                      <div className="p-3 rounded bg-[#F0EDE7]/60 border border-[rgba(26,23,18,0.10)] flex items-center justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-xs uppercase text-text-primary">
@@ -485,8 +485,8 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
             </div>
 
             {/* Why Flagged (Meteorological Rules) */}
-            <div className="p-5 bg-[#161b22] border border-border rounded-xl shadow-lg space-y-3">
-              <div className="flex items-center gap-2 border-b border-border/60 pb-2.5">
+            <div className="p-5 bg-surface border border-[rgba(26,23,18,0.10)] rounded-xl shadow-lg space-y-3">
+              <div className="flex items-center gap-2 border-b border-[rgba(26,23,18,0.07)] pb-2.5">
                 <Info className="w-5 h-5 text-brand-orange" />
                 <h3 className="text-sm font-bold text-text-primary">
                   Why Flagged (Meteorological Rules & Consensus)
@@ -495,7 +495,7 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
 
               <div className="space-y-3 pt-1">
                 {childAlerts.map((alert) => (
-                  <div key={alert.id} className="p-3 bg-[#21262d]/60 rounded-lg border border-border space-y-2">
+                  <div key={alert.id} className="p-3 bg-[#F0EDE7]/60 rounded-lg border border-[rgba(26,23,18,0.10)] space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-text-muted" />
@@ -512,17 +512,17 @@ export const PublicEventSharePage: React.FC<PublicEventSharePageProps> = ({
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs pt-1">
-                      <div className="bg-[#161b22] p-2 rounded border border-border/60">
+                      <div className="bg-surface p-2 rounded border border-[rgba(26,23,18,0.07)]">
                         <span className="text-text-muted block text-[10px]">Consensus Value</span>
                         <span className="font-bold font-mono text-text-primary">{alert.value ?? "—"}</span>
                       </div>
-                      <div className="bg-[#161b22] p-2 rounded border border-border/60">
+                      <div className="bg-surface p-2 rounded border border-[rgba(26,23,18,0.07)]">
                         <span className="text-text-muted block text-[10px]">Model Agreement</span>
                         <span className="font-bold font-mono text-text-primary">
                           {alert.models_over} / 4 models
                         </span>
                       </div>
-                      <div className="bg-[#161b22] p-2 rounded border border-border/60">
+                      <div className="bg-surface p-2 rounded border border-[rgba(26,23,18,0.07)]">
                         <span className="text-text-muted block text-[10px]">Spread</span>
                         <span className="font-bold font-mono text-text-primary">±{alert.spread ?? "—"}</span>
                       </div>

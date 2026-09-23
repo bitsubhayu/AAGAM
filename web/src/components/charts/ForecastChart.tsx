@@ -7,8 +7,6 @@ interface ForecastChartProps {
   series: ForecastSeriesItem[];
   variable: WeatherVariable;
   locationName: string;
-  showEnvelope?: boolean;
-  showThresholds?: boolean;
   visibleModels?: {
     gfs: boolean;
     ecmwf_ifs: boolean;
@@ -22,8 +20,6 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
   series,
   variable,
   locationName,
-  showEnvelope = true,
-  showThresholds = true,
   visibleModels = {
     gfs: true,
     ecmwf_ifs: true,
@@ -65,9 +61,8 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
 
   const spreadBandVals = maxVals.map((max, idx) => Math.max(0, max - minVals[idx]));
 
-  // Threshold markLines
+  // Threshold markLines (rendered by default for IMD grounded decision support)
   const getThresholdMarkLine = () => {
-    if (!showThresholds) return undefined;
     if (variable === "rain_mm") {
       return {
         symbol: "none",
@@ -120,43 +115,46 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
     animationDuration: 300,
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#161b22",
-      borderColor: "#30363d",
-      textStyle: { color: "#c9d1d9", fontSize: 12 },
+      backgroundColor: "#FFFFFF",
+      borderColor: "rgba(26,23,18,0.12)",
+      borderWidth: 1,
+      borderRadius: 12,
+      extraCssText: "box-shadow: 0 4px 20px rgba(26,23,18,0.12);",
+      textStyle: { color: "#1A1712", fontSize: 12, fontFamily: "'Instrument Sans', system-ui" },
       formatter: (params: any) => {
         if (!params || !params.length) return "";
         const idx = params[0].dataIndex;
         const item = series[idx];
         let out = `<div style="padding: 2px 4px;">`;
-        out += `<div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid #30363d; padding-bottom: 4px;">`;
+        out += `<div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid rgba(26,23,18,0.10); padding-bottom: 4px; color: #1A1712;">`;
         out += `${locationName} · ${item.valid_date} (D+${item.lead_days})`;
         out += `</div>`;
-        out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 3px 0; color: #388bfd; font-weight: bold;">`;
+        out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 3px 0; color: #E86440; font-weight: bold;">`;
         out += `<span>AAGAM Blended:</span><span style="font-family: monospace;">${item.blended.toFixed(1)} ${varMeta.shortUnit}</span>`;
         out += `</div>`;
 
         if (item.models?.gfs !== undefined) {
-          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #58a6ff;">`;
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #4C7BD9;">`;
           out += `<span>GFS (NOAA):</span><span style="font-family: monospace;">${item.models.gfs.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
         if (item.models?.ecmwf_ifs !== undefined) {
-          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #3fb950;">`;
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #4FA37A;">`;
           out += `<span>ECMWF IFS:</span><span style="font-family: monospace;">${item.models.ecmwf_ifs.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
         if (item.models?.icon !== undefined) {
-          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #f0883e;">`;
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #C98A1E;">`;
           out += `<span>DWD ICON:</span><span style="font-family: monospace;">${item.models.icon.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
         if (item.models?.aifs !== undefined) {
-          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #a371f7;">`;
+          out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #8B6FD9;">`;
           out += `<span>ECMWF AIFS (AI):</span><span style="font-family: monospace;">${item.models.aifs.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
 
-        out += `<div style="border-top: 1px solid #30363d; margin-top: 4px; pt-2; display: flex; justify-content: space-between; font-size: 11px; color: #8b949e;">`;
+        out += `<div style="border-top: 1px solid rgba(26,23,18,0.10); margin-top: 4px; pt-2; display: flex; justify-content: space-between; font-size: 11px; color: #A09890;">`;
         out += `<span>Model Spread (σ):</span><span style="font-family: monospace;">${item.spread.toFixed(1)} ${varMeta.shortUnit}</span>`;
         out += `</div>`;
         out += `</div>`;
@@ -166,7 +164,7 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
     legend: {
       data: ["AAGAM Blended", "GFS", "ECMWF IFS", "DWD ICON", "ECMWF AIFS"],
       top: 0,
-      textStyle: { color: "#8b949e", fontSize: 11 },
+      textStyle: { color: "#6B6560", fontSize: 11 },
       icon: "circle",
     },
     grid: {
@@ -180,39 +178,35 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
       type: "category",
       data: dates.map((d, i) => `${d}\n(D+${series[i].lead_days})`),
       boundaryGap: false,
-      axisLine: { lineStyle: { color: "#30363d" } },
-      axisLabel: { color: "#8b949e", fontSize: 11, interval: 0 },
+      axisLine: { lineStyle: { color: "rgba(26,23,18,0.15)" } },
+      axisLabel: { color: "#A09890", fontSize: 11, interval: 0 },
     },
     yAxis: {
       type: "value",
       name: varMeta.unit,
-      nameTextStyle: { color: "#8b949e", fontSize: 11, align: "left" },
-      splitLine: { lineStyle: { color: "#21262d" } },
-      axisLabel: { color: "#8b949e", fontSize: 11, fontFamily: "monospace" },
+      nameTextStyle: { color: "#A09890", fontSize: 11, align: "left" },
+      splitLine: { lineStyle: { color: "rgba(26,23,18,0.07)" } },
+      axisLabel: { color: "#A09890", fontSize: 11, fontFamily: "monospace" },
     },
     series: [
-      // Confidence band base (transparent)
-      ...(showEnvelope
-        ? [
-            {
-              name: "Min Base",
-              type: "line",
-              data: minVals,
-              lineStyle: { opacity: 0 },
-              stack: "confidence-band",
-              symbol: "none",
-            },
-            {
-              name: "Spread Band",
-              type: "line",
-              data: spreadBandVals,
-              lineStyle: { opacity: 0 },
-              areaStyle: { color: "rgba(56, 139, 253, 0.12)" },
-              stack: "confidence-band",
-              symbol: "none",
-            },
-          ]
-        : []),
+      // Confidence band base (rendered by default)
+      {
+        name: "Min Base",
+        type: "line",
+        data: minVals,
+        lineStyle: { opacity: 0 },
+        stack: "confidence-band",
+        symbol: "none",
+      },
+      {
+        name: "Spread Band",
+        type: "line",
+        data: spreadBandVals,
+        lineStyle: { opacity: 0 },
+        areaStyle: { color: "rgba(56, 139, 253, 0.12)" },
+        stack: "confidence-band",
+        symbol: "none",
+      },
 
       // Individual Model Lines
       ...(visibleModels.gfs

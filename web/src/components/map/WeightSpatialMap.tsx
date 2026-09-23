@@ -32,7 +32,7 @@ export const WeightSpatialMap: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="w-full h-[450px] bg-[#161b22] border border-border rounded-lg flex items-center justify-center p-6">
+      <div className="w-full h-[450px] bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg flex items-center justify-center p-6">
         <Skeleton className="h-64 w-full" />
       </div>
     );
@@ -40,16 +40,16 @@ export const WeightSpatialMap: React.FC = () => {
 
   if (error || !mapData) {
     return (
-      <div className="w-full h-[450px] bg-[#161b22] border border-border rounded-lg flex items-center justify-center p-6 text-center text-xs text-text-muted">
+      <div className="w-full h-[450px] bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg flex items-center justify-center p-6 text-center text-xs text-text-muted">
         Dominant weight map unavailable.
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-[450px] bg-[#161b22] border border-border rounded-lg overflow-hidden">
+    <div className="relative w-full h-[450px] bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg overflow-hidden">
       {/* Overlay Header */}
-      <div className="absolute top-3 left-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-border rounded-md px-3 py-2 text-xs shadow-md">
+      <div className="absolute top-3 left-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-[rgba(26,23,18,0.10)] rounded-md px-3 py-2 text-xs shadow-md">
         <div className="font-semibold text-text-primary flex items-center gap-1.5">
           <Sliders className="w-3.5 h-3.5 text-brand-blue" />
           <span>Dominant Model Grid</span>
@@ -70,8 +70,16 @@ export const WeightSpatialMap: React.FC = () => {
         className="w-full h-full"
       >
         <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution={
+            import.meta.env.VITE_MAPTILER_KEY && import.meta.env.VITE_MAPTILER_KEY !== "your-maptiler-key"
+              ? '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          }
+          url={
+            import.meta.env.VITE_MAPTILER_KEY && import.meta.env.VITE_MAPTILER_KEY !== "your-maptiler-key"
+              ? `https://api.maptiler.com/maps/dataviz-light/{z}/{x}/{y}.png?key=${import.meta.env.VITE_MAPTILER_KEY}`
+              : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          }
         />
 
         {mapData.locations.map((loc) => {
@@ -90,7 +98,7 @@ export const WeightSpatialMap: React.FC = () => {
             >
               <Popup>
                 <div className="p-1 min-w-[210px] text-xs font-sans">
-                  <div className="flex items-center justify-between border-b border-border/80 pb-1.5 mb-2">
+                  <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.09)] pb-1.5 mb-2">
                     <span className="font-bold text-text-primary">{loc.name}</span>
                     <Badge variant="outline">{loc.region}</Badge>
                   </div>
@@ -114,7 +122,7 @@ export const WeightSpatialMap: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-1 mt-2 pt-2 border-t border-border/60">
+                  <div className="space-y-1 mt-2 pt-2 border-t border-[rgba(26,23,18,0.07)]">
                     <span className="text-[11px] font-semibold text-text-muted">
                       Weight Distribution:
                     </span>
@@ -135,7 +143,7 @@ export const WeightSpatialMap: React.FC = () => {
       </MapContainer>
 
       {/* Model Legend */}
-      <div className="absolute bottom-3 right-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-border rounded-md px-3 py-1.5 text-[11px] shadow-md flex items-center gap-2">
+      <div className="absolute bottom-3 right-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-[rgba(26,23,18,0.10)] rounded-md px-3 py-1.5 text-[11px] shadow-md flex items-center gap-2">
         <span className="text-text-muted text-[10px] uppercase font-semibold">Models</span>
         <Badge variant="gfs">GFS</Badge>
         <Badge variant="ifs">ECMWF IFS</Badge>

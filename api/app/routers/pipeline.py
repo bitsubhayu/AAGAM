@@ -21,7 +21,7 @@ router = APIRouter(prefix=settings.API_V1_STR, tags=["Pipeline"])
 @router.get("/pipeline/status", response_model=PipelineStatusResponse)
 async def get_pipeline_status(
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> PipelineStatusResponse:
     """Returns execution telemetry, API call estimates, and model version status (PRD §12, role: any)."""

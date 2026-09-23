@@ -42,7 +42,7 @@ export const ArtifactViewerModal: React.FC<ArtifactViewerModalProps> = ({
           <span>Assistant Stored Artifact: {artifactId || "—"}</span>
         </div>
       }
-      description="Paginated inspection of full assistant data results (PRD §8.2, §12 — role: owner/admin)"
+      description="Paginated inspection of full assistant data results (PRD §8.2, §12 — role: owner/coordinator)"
       maxWidth="lg"
     >
       <div className="space-y-3 text-xs font-sans">
@@ -52,22 +52,22 @@ export const ArtifactViewerModal: React.FC<ArtifactViewerModalProps> = ({
             <Skeleton className="h-48 w-full" />
           </div>
         ) : error ? (
-          <div className="p-6 bg-[#161b22] rounded border border-border text-center space-y-2">
+          <div className="p-6 bg-surface rounded border border-[rgba(26,23,18,0.10)] text-center space-y-2">
             <AlertCircle className="w-6 h-6 text-hazard-advisory mx-auto" />
             <p className="font-semibold text-text-primary">Unable to load artifact</p>
             <p className="text-text-muted text-[11px] max-w-sm mx-auto">
               {(error as any)?.message ||
-                "Access restricted to artifact owner or system administrator (PRD §12)."}
+                "Access restricted to artifact owner or coordinator (PRD §12)."}
             </p>
           </div>
         ) : !artifact || records.length === 0 ? (
-          <div className="p-6 bg-[#161b22] rounded border border-border text-center text-text-muted">
+          <div className="p-6 bg-surface rounded border border-[rgba(26,23,18,0.10)] text-center text-text-muted">
             No stored records found for artifact ID: {artifactId}
           </div>
         ) : (
           <>
             {/* Header Telemetry */}
-            <div className="flex items-center justify-between flex-wrap gap-2 p-2.5 bg-[#21262d] rounded border border-border text-[11px]">
+            <div className="flex items-center justify-between flex-wrap gap-2 p-2.5 bg-[#F0EDE7] rounded border border-[rgba(26,23,18,0.10)] text-[11px]">
               <div className="flex items-center gap-3">
                 <span className="text-text-muted">
                   Total Records:{" "}
@@ -87,10 +87,10 @@ export const ArtifactViewerModal: React.FC<ArtifactViewerModalProps> = ({
             </div>
 
             {/* Records Table */}
-            <div className="overflow-x-auto max-h-72 border border-border rounded">
+            <div className="overflow-x-auto max-h-72 border border-[rgba(26,23,18,0.10)] rounded">
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-border bg-[#161b22] text-text-muted font-mono sticky top-0">
+                  <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted font-mono sticky top-0">
                     {columns.map((col) => (
                       <th key={col} className="p-2 capitalize">
                         {col.replace(/_/g, " ")}
@@ -100,7 +100,7 @@ export const ArtifactViewerModal: React.FC<ArtifactViewerModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-border/60 font-mono text-[11px]">
                   {records.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-[#21262d]/50">
+                    <tr key={idx} className="hover:bg-[#F0EDE7]/50">
                       {columns.map((col) => (
                         <td key={col} className="p-2 text-text-secondary">
                           {typeof row[col] === "number"

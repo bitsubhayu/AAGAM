@@ -34,7 +34,7 @@ export const PipelineRunsTable: React.FC<PipelineRunsTableProps> = ({ runs }) =>
     <div className="w-full overflow-x-auto">
       <table className="w-full text-xs text-left border-collapse">
         <thead>
-          <tr className="border-b border-border bg-[#161b22] text-text-muted">
+          <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted">
             <th className="p-2.5 font-medium">Job Pipeline</th>
             <th className="p-2.5 font-medium">Status</th>
             <th className="p-2.5 font-medium">Started (IST)</th>
@@ -51,7 +51,7 @@ export const PipelineRunsTable: React.FC<PipelineRunsTableProps> = ({ runs }) =>
             const isFailed = r.status?.toLowerCase() === "failed";
 
             return (
-              <tr key={r.id} className="hover:bg-[#21262d]/50 transition-colors">
+              <tr key={r.id} className="hover:bg-[#F0EDE7]/50 transition-colors">
                 <td className="p-2.5 font-semibold text-text-primary">
                   {r.job}
                 </td>

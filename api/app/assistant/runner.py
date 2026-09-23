@@ -127,11 +127,10 @@ async def run_assistant_stream(
         logger.warning(f"Initial budget tight; using trimmed context: {budget['breakdown']}")
         messages = [{"role": "system", "content": system_prompt}] + budget["trimmed_messages"]
 
-    # Announce start and meta events
+    # Announce start event
     yield f"event: start\ndata: {json.dumps({'status': 'connected'})}\n\n"
     model_name = "openai/gpt-oss-120b"
-    yield f"event: meta\ndata: {json.dumps({'model': model_name, 'cached': False})}\n\n"
-    await asyncio.sleep(0.01)
+    meta_emitted = False
 
     tools_used: List[Dict[str, Any]] = []
     data_tables_emitted: List[Dict[str, Any]] = []
@@ -153,7 +152,12 @@ async def run_assistant_stream(
                 tool_choice="auto",
                 model=model_name,
             )
-            model_name = used_model
+            if not meta_emitted or used_model != model_name:
+                model_name = used_model
+                meta_emitted = True
+                yield f"event: meta\ndata: {json.dumps({'model': model_name, 'cached': False})}\n\n"
+                await asyncio.sleep(0.01)
+
             total_tokens_in += metrics.get("tokens_in", 0)
             total_tokens_out += metrics.get("tokens_out", 0)
 

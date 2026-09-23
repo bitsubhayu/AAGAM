@@ -36,7 +36,7 @@ async def get_forecast(
     location: str = Query(..., description="Location slug (e.g. bhubaneswar) or numeric location ID"),
     variable: str = Query(..., description="Weather variable: rain_mm, tmax_c, wind_max_kmh"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> ForecastResponse:
     """Returns per-model, blended, and spread forecasts by valid date for the specified location and variable."""

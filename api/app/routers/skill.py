@@ -25,7 +25,7 @@ async def get_skill_scores(
     region: Optional[str] = Query(None, description="Regional domain filter"),
     season: Optional[str] = Query(None, description="Season filter"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> SkillQueryResponse:
     """Returns historical skill scores (MAE, RMSE, Bias, POD, FAR, CSI) across models and lead times."""

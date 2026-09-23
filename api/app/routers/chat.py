@@ -22,7 +22,7 @@ router = APIRouter(prefix=settings.API_V1_STR, tags=["Chat"])
 @router.post("/chat")
 async def chat_endpoint(
     body: ChatRequest,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: Optional[asyncpg.Connection] = Depends(get_db_conn),
 ) -> StreamingResponse:
     """Assistant chat endpoint executing Groq tool-use loop and streaming SSE events (PRD §9.8)."""

@@ -86,7 +86,7 @@ print("Saved aagam_${dataset}.${format}")`;
             <select
               value={dataset}
               onChange={(e) => setDataset(e.target.value as any)}
-              className="w-full p-2 bg-[#21262d] border border-border rounded text-xs text-text-primary outline-none"
+              className="w-full p-2 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded text-xs text-text-primary outline-none"
             >
               <option value="forecasts">Forecasts (Blended & NWP Models)</option>
               <option value="alerts">Extreme Hazard Alerts</option>
@@ -106,7 +106,7 @@ print("Saved aagam_${dataset}.${format}")`;
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs border font-mono transition-colors ${
                   format === "csv"
                     ? "bg-brand-blue/20 text-brand-blue border-brand-blue font-bold"
-                    : "bg-[#21262d] text-text-secondary border-border"
+                    : "bg-[#F0EDE7] text-text-secondary border-[rgba(26,23,18,0.10)]"
                 }`}
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -117,7 +117,7 @@ print("Saved aagam_${dataset}.${format}")`;
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs border font-mono transition-colors ${
                   format === "json"
                     ? "bg-brand-blue/20 text-brand-blue border-brand-blue font-bold"
-                    : "bg-[#21262d] text-text-secondary border-border"
+                    : "bg-[#F0EDE7] text-text-secondary border-[rgba(26,23,18,0.10)]"
                 }`}
               >
                 <FileCode className="w-3.5 h-3.5" />
@@ -134,7 +134,7 @@ print("Saved aagam_${dataset}.${format}")`;
             <select
               value={variable}
               onChange={(e) => setVariable(e.target.value)}
-              className="w-full p-2 bg-[#21262d] border border-border rounded text-xs text-text-primary outline-none"
+              className="w-full p-2 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded text-xs text-text-primary outline-none"
             >
               <option value="rain_mm">Rainfall (rain_mm)</option>
               <option value="tmax_c">Max Temp (tmax_c)</option>
@@ -150,7 +150,7 @@ print("Saved aagam_${dataset}.${format}")`;
             <select
               value={locationSlug}
               onChange={(e) => setLocationSlug(e.target.value)}
-              className="w-full p-2 bg-[#21262d] border border-border rounded text-xs text-text-primary outline-none"
+              className="w-full p-2 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded text-xs text-text-primary outline-none"
             >
               <option value="ALL">All Representative Locations (40)</option>
               {locations.map((l) => (
@@ -163,7 +163,7 @@ print("Saved aagam_${dataset}.${format}")`;
         </div>
 
         {/* Download Trigger */}
-        <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between flex-wrap gap-2">
+        <div className="mt-4 pt-3 border-t border-[rgba(26,23,18,0.07)] flex items-center justify-between flex-wrap gap-2">
           <div className="text-xs text-text-muted">
             Direct Streaming Endpoint:{" "}
             <span className="font-mono text-text-secondary text-[11px]">{exportUrl}</span>
@@ -185,7 +185,7 @@ print("Saved aagam_${dataset}.${format}")`;
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* cURL Snippet */}
         <Card className="p-4">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/80">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-[rgba(26,23,18,0.09)]">
             <div className="flex items-center gap-2">
               <Terminal className="w-4 h-4 text-brand-blue" />
               <span className="text-xs font-bold text-text-primary">cURL API Access</span>
@@ -197,14 +197,14 @@ print("Saved aagam_${dataset}.${format}")`;
               {copiedCode === "curl" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
-          <pre className="p-3 bg-[#0d1117] rounded border border-border text-[11px] font-mono text-emerald-400 overflow-x-auto">
+          <pre className="p-3 bg-canvas rounded border border-[rgba(26,23,18,0.10)] text-[11px] font-mono text-emerald-400 overflow-x-auto">
             {curlSnippet}
           </pre>
         </Card>
 
         {/* Python Snippet */}
         <Card className="p-4">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/80">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-[rgba(26,23,18,0.09)]">
             <div className="flex items-center gap-2">
               <FileCode className="w-4 h-4 text-emerald-400" />
               <span className="text-xs font-bold text-text-primary">Python Research Client</span>
@@ -216,7 +216,7 @@ print("Saved aagam_${dataset}.${format}")`;
               {copiedCode === "python" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
-          <pre className="p-3 bg-[#0d1117] rounded border border-border text-[11px] font-mono text-blue-300 overflow-x-auto">
+          <pre className="p-3 bg-canvas rounded border border-[rgba(26,23,18,0.10)] text-[11px] font-mono text-blue-300 overflow-x-auto">
             {pythonSnippet}
           </pre>
         </Card>

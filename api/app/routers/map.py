@@ -32,9 +32,9 @@ VALID_VARIABLES = {
 @router.get("/map", response_model=MapResponse)
 async def get_map_data(
     variable: str = Query(..., description="Weather variable: rain_mm, tmax_c, wind_max_kmh"),
-    lead_days: int = Query(1, ge=1, le=8, description="Forecast lead time in days (1-8)"),
+    lead_days: int = Query(0, ge=0, le=7, description="Forecast lead time in days (0-7)"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> MapResponse:
     """Returns the latest blended forecast value, spread, and dominant model across all 40 grid points for a given variable and lead day."""

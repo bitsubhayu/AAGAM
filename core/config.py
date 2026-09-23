@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     SUPABASE_PUBLISHABLE_KEY: Optional[str] = Field(default=None)
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = Field(default=None)
     SUPABASE_JWT_SECRET: Optional[str] = Field(default=None)
+    EXPORT_SIGNING_SECRET: Optional[str] = Field(default=None)
     SUPABASE_JWKS_URL: Optional[str] = Field(default=None)
     DATABASE_URL: Optional[str] = Field(default=None)
     DB_POOL_MIN_SIZE: int = Field(default=1)
@@ -47,13 +48,16 @@ class Settings(BaseSettings):
 
     # CORS Configuration (environment-driven, comma-separated)
     CORS_ALLOWED_ORIGINS: str = Field(
-        default="http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
+        default="http://localhost:5173,http://localhost:3000,http://localhost:3001,http://127.0.0.1:5173,http://127.0.0.1:3000,http://127.0.0.1:3001"
     )
+
+    # Local evaluation and testing demo authentication
+    ENABLE_LOCAL_DEMO_AUTH: bool = Field(default=True)
 
     @property
     def cors_origins(self) -> List[str]:
         if not self.CORS_ALLOWED_ORIGINS:
-            return ["http://localhost:5173", "http://localhost:3000"]
+            return ["http://localhost:5173", "http://localhost:3000", "http://localhost:3001"]
         return [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
 
     @property

@@ -78,25 +78,23 @@ Blending models by recent skill is **not a new idea** — commercial services al
 
 | Persona | Who | Needs | Role in app |
 |---|---|---|---|
-| **Anonymous visitor** | General public, duty officers, citizens | View dashboards, check alerts, ask assistant, export | None (anonymous) |
-| **Subscriber** | Alert recipient, local stakeholder | Register email, manage location & hazard alert preferences | `viewer` (authenticated) |
-| **Forecaster** ("Dr. Meera") | NCMRWF / IMD duty forecaster | Compare models fast, see weights, override with a reason, export | `forecaster` |
-| **Disaster duty officer** ("Mr. Rao") | State/district disaster-management staff | Clear alerts, plain-language summary, manage alert subscriptions | `viewer` (or `forecaster`) |
-| **Sector analyst** | Agriculture, power, aviation, irrigation | Parameter-specific forecast, history, CSV | `viewer` |
-| **Researcher / developer** | Universities, hackathon judges, tech teams | Raw tables, skill data, API access via chat/export | `viewer` (or `forecaster`) |
-| **Admin** | Our team / NCMRWF IT | Pipeline health, model versions, rollback | `admin` |
+| **Public Visitor** | General public, duty officers, citizens | View dashboards, check alerts, ask assistant, export | `public` (anonymous) |
+| **Alert Subscriber** | Alert recipient, local stakeholder | Register email, manage location & hazard alert preferences | `public` (authenticated via OTP) |
+| **Forecaster** ("Dr. Meera") | NCMRWF / IMD duty forecaster | Compare models fast, see weights, override with a reason, acknowledge alerts, export | `forecaster` (verified name + institution + email OTP) |
+| **Forecaster Coordinator** | Senior duty lead, coordinator | Full forecaster duties + promote existing verified forecasters to coordinator | `coordinator` (designated by system owner) |
 
-| Capability | Anonymous (no login) | Subscriber (logged in, viewer role) | forecaster | admin |
+| Capability | Public (Anonymous) | Public (Alert Subscriber via OTP) | Forecaster | Forecaster Coordinator |
 |---|:-:|:-:|:-:|:-:|
 | View dashboards, weights, skill, alerts, map | ✔ | ✔ | ✔ | ✔ |
 | Chat assistant | ✔ (rate-limited per IP) | ✔ (rate-limited per user) | ✔ | ✔ |
 | Export CSV/JSON | ✔ | ✔ | ✔ | ✔ |
-| **Register for alerts (subscribe)** | – | ✔ (this is what makes them a Subscriber) | ✔ | ✔ |
-| Acknowledge alerts | – | – | ✔ | ✔ |
+| **Manage alert subscriptions** | – | ✔ (OTP authenticated) | ✔ | ✔ |
+| Acknowledge alerts & events | – | – | ✔ | ✔ |
 | Create weight overrides (audited) | – | – | ✔ | ✔ |
-| Activate / roll back model version, edit thresholds | – | – | – | ✔ |
+| **Promote verified Forecaster to Coordinator** | – | – | – | ✔ |
+| Activate / roll back model version | – | – | – | – (Automated pipeline / System owner only) |
 
-**Public read access model:** There is no separate "must log in to see the site" gate. Anyone can access all core pages, maps, forecasts, weight matrices, verification metrics, and alerts without authentication. Chat assistant and CSV/JSON export are also available to anonymous visitors with per-IP rate limiting. Login is required exclusively for: (a) registering or updating alert notifications (`subscriptions`), and (b) forecaster and administrator operational write actions (overrides, acknowledgements, model activation/rollback). Login uses **Supabase Auth email OTP** (a 6-digit code, not a magic link) delivered via Brevo SMTP (see Tech Stack §8a). The act of first verifying an OTP creates the Supabase Auth user and, in the same flow, upserts their `subscriptions` row (§11) — there is no separate "sign up" step.
+**Public read access model:** There is no separate "must log in to see the site" gate. Anyone can access all core pages, maps, forecasts, weight matrices, verification metrics, and alerts without authentication. Chat assistant and CSV/JSON export are also available to anonymous visitors with per-IP rate limiting. Login is required exclusively for: (a) registering or updating alert notifications (`subscriptions`), and (b) forecaster and coordinator operational actions (overrides, acknowledgements, coordinator promotions). Forecaster registration requires name, institution, and official email verified via **Supabase Auth email OTP** delivered via Brevo SMTP (see Tech Stack §8a). There is no active "admin" or "viewer" runtime role. Model activation/rollback is not an application-user action and is managed out-of-band by automated pipeline and system owner.
 
 ---
 
@@ -440,7 +438,7 @@ Controls: response **cache** (~10 min, keyed by normalised question + data versi
 ### 9.7 Guardrails
 - **Number guard:** extract numerals from the answer; each must match a value in that turn's tool outputs (tolerance = displayed rounding), or be a date / lead-day / count. Unmatched → append *"Some figures could not be verified"*, set `flagged=true` in `chat_audit`; one automatic retry with a stricter reminder.
 - **Prompt-injection defence:** tool results are wrapped as data; user text never reaches SQL; tools are parameter-validated; the model can't call anything outside the list.
-- **RBAC:** tools run with the caller's role; `export_data` respects `viewer` limits.
+- **RBAC:** tools run with the caller's role; `export_data` respects `public` limits.
 - **Privacy/safety:** no personal data stored beyond question text + user id; `chat_audit` retained 30 days.
 - **Scope:** refuse off-topic requests briefly; never claim to issue official warnings.
 
@@ -773,7 +771,7 @@ create table climatology_percentiles (
 
 create table profiles (
   user_id uuid primary key references auth.users(id),
-  role    text not null default 'viewer' check (role in ('viewer','forecaster','admin')),
+  role    text not null default 'public' check (role in ('public','forecaster','coordinator')),
   display_name text, org text
 );
 
@@ -1035,7 +1033,7 @@ Example `GET /forecast?location=bhubaneswar&variable=rain_mm`:
 | Unit | IST-day aggregation (golden), threshold classifier, weights sum to 1 & ≥ 0, hierarchical fallback picks the right level, time-split leakage assertion, unit conversions |
 | Data | Row counts, duplicates, gap report, impossible values, `truth_source` present |
 | ML | Reproducibility (seeded), model files load, metrics.json schema, "new version not worse" gate |
-| API | Contract tests per endpoint, auth/role matrix, RLS negative tests (viewer can't write), rate-limit behaviour |
+| API | Contract tests per endpoint, auth/role matrix, RLS negative tests (public can't write), rate-limit behaviour |
 | Assistant | Golden set (§9.9), number-guard tests, injection tests, token-budget test (prompt + tools + history stay under budget) |
 | UI | Component states (§10.7), keyboard/a11y checks, Impeccable `audit` + `detect`, visual pass on 1280/1024/768 widths |
 | End-to-end | Cron → DB → API → UI freshness; simulate Open-Meteo 429 and Supabase pause; confirm banners |

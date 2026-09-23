@@ -19,8 +19,8 @@ export function useHistory(params: UseHistoryParams) {
   if (params.start) queryParams.set("start", params.start);
   if (params.end) queryParams.set("end", params.end);
   if (params.kind) queryParams.set("kind", params.kind);
-  if (params.limit) queryParams.set("limit", params.limit.toString());
-  if (params.offset) queryParams.set("offset", params.offset.toString());
+  if (params.limit !== undefined) queryParams.set("limit", params.limit.toString());
+  if (params.offset !== undefined) queryParams.set("offset", params.offset.toString());
 
   const qs = queryParams.toString();
   const endpoint = `/history?${qs}`;

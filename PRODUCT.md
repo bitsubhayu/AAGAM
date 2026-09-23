@@ -21,11 +21,11 @@ AAGAM dynamically monitors recent multi-model forecast accuracy across Indian re
 
 | Persona | Real-World Role | Primary Needs in AAGAM | System Role |
 |---|---|---|---|
-| **Dr. Meera** | NCMRWF / IMD Duty Forecaster | Rapid model comparisons, lead-time weight inspection, audited weight overrides, CSV data export | `forecaster` |
-| **Mr. Rao** | State / District Disaster Duty Officer | Clear hazard alerts (heavy rain, heatwave, wind), multi-model agreement flags, jargon-free briefings | `viewer` |
-| **Sector Analyst** | Agriculture, Power, Aviation, Water | Parameter-specific forecasts, historical data comparisons, bulk downloads | `viewer` |
-| **Researcher / Developer** | Academic Teams, Hackathon Judges | Model skill matrices (MAE/RMSE/bias), raw tables, pipeline telemetry | `viewer` / `forecaster` |
-| **System Administrator** | DevOps / NCMRWF IT Staff | Pipeline health, model registry, 1-click rollback, threshold configuration | `admin` |
+| **Dr. Meera** | NCMRWF / IMD Duty Forecaster | Rapid model comparisons, lead-time weight inspection, audited weight overrides, alert acknowledgements, CSV export | `forecaster` |
+| **Forecaster Coordinator** | Senior Duty Lead / Forecaster Coordinator | Full forecaster duties + designate/promote existing verified forecasters to coordinator | `coordinator` |
+| **Mr. Rao** | State / District Disaster Duty Officer | Clear hazard alerts (heavy rain, heatwave, wind), multi-model agreement flags, alert subscriptions | `public` |
+| **Sector Analyst** | Agriculture, Power, Aviation, Water | Parameter-specific forecasts, historical data comparisons, bulk downloads | `public` |
+| **Researcher / Developer** | Academic Teams, Hackathon Judges | Model skill matrices (MAE/RMSE/bias), raw tables, pipeline telemetry | `public` |
 
 ---
 

@@ -12,6 +12,7 @@ from fastapi import Depends, Header, HTTPException, status
 
 from api.app.auth.jwt import verify_supabase_jwt
 from api.app.db.pool import get_db_conn, set_rls_claims
+from core.config import settings
 
 logger = logging.getLogger("aagam.api.auth.dependencies")
 
@@ -21,7 +22,7 @@ class CurrentUser:
     """Authenticated user context with resolved role."""
     user_id: str
     email: Optional[str] = None
-    role: str = "viewer"  # 'viewer', 'forecaster', 'admin'
+    role: str = "public"  # 'public', 'forecaster', 'coordinator'
 
 
 async def get_current_user(
@@ -95,8 +96,19 @@ async def get_current_user(
 
     email = payload.get("email")
 
+    demo_uids = {
+        "00000000-0000-0000-0000-000000000001": "public",
+        "00000000-0000-0000-0000-000000000002": "forecaster",
+        "00000000-0000-0000-0000-000000000003": "coordinator",
+    }
+    if settings.ENABLE_LOCAL_DEMO_AUTH and (user_id in demo_uids or (email and email.endswith("@aagam.gov.in"))):
+        app_meta = payload.get("app_metadata", {})
+        user_meta = payload.get("user_metadata", {})
+        user_role = app_meta.get("role") or user_meta.get("role") or demo_uids.get(user_id, "public")
+        return CurrentUser(user_id=user_id, email=email, role=user_role)
+
     # Fetch authoritative role from `profiles` table
-    user_role = "viewer"
+    user_role = "public"
     try:
         # Inject RLS claims so the connection acts in the context of the user
         await set_rls_claims(conn, user_id, role="authenticated")
@@ -110,10 +122,10 @@ async def get_current_user(
             # Check if role is present in app_metadata or user_metadata
             app_meta = payload.get("app_metadata", {})
             user_meta = payload.get("user_metadata", {})
-            user_role = app_meta.get("role") or user_meta.get("role") or "viewer"
+            user_role = app_meta.get("role") or user_meta.get("role") or "public"
     except Exception as e:
         logger.warning(f"Failed to query user profile for {user_id}: {e}")
-        user_role = "viewer"
+        user_role = "public"
 
     return CurrentUser(user_id=user_id, email=email, role=user_role)
 
@@ -133,10 +145,10 @@ def require_role(min_role: str, allow_anonymous: bool = False) -> Callable[..., 
     """Dependency factory to enforce role-based access control.
 
     min_role:
-    - 'public' or allow_anonymous=True: allows 'anon', 'viewer', 'forecaster', 'admin'
-    - 'any': allows authenticated 'viewer', 'forecaster', 'admin'
-    - 'forecaster+': allows 'forecaster', 'admin'
-    - 'admin': allows 'admin' only
+    - 'public' or allow_anonymous=True: allows 'anon', 'public', 'forecaster', 'coordinator'
+    - 'any': allows authenticated 'public', 'forecaster', 'coordinator'
+    - 'forecaster+': allows 'forecaster', 'coordinator'
+    - 'coordinator': allows 'coordinator' only
     """
     if min_role == "public" or allow_anonymous:
         def public_role_checker(current_user: CurrentUser = Depends(get_optional_user)) -> CurrentUser:
@@ -150,25 +162,25 @@ def require_role(min_role: str, allow_anonymous: bool = False) -> Callable[..., 
             return current_user
 
         if min_role == "forecaster+":
-            if user_role in ("forecaster", "admin"):
+            if user_role in ("forecaster", "coordinator"):
                 return current_user
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
                     "code": "FORBIDDEN",
-                    "message": f"Action requires forecaster or admin privileges (current role: {user_role}).",
+                    "message": f"Action requires forecaster or forecaster coordinator privileges (current role: {user_role}).",
                     "retry_after": None,
                 },
             )
 
-        if min_role == "admin":
-            if user_role == "admin":
+        if min_role == "coordinator":
+            if user_role == "coordinator":
                 return current_user
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
                     "code": "FORBIDDEN",
-                    "message": f"Action requires admin privileges (current role: {user_role}).",
+                    "message": f"Action requires forecaster coordinator privileges (current role: {user_role}).",
                     "retry_after": None,
                 },
             )

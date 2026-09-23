@@ -1,4 +1,4 @@
-"""Assistant stored artifacts endpoint (PRD §12, role: owner/admin)."""
+"""Assistant stored artifacts endpoint (PRD §12, role: owner/coordinator)."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ async def get_artifact(
     limit: int = Query(50, ge=1, le=500, description="Page size"),
     current_user: CurrentUser = Depends(require_role("any")),
 ) -> ArtifactResponse:
-    """Retrieves paginated pages of a stored assistant result. (PRD §12, role: owner/admin)."""
+    """Retrieves paginated pages of a stored assistant result. (PRD §12, role: owner/coordinator)."""
     artifact: Optional[Dict[str, Any]] = _ARTIFACT_STORE.get(id)
 
     if not artifact:
@@ -49,16 +49,16 @@ async def get_artifact(
             },
         )
 
-    # Enforce owner or admin role
+    # Enforce owner or coordinator role
     is_owner = artifact.get("owner_id") == current_user.user_id
-    is_admin = current_user.role == "admin"
+    is_coordinator = current_user.role == "coordinator"
 
-    if not (is_owner or is_admin):
+    if not (is_owner or is_coordinator):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "FORBIDDEN",
-                "message": "You do not have permission to view this artifact (owner or admin only).",
+                "message": "You do not have permission to view this artifact (owner or coordinator only).",
                 "retry_after": None,
             },
         )

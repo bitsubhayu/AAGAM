@@ -39,7 +39,7 @@ interface Message {
 }
 
 export const AssistantPage: React.FC = () => {
-  const { assistantPrompt } = useUIStore();
+  const { assistantPrompt, clearAssistantPrompt } = useUIStore();
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -57,6 +57,7 @@ export const AssistantPage: React.FC = () => {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastHandledPromptRef = useRef<string | null>(null);
 
   const personaPrompts = [
     {
@@ -126,112 +127,135 @@ export const AssistantPage: React.FC = () => {
         });
 
         if (!res.ok) {
-          throw new Error(`Chat request returned HTTP ${res.status}`);
+          let errorDetail = `Chat request returned HTTP ${res.status}`;
+          try {
+            const errJson = await res.json();
+            if (errJson?.detail?.message) errorDetail = errJson.detail.message;
+            else if (errJson?.message) errorDetail = errJson.message;
+          } catch {
+            // fallback
+          }
+          throw new Error(errorDetail);
         }
 
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
         let accumulatedText = "";
-        let currentEvent = "message";
+        let buffer = "";
 
         if (reader) {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n");
+            buffer += decoder.decode(value, { stream: true });
+            const blocks = buffer.split("\n\n");
+            buffer = blocks.pop() || "";
 
-            for (const line of lines) {
-              if (line.startsWith("event: ")) {
-                currentEvent = line.slice(7).trim();
-              } else if (line.startsWith("data: ")) {
-                const rawData = line.slice(6);
-                try {
-                  const payload = JSON.parse(rawData);
+            for (const block of blocks) {
+              if (!block.trim()) continue;
+              const lines = block.split("\n");
+              let currentEvent = "message";
+              const dataLines: string[] = [];
 
-                  if (currentEvent === "meta") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, model: payload.model, cached: payload.cached }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "tool_call") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, toolCalls: [...(m.toolCalls || []), payload] }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "data_table") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId ? { ...m, dataTable: payload } : m
-                      )
-                    );
-                  } else if (currentEvent === "token") {
-                    if (payload.content) {
-                      accumulatedText += payload.content;
-                      setMessages((prev) =>
-                        prev.map((m) =>
-                          m.id === assistantMsgId ? { ...m, text: accumulatedText } : m
-                        )
-                      );
-                    }
-                  } else if (currentEvent === "citations") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId ? { ...m, citations: payload } : m
-                      )
-                    );
-                  } else if (currentEvent === "warning") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, warning: payload.message || payload }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "done") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? {
-                              ...m,
-                              latency_ms: payload.latency_ms,
-                              tokens_used: payload.tokens_used,
-                              isStreaming: false,
-                            }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "error") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? {
-                              ...m,
-                              error: payload,
-                              text: payload.message || "An error occurred.",
-                              isStreaming: false,
-                            }
-                          : m
-                      )
-                    );
-                  }
-                } catch {
-                  // Fallback plain chunk
-                  if (currentEvent === "token" || currentEvent === "text") {
-                    accumulatedText += rawData;
+              for (const line of lines) {
+                if (line.startsWith("event: ")) {
+                  currentEvent = line.slice(7).trim();
+                } else if (line.startsWith("data: ")) {
+                  dataLines.push(line.slice(6));
+                } else if (line === "data:") {
+                  dataLines.push("");
+                }
+              }
+
+              const rawData = dataLines.join("\n");
+              if (!rawData && currentEvent !== "end") continue;
+
+              try {
+                const payload = rawData ? JSON.parse(rawData) : {};
+
+                if (currentEvent === "meta") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, model: payload.model, cached: payload.cached }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "tool_call") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, toolCalls: [...(m.toolCalls || []), payload] }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "data_table") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, dataTable: payload } : m
+                    )
+                  );
+                } else if (currentEvent === "token") {
+                  if (payload.content) {
+                    accumulatedText += payload.content;
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === assistantMsgId ? { ...m, text: accumulatedText } : m
                       )
                     );
                   }
+                } else if (currentEvent === "citations") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, citations: Array.isArray(payload) ? payload : [payload] } : m
+                    )
+                  );
+                } else if (currentEvent === "warning") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, warning: payload.message || payload }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "done") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            latency_ms: payload.latency_ms,
+                            tokens_used: payload.tokens_used,
+                            model: payload.model || m.model,
+                            isStreaming: false,
+                          }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "error") {
+                  const errorMsg = payload.message || "An error occurred during response generation.";
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            error: payload,
+                            text: (accumulatedText ? accumulatedText + "\n\n" : "") + `*AAGAM Error:* ${errorMsg}`,
+                            isStreaming: false,
+                          }
+                        : m
+                    )
+                  );
+                }
+              } catch {
+                if (currentEvent === "token" || currentEvent === "text") {
+                  accumulatedText += rawData;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, text: accumulatedText } : m
+                    )
+                  );
                 }
               }
             }
@@ -264,13 +288,16 @@ export const AssistantPage: React.FC = () => {
   );
 
   useEffect(() => {
-    if (assistantPrompt) {
+    if (assistantPrompt && assistantPrompt !== lastHandledPromptRef.current) {
+      const promptToSend = assistantPrompt;
+      lastHandledPromptRef.current = promptToSend;
+      clearAssistantPrompt();
       const timeoutId = setTimeout(() => {
-        handleSend(assistantPrompt);
+        handleSend(promptToSend);
       }, 0);
       return () => clearTimeout(timeoutId);
     }
-  }, [assistantPrompt, handleSend]);
+  }, [assistantPrompt, clearAssistantPrompt, handleSend]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -294,9 +321,9 @@ export const AssistantPage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8.5rem)] bg-[#0d1117] rounded-lg border border-border overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-8.5rem)] bg-canvas rounded-lg border border-[rgba(26,23,18,0.10)] overflow-hidden">
       {/* Workstation Header Bar */}
-      <div className="px-5 py-3 bg-[#161b22] border-b border-border flex flex-wrap items-center justify-between gap-3">
+      <div className="px-5 py-3 bg-surface border-b border-[rgba(26,23,18,0.10)] flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-blue-500/10 border border-blue-500/30 rounded text-brand-blue">
             <Sparkles className="w-5 h-5 text-brand-orange" />
@@ -316,7 +343,7 @@ export const AssistantPage: React.FC = () => {
 
         {/* Toolbar & Response Mode Selector */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-[#21262d] p-1 rounded border border-border text-xs">
+          <div className="flex items-center gap-1.5 bg-[#F0EDE7] p-1 rounded border border-[rgba(26,23,18,0.10)] text-xs">
             <span className="text-[10px] text-text-muted font-semibold px-1">MODE:</span>
             {(["explain", "raw", "both"] as const).map((m) => (
               <button
@@ -325,7 +352,7 @@ export const AssistantPage: React.FC = () => {
                 className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors ${
                   mode === m
                     ? "bg-brand-blue text-white shadow-sm"
-                    : "text-text-secondary hover:text-text-primary hover:bg-[#30363d]"
+                    : "text-text-secondary hover:text-text-primary hover:bg-[#E8E4DC]"
                 }`}
               >
                 {m}
@@ -338,7 +365,7 @@ export const AssistantPage: React.FC = () => {
               const id = window.prompt("Enter Stored Assistant Artifact ID (e.g. art_sample):");
               if (id?.trim()) setSelectedArtifactId(id.trim());
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] border border-border text-xs text-text-secondary hover:text-text-primary transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#F0EDE7] hover:bg-[#E8E4DC] border border-[rgba(26,23,18,0.10)] text-xs text-text-secondary hover:text-text-primary transition-colors"
           >
             <FileCode className="w-3.5 h-3.5 text-brand-blue" />
             <span>Artifacts</span>
@@ -350,7 +377,7 @@ export const AssistantPage: React.FC = () => {
                 setMessages([messages[0]]);
               }
             }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] border border-border text-xs text-text-muted hover:text-text-primary transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-[#F0EDE7] hover:bg-[#E8E4DC] border border-[rgba(26,23,18,0.10)] text-xs text-text-muted hover:text-text-primary transition-colors"
             title="Reset conversation"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -377,7 +404,7 @@ export const AssistantPage: React.FC = () => {
                 className={`max-w-[85%] rounded-lg p-4 space-y-3 ${
                   isUser
                     ? "bg-brand-blue text-white shadow"
-                    : "bg-[#161b22] text-text-primary border border-border shadow-sm"
+                    : "bg-surface text-text-primary border border-[rgba(26,23,18,0.10)] shadow-sm"
                 }`}
               >
                 {/* Assistant Metadata Header */}
@@ -408,7 +435,7 @@ export const AssistantPage: React.FC = () => {
                     {m.toolCalls.map((tc, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#21262d] border border-border text-[11px] font-mono text-text-secondary"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] text-[11px] font-mono text-text-secondary"
                       >
                         <Zap className="w-3 h-3 text-brand-orange" />
                         <span>tool: {tc.name}</span>
@@ -469,7 +496,7 @@ export const AssistantPage: React.FC = () => {
                     {m.citations.map((c, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-0.5 rounded bg-[#21262d] border border-border font-mono text-text-secondary"
+                        className="px-2 py-0.5 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] font-mono text-text-secondary"
                       >
                         {c.tool} (v: {c.model_version})
                       </span>
@@ -484,7 +511,7 @@ export const AssistantPage: React.FC = () => {
                     <div className="flex items-center gap-1.5 ml-4">
                       <button
                         onClick={() => handleFeedback(m.id, "up")}
-                        className={`p-1 rounded hover:bg-[#21262d] transition-colors ${
+                        className={`p-1 rounded hover:bg-[#F0EDE7] transition-colors ${
                           m.feedback === "up" ? "text-emerald-400" : "hover:text-text-primary"
                         }`}
                         title="Helpful"
@@ -493,7 +520,7 @@ export const AssistantPage: React.FC = () => {
                       </button>
                       <button
                         onClick={() => handleFeedback(m.id, "down")}
-                        className={`p-1 rounded hover:bg-[#21262d] transition-colors ${
+                        className={`p-1 rounded hover:bg-[#F0EDE7] transition-colors ${
                           m.feedback === "down" ? "text-rose-400" : "hover:text-text-primary"
                         }`}
                         title="Not helpful"
@@ -506,7 +533,7 @@ export const AssistantPage: React.FC = () => {
               </div>
 
               {isUser && (
-                <div className="w-8 h-8 rounded-full bg-[#21262d] border border-border flex items-center justify-center text-text-muted shrink-0 mt-0.5 shadow-sm">
+                <div className="w-8 h-8 rounded-full bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] flex items-center justify-center text-text-muted shrink-0 mt-0.5 shadow-sm">
                   <User className="w-4 h-4" />
                 </div>
               )}
@@ -517,7 +544,7 @@ export const AssistantPage: React.FC = () => {
 
       {/* Suggested Starters Grid (shown when conversation is brief) */}
       {messages.length <= 2 && (
-        <div className="px-6 py-3 border-t border-border/60 bg-[#161b22]/40">
+        <div className="px-6 py-3 border-t border-[rgba(26,23,18,0.07)] bg-surface/40">
           <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold block mb-2">
             Persona-Tailored Prompt Starters:
           </span>
@@ -531,7 +558,7 @@ export const AssistantPage: React.FC = () => {
                   <button
                     key={p}
                     onClick={() => handleSend(p)}
-                    className="w-full text-left px-2.5 py-1.5 rounded bg-[#21262d]/70 hover:bg-[#21262d] border border-border/60 text-[11px] text-text-secondary hover:text-text-primary transition-colors truncate"
+                    className="w-full text-left px-2.5 py-1.5 rounded bg-[#F0EDE7]/70 hover:bg-[#F0EDE7] border border-[rgba(26,23,18,0.07)] text-[11px] text-text-secondary hover:text-text-primary transition-colors truncate"
                     title={p}
                   >
                     {p}
@@ -544,7 +571,7 @@ export const AssistantPage: React.FC = () => {
       )}
 
       {/* Query Input Footer */}
-      <div className="p-4 border-t border-border bg-[#161b22]">
+      <div className="p-4 border-t border-[rgba(26,23,18,0.10)] bg-surface">
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -558,7 +585,7 @@ export const AssistantPage: React.FC = () => {
             }}
             placeholder="Ask AAGAM Assistant about model agreements, regional rain, weights, skill, or alerts..."
             disabled={isStreaming}
-            className="flex-1 bg-[#0d1117] border border-border rounded-lg px-4 py-2.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-blue"
+            className="flex-1 bg-canvas border border-[rgba(26,23,18,0.10)] rounded-lg px-4 py-2.5 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-blue"
           />
 
           {isStreaming ? (

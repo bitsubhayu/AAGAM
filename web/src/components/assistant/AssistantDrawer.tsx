@@ -40,7 +40,7 @@ interface Message {
 }
 
 export const AssistantDrawer: React.FC = () => {
-  const { isAssistantOpen, setAssistantOpen, assistantPrompt } = useUIStore();
+  const { isAssistantOpen, setAssistantOpen, assistantPrompt, clearAssistantPrompt } = useUIStore();
   const { role } = useAuthStore();
 
   const [messages, setMessages] = useState<Message[]>([
@@ -59,6 +59,7 @@ export const AssistantDrawer: React.FC = () => {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastHandledPromptRef = useRef<string | null>(null);
 
   // Suggested prompts tailored to persona
   const samplePrompts = [
@@ -109,111 +110,135 @@ export const AssistantDrawer: React.FC = () => {
         });
 
         if (!res.ok) {
-          throw new Error(`Chat request returned HTTP ${res.status}`);
+          let errorDetail = `Chat request returned HTTP ${res.status}`;
+          try {
+            const errJson = await res.json();
+            if (errJson?.detail?.message) errorDetail = errJson.detail.message;
+            else if (errJson?.message) errorDetail = errJson.message;
+          } catch {
+            // fallback to status code
+          }
+          throw new Error(errorDetail);
         }
 
         const reader = res.body?.getReader();
         const decoder = new TextDecoder();
         let accumulatedText = "";
-        let currentEvent = "message";
+        let buffer = "";
 
         if (reader) {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split("\n");
+            buffer += decoder.decode(value, { stream: true });
+            const blocks = buffer.split("\n\n");
+            buffer = blocks.pop() || "";
 
-            for (const line of lines) {
-              if (line.startsWith("event: ")) {
-                currentEvent = line.slice(7).trim();
-              } else if (line.startsWith("data: ")) {
-                const rawData = line.slice(6);
-                try {
-                  const payload = JSON.parse(rawData);
+            for (const block of blocks) {
+              if (!block.trim()) continue;
+              const lines = block.split("\n");
+              let currentEvent = "message";
+              const dataLines: string[] = [];
 
-                  if (currentEvent === "meta") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, model: payload.model, cached: payload.cached }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "tool_call") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, toolCalls: [...(m.toolCalls || []), payload] }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "data_table") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId ? { ...m, dataTable: payload } : m
-                      )
-                    );
-                  } else if (currentEvent === "token") {
-                    if (payload.content) {
-                      accumulatedText += payload.content;
-                      setMessages((prev) =>
-                        prev.map((m) =>
-                          m.id === assistantMsgId ? { ...m, text: accumulatedText } : m
-                        )
-                      );
-                    }
-                  } else if (currentEvent === "citations") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId ? { ...m, citations: payload } : m
-                      )
-                    );
-                  } else if (currentEvent === "warning") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, warning: payload.message || payload }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "done") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? {
-                              ...m,
-                              latency_ms: payload.latency_ms,
-                              tokens_used: payload.tokens_used,
-                              isStreaming: false,
-                            }
-                          : m
-                      )
-                    );
-                  } else if (currentEvent === "error") {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? {
-                              ...m,
-                              error: payload,
-                              text: payload.message || "An error occurred.",
-                              isStreaming: false,
-                            }
-                          : m
-                      )
-                    );
-                  }
-                } catch {
-                  if (currentEvent === "token" || currentEvent === "text") {
-                    accumulatedText += rawData;
+              for (const line of lines) {
+                if (line.startsWith("event: ")) {
+                  currentEvent = line.slice(7).trim();
+                } else if (line.startsWith("data: ")) {
+                  dataLines.push(line.slice(6));
+                } else if (line === "data:") {
+                  dataLines.push("");
+                }
+              }
+
+              const rawData = dataLines.join("\n");
+              if (!rawData && currentEvent !== "end") continue;
+
+              try {
+                const payload = rawData ? JSON.parse(rawData) : {};
+
+                if (currentEvent === "meta") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, model: payload.model, cached: payload.cached }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "tool_call") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, toolCalls: [...(m.toolCalls || []), payload] }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "data_table") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, dataTable: payload } : m
+                    )
+                  );
+                } else if (currentEvent === "token") {
+                  if (payload.content) {
+                    accumulatedText += payload.content;
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === assistantMsgId ? { ...m, text: accumulatedText } : m
                       )
                     );
                   }
+                } else if (currentEvent === "citations") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, citations: Array.isArray(payload) ? payload : [payload] } : m
+                    )
+                  );
+                } else if (currentEvent === "warning") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, warning: payload.message || payload }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "done") {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            latency_ms: payload.latency_ms,
+                            tokens_used: payload.tokens_used,
+                            model: payload.model || m.model,
+                            isStreaming: false,
+                          }
+                        : m
+                    )
+                  );
+                } else if (currentEvent === "error") {
+                  const errorMsg = payload.message || "An error occurred during response generation.";
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            error: payload,
+                            text: (accumulatedText ? accumulatedText + "\n\n" : "") + `*AAGAM Error:* ${errorMsg}`,
+                            isStreaming: false,
+                          }
+                        : m
+                    )
+                  );
+                }
+              } catch {
+                if (currentEvent === "token" || currentEvent === "text") {
+                  accumulatedText += rawData;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, text: accumulatedText } : m
+                    )
+                  );
                 }
               }
             }
@@ -245,14 +270,34 @@ export const AssistantDrawer: React.FC = () => {
     [isStreaming, mode]
   );
 
+  const handleSendRef = useRef(handleSend);
   useEffect(() => {
-    if (assistantPrompt) {
-      const timeoutId = setTimeout(() => {
-        handleSend(assistantPrompt);
-      }, 0);
-      return () => clearTimeout(timeoutId);
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
+
+  // Escape key and body scroll lock
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAssistantOpen(false);
+    };
+    if (isAssistantOpen) {
+      document.body.style.overflow = "hidden";
+      window.addEventListener("keydown", handleKeyDown);
     }
-  }, [assistantPrompt, handleSend]);
+    return () => {
+      document.body.style.overflow = "unset";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAssistantOpen, setAssistantOpen]);
+
+  useEffect(() => {
+    if (assistantPrompt && assistantPrompt !== lastHandledPromptRef.current) {
+      const promptToSend = assistantPrompt;
+      lastHandledPromptRef.current = promptToSend;
+      clearAssistantPrompt();
+      handleSendRef.current(promptToSend);
+    }
+  }, [assistantPrompt, clearAssistantPrompt]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -278,17 +323,23 @@ export const AssistantDrawer: React.FC = () => {
   if (!isAssistantOpen) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[500px] bg-surface border-l border-border shadow-2xl flex flex-col font-sans animate-in slide-in-from-right duration-200">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-border bg-[#161b22] flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-blue-500/10 border border-blue-500/30 rounded text-brand-blue">
-            <Sparkles className="w-4 h-4 text-brand-orange" />
-          </div>
+    <>
+      <div
+        className="fixed inset-0 z-[2000] bg-[rgba(26,23,18,0.45)] backdrop-blur-sm"
+        onClick={() => setAssistantOpen(false)}
+        aria-hidden="true"
+      />
+      <div className="fixed inset-y-0 right-0 z-[2000] w-full sm:w-[500px] bg-surface border-l border-[rgba(26,23,18,0.10)] shadow-2xl flex flex-col font-sans animate-in slide-in-from-right duration-200">
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-[rgba(26,23,18,0.09)] bg-surface flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-accent-soft rounded-full">
+              <Sparkles className="w-4 h-4 text-accent" />
+            </div>
           <div>
             <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5">
               <span>AAGAM Meteorological Assistant</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#21262d] text-brand-blue font-mono border border-blue-500/30">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#EBF2FD] text-brand-blue font-mono border border-brand-blue/25">
                 Groq 120B
               </span>
             </h3>
@@ -301,27 +352,27 @@ export const AssistantDrawer: React.FC = () => {
 
         <button
           onClick={() => setAssistantOpen(false)}
-          className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-[#21262d] transition-colors"
+          className="p-1.5 rounded-full text-text-muted hover:text-text-primary hover:bg-[#F0EDE7] transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Mode Bar */}
-      <div className="px-4 py-2 border-b border-border/60 bg-[#161b22]/50 flex items-center justify-between text-xs flex-wrap gap-2">
+      <div className="px-4 py-2 border-b border-[rgba(26,23,18,0.07)] bg-[#F5F2EC] flex items-center justify-between text-xs flex-wrap gap-2">
         <span className="text-[10px] text-text-muted uppercase tracking-wider font-semibold">
           Response Mode:
         </span>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-[#21262d] p-0.5 rounded border border-border">
+          <div className="flex items-center gap-0.5 bg-[#F0EDE7] p-0.5 rounded-full border border-[rgba(26,23,18,0.10)]">
             {(["explain", "raw", "both"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className={`px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-colors ${
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold capitalize transition-all duration-150 ${
                   mode === m
-                    ? "bg-brand-blue text-white"
-                    : "text-text-muted hover:text-text-secondary"
+                    ? "bg-accent text-white shadow-pill"
+                    : "text-text-muted hover:text-text-primary"
                 }`}
               >
                 {m}
@@ -334,7 +385,7 @@ export const AssistantDrawer: React.FC = () => {
               const id = window.prompt("Enter Stored Assistant Artifact ID (e.g. art_sample):");
               if (id?.trim()) setSelectedArtifactId(id.trim());
             }}
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-text-primary border border-border bg-[#21262d] transition-colors"
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium text-text-muted hover:text-text-primary border border-[rgba(26,23,18,0.10)] bg-[#F0EDE7] transition-colors"
             title="Inspect stored assistant data artifact"
           >
             <FileCode className="w-3 h-3 text-brand-blue" />
@@ -362,7 +413,7 @@ export const AssistantDrawer: React.FC = () => {
                 className={`max-w-[90%] rounded-lg p-3 space-y-2.5 ${
                   isUser
                     ? "bg-brand-blue text-white"
-                    : "bg-[#21262d] text-text-secondary border border-border"
+                    : "bg-[#F0EDE7] text-text-secondary border border-[rgba(26,23,18,0.10)]"
                 }`}
               >
                 {/* Meta Header */}
@@ -392,7 +443,7 @@ export const AssistantDrawer: React.FC = () => {
                     {m.toolCalls.map((tc, idx) => (
                       <span
                         key={idx}
-                        className="px-1.5 py-0.5 rounded bg-[#161b22] border border-border text-[10px] font-mono text-text-secondary flex items-center gap-1"
+                        className="px-1.5 py-0.5 rounded bg-surface border border-[rgba(26,23,18,0.10)] text-[10px] font-mono text-text-secondary flex items-center gap-1"
                       >
                         <Zap className="w-2.5 h-2.5 text-brand-orange" />
                         <span>tool: {tc.name}</span>
@@ -454,7 +505,7 @@ export const AssistantDrawer: React.FC = () => {
                     {m.citations.map((c, idx) => (
                       <span
                         key={idx}
-                        className="px-1.5 py-0.5 rounded bg-[#161b22] border border-border font-mono text-text-secondary"
+                        className="px-1.5 py-0.5 rounded bg-surface border border-[rgba(26,23,18,0.10)] font-mono text-text-secondary"
                       >
                         {c.tool} (v: {c.model_version})
                       </span>
@@ -491,7 +542,7 @@ export const AssistantDrawer: React.FC = () => {
               </div>
 
               {isUser && (
-                <div className="w-6 h-6 rounded bg-[#21262d] border border-border flex items-center justify-center text-text-muted shrink-0 mt-0.5">
+                <div className="w-6 h-6 rounded bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] flex items-center justify-center text-text-muted shrink-0 mt-0.5">
                   <User className="w-3.5 h-3.5" />
                 </div>
               )}
@@ -502,7 +553,7 @@ export const AssistantDrawer: React.FC = () => {
 
       {/* Suggested Starters */}
       {messages.length <= 2 && (
-        <div className="px-4 py-2 border-t border-border/40 bg-[#161b22]/30 space-y-1.5">
+        <div className="px-4 py-2 border-t border-border/40 bg-surface/30 space-y-1.5">
           <span className="text-[10px] text-text-muted uppercase font-semibold block">
             Suggested Briefings:
           </span>
@@ -511,7 +562,7 @@ export const AssistantDrawer: React.FC = () => {
               <button
                 key={idx}
                 onClick={() => handleSend(p)}
-                className="w-full text-left px-2.5 py-1.5 rounded bg-[#21262d]/60 hover:bg-[#21262d] border border-border/40 text-[11px] text-text-secondary hover:text-text-primary transition-colors truncate block"
+                className="w-full text-left px-2.5 py-1.5 rounded bg-[#F0EDE7]/60 hover:bg-[#F0EDE7] border border-border/40 text-[11px] text-text-secondary hover:text-text-primary transition-colors truncate block"
               >
                 {p}
               </button>
@@ -521,7 +572,7 @@ export const AssistantDrawer: React.FC = () => {
       )}
 
       {/* Input Footer */}
-      <div className="p-3 border-t border-border bg-[#161b22]">
+      <div className="p-3 border-t border-[rgba(26,23,18,0.10)] bg-surface">
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -535,7 +586,7 @@ export const AssistantDrawer: React.FC = () => {
             }}
             placeholder="Ask AAGAM Assistant about forecasts, weights, skill, alerts..."
             disabled={isStreaming}
-            className="flex-1 bg-[#0d1117] border border-border rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-blue"
+            className="flex-1 bg-canvas border border-[rgba(26,23,18,0.10)] rounded px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-blue"
           />
 
           {isStreaming ? (
@@ -571,5 +622,6 @@ export const AssistantDrawer: React.FC = () => {
         />
       )}
     </div>
+  </>
   );
 };

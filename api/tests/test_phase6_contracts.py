@@ -30,7 +30,7 @@ TEST_JWT_SECRET = "test-phase-6-secret-key-very-secure-32-chars-long"
 def create_test_jwt(
     user_id: Optional[str] = None,
     email: str = "testuser@aagam.gov.in",
-    role: str = "viewer",
+    role: str = "public",
     secret: str = TEST_JWT_SECRET,
     expires_in: int = 3600,
 ) -> str:
@@ -77,11 +77,11 @@ def test_health_public_unauthenticated(client):
 
 
 # ==============================================================================
-# 2. Authentication Failures & PRD Error Envelope Tests
+# 2. Public Anonymous Read API & Protected Mutation Tests (Part 25A & 25B)
 # ==============================================================================
-def test_protected_endpoints_reject_missing_token(client):
-    """Protected endpoints must reject requests lacking Authorization header with HTTP 401."""
-    protected_urls = [
+def test_public_read_endpoints_accessible_anonymously(client):
+    """Public meteorological read endpoints must succeed anonymously without Authorization header (Part 25A)."""
+    public_get_urls = [
         "/api/v1/forecast?location=bhubaneswar&variable=rain_mm",
         "/api/v1/map?variable=rain_mm&lead_days=1",
         "/api/v1/weights",
@@ -89,21 +89,57 @@ def test_protected_endpoints_reject_missing_token(client):
         "/api/v1/skill",
         "/api/v1/history?location=bhubaneswar&variable=rain_mm",
         "/api/v1/pipeline/status",
+        "/api/v1/alerts",
+        "/api/v1/export?dataset=forecasts&format=csv",
     ]
-    for url in protected_urls:
+    for url in public_get_urls:
         resp = client.get(url)
-        assert resp.status_code == 401, f"URL {url} did not reject unauthenticated request."
-        data = resp.json()
-        assert "error" in data, f"Missing standard error envelope for {url}"
-        assert data["error"]["code"] == "UNAUTHORIZED"
-        assert "message" in data["error"]
+        assert resp.status_code == 200, f"Public URL {url} failed with status {resp.status_code}: {resp.text}"
+
+    # Public chat must also succeed anonymously (Part 20A / Part 25A)
+    resp_chat = client.post("/api/v1/chat", json={"message": "Namaste AAGAM"})
+    assert resp_chat.status_code == 200, f"Public /chat failed with status {resp_chat.status_code}"
+
+
+def test_protected_endpoints_reject_missing_token(client):
+    """Protected mutation endpoints must reject requests lacking Authorization header with HTTP 401 (Part 25B)."""
+    # 1. Weight override
+    resp = client.post(
+        "/api/v1/weights/override",
+        json={
+            "variable": "rain_mm",
+            "region": "CENTRAL",
+            "season": "monsoon",
+            "lead_days": 1,
+            "weights": {"gfs": 0.25, "ecmwf_ifs": 0.25, "icon": 0.25, "aifs": 0.25},
+            "reason": "Unauthorized test attempt.",
+        },
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+    # 2. Alert acknowledge
+    resp = client.post("/api/v1/alerts/1/ack")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+    # 3. Alert event acknowledge
+    resp = client.post("/api/v1/alerts/events/1/ack")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+    # 4. Coordinator promotion
+    resp = client.post("/api/v1/auth/forecasters/test-user-id/promote-coordinator")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
 
 def test_protected_endpoint_rejects_malformed_token(client):
     """Requests with non-Bearer tokens must be rejected with HTTP 401."""
-    resp = client.get(
-        "/api/v1/forecast?location=bhubaneswar&variable=rain_mm",
+    resp = client.post(
+        "/api/v1/weights/override",
         headers={"Authorization": "Basic invalid_auth_token"},
+        json={"variable": "rain_mm", "region": "CENTRAL", "season": "monsoon", "lead_days": 1, "weights": {}, "reason": "Test reason"},
     )
     assert resp.status_code == 401
     data = resp.json()
@@ -113,9 +149,10 @@ def test_protected_endpoint_rejects_malformed_token(client):
 def test_protected_endpoint_rejects_expired_token(client):
     """Expired tokens must be rejected with HTTP 401 and TOKEN_EXPIRED code."""
     expired_token = create_test_jwt(expires_in=-3600)
-    resp = client.get(
-        "/api/v1/forecast?location=bhubaneswar&variable=rain_mm",
+    resp = client.post(
+        "/api/v1/weights/override",
         headers={"Authorization": f"Bearer {expired_token}"},
+        json={"variable": "rain_mm", "region": "CENTRAL", "season": "monsoon", "lead_days": 1, "weights": {}, "reason": "Test reason"},
     )
     assert resp.status_code == 401
     data = resp.json()
@@ -125,9 +162,10 @@ def test_protected_endpoint_rejects_expired_token(client):
 def test_protected_endpoint_rejects_tampered_signature(client):
     """Tokens with invalid signatures must be rejected with HTTP 401."""
     tampered_token = create_test_jwt(secret="wrong-signature-key-123456789012")
-    resp = client.get(
-        "/api/v1/forecast?location=bhubaneswar&variable=rain_mm",
+    resp = client.post(
+        "/api/v1/weights/override",
         headers={"Authorization": f"Bearer {tampered_token}"},
+        json={"variable": "rain_mm", "region": "CENTRAL", "season": "monsoon", "lead_days": 1, "weights": {}, "reason": "Test reason"},
     )
     assert resp.status_code == 401
     data = resp.json()
@@ -135,11 +173,11 @@ def test_protected_endpoint_rejects_tampered_signature(client):
 
 
 # ==============================================================================
-# 3. Role-Based Access Control Matrix
+# 3. Role-Based Access Control Matrix (Public, Forecaster, Coordinator)
 # ==============================================================================
-def test_viewer_access_to_read_endpoints(client):
-    """Viewer role can access all standard read endpoints."""
-    token = create_test_jwt(role="viewer")
+def test_public_role_access_to_read_endpoints(client):
+    """Public role can access all standard read endpoints."""
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Meta
@@ -167,9 +205,9 @@ def test_viewer_access_to_read_endpoints(client):
     assert resp.status_code == 200
 
 
-def test_viewer_forbidden_from_forecaster_and_admin_actions(client):
-    """Viewer role must receive HTTP 403 FORBIDDEN when attempting privileged actions."""
-    token = create_test_jwt(role="viewer")
+def test_public_forbidden_from_privileged_actions(client):
+    """Public role must receive HTTP 403 FORBIDDEN when attempting privileged actions (Part 25B)."""
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Attempt weight override
@@ -182,7 +220,7 @@ def test_viewer_forbidden_from_forecaster_and_admin_actions(client):
             "season": "monsoon",
             "lead_days": 1,
             "weights": {"gfs": 0.25, "ecmwf_ifs": 0.25, "icon": 0.25, "aifs": 0.25},
-            "reason": "Unauthorized test attempt by viewer.",
+            "reason": "Unauthorized test attempt by public.",
         },
     )
     assert resp.status_code == 403
@@ -193,37 +231,55 @@ def test_viewer_forbidden_from_forecaster_and_admin_actions(client):
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN"
 
-    # Attempt model activation
-    resp = client.post("/api/v1/models/1/activate", headers=headers)
+    # Attempt coordinator promotion
+    resp = client.post("/api/v1/auth/forecasters/dummy-id/promote-coordinator", headers=headers)
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN"
 
+    # Attempt model activation (403 for all user roles)
+    resp = client.post("/api/v1/models/1/activate", headers=headers)
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
-def test_forecaster_can_override_and_ack_but_not_activate_model(client):
-    """Forecaster role can create overrides and ack alerts, but cannot activate model versions."""
+
+def test_forecaster_can_override_and_ack_but_not_promote(client):
+    """Forecaster role can create overrides and ack alerts, but cannot promote or activate models (Part 25C)."""
     token = create_test_jwt(role="forecaster")
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Attempt model activation (Admin only)
-    resp = client.post("/api/v1/models/1/activate", headers=headers)
-    assert resp.status_code == 403
-    assert resp.json()["error"]["code"] == "FORBIDDEN"
+    # Cannot promote another forecaster to coordinator
+    resp_promote = client.post("/api/v1/auth/forecasters/some-id/promote-coordinator", headers=headers)
+    assert resp_promote.status_code == 403
+    assert resp_promote.json()["error"]["code"] == "FORBIDDEN"
+
+    # Cannot activate model
+    resp_model = client.post("/api/v1/models/1/activate", headers=headers)
+    assert resp_model.status_code == 403
+    assert resp_model.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
     # Attempt alert ack on nonexistent alert (passes role check, returns 404 for missing id)
     resp_ack = client.post("/api/v1/alerts/999999/ack", headers=headers)
-    # Status should be 404 (or 200 if alert exists), NOT 403 Forbidden!
     assert resp_ack.status_code in (404, 200)
 
 
-def test_admin_can_access_model_activation(client):
-    """Admin role passes role check for model activation."""
-    token = create_test_jwt(role="admin")
+def test_coordinator_permissions(client):
+    """Coordinator role can ack, override, and access promotion, but not model activation (Part 25D)."""
+    coord_id = str(uuid.uuid4())
+    token = create_test_jwt(user_id=coord_id, role="coordinator")
     headers = {"Authorization": f"Bearer {token}"}
 
-    resp = client.post("/api/v1/models/999999/activate", headers=headers)
-    # Passes role check; returns 404 because model version 999999 does not exist
-    assert resp.status_code == 404
-    assert resp.json()["error"]["code"] == "MODEL_VERSION_NOT_FOUND"
+    # Coordinator cannot self-promote (returns 400, NOT 403!)
+    resp_self = client.post(f"/api/v1/auth/forecasters/{coord_id}/promote-coordinator", headers=headers)
+    assert resp_self.status_code == 400
+    assert "self" in resp_self.json()["error"]["message"].lower()
+
+    # Coordinator attempting to promote a nonexistent target passes role check (returns 404, NOT 403!)
+    resp_promote = client.post("/api/v1/auth/forecasters/00000000-0000-0000-0000-000000000000/promote-coordinator", headers=headers)
+    assert resp_promote.status_code == 404
+
+    # Coordinator cannot activate models (model activation is not an application-user action)
+    resp_model = client.post("/api/v1/models/1/activate", headers=headers)
+    assert resp_model.status_code == 403
 
 
 # ==============================================================================
@@ -470,20 +526,20 @@ def test_artifacts_access_control(client):
 
     owner_id = str(uuid.uuid4())
     other_user_id = str(uuid.uuid4())
-    admin_id = str(uuid.uuid4())
+    coordinator_id = str(uuid.uuid4())
     art_id = f"art-{uuid.uuid4()}"
 
     # Register artifact
     register_artifact(art_id, owner_id, [{"row": 1, "value": 42.0}, {"row": 2, "value": 15.5}])
 
-    # 1. Non-owner viewer receives 403
-    other_token = create_test_jwt(user_id=other_user_id, role="viewer")
+    # 1. Non-owner public receives 403
+    other_token = create_test_jwt(user_id=other_user_id, role="public")
     resp_forbidden = client.get(f"/api/v1/artifacts/{art_id}", headers={"Authorization": f"Bearer {other_token}"})
     assert resp_forbidden.status_code == 403
     assert resp_forbidden.json()["error"]["code"] == "FORBIDDEN"
 
     # 2. Owner receives 200 with paginated data
-    owner_token = create_test_jwt(user_id=owner_id, role="viewer")
+    owner_token = create_test_jwt(user_id=owner_id, role="public")
     resp_owner = client.get(f"/api/v1/artifacts/{art_id}", headers={"Authorization": f"Bearer {owner_token}"})
     assert resp_owner.status_code == 200
     owner_data = resp_owner.json()
@@ -491,10 +547,10 @@ def test_artifacts_access_control(client):
     assert owner_data["total_records"] == 2
     assert len(owner_data["data"]) == 2
 
-    # 3. Admin receives 200
-    admin_token = create_test_jwt(user_id=admin_id, role="admin")
-    resp_admin = client.get(f"/api/v1/artifacts/{art_id}", headers={"Authorization": f"Bearer {admin_token}"})
-    assert resp_admin.status_code == 200
+    # 3. Coordinator receives 200
+    coord_token = create_test_jwt(user_id=coordinator_id, role="coordinator")
+    resp_coord = client.get(f"/api/v1/artifacts/{art_id}", headers={"Authorization": f"Bearer {coord_token}"})
+    assert resp_coord.status_code == 200
 
     # 4. Nonexistent artifact returns 404
     resp_404 = client.get("/api/v1/artifacts/nonexistent-artifact-999", headers={"Authorization": f"Bearer {owner_token}"})

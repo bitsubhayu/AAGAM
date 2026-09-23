@@ -23,7 +23,7 @@ class ToolContext:
         current_user: Optional[CurrentUser] = None,
     ) -> None:
         self.conn = conn
-        self.current_user = current_user or CurrentUser(user_id="anonymous", role="viewer")
+        self.current_user = current_user or CurrentUser(user_id="anonymous", role="public")
 
 
 class BaseTool(ABC):

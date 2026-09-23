@@ -218,7 +218,7 @@ Row Level Security (RLS = per-row permission rules) on every table. **Service-ro
 
 ## 7. Backend API (FastAPI on Render)
 - **Endpoints:** `/api/v1/forecast`, `/weights`, `/skill`, `/alerts`, `/history`, `/export`, `/chat` (SSE stream), `/health`.
-- **Auth:** verify Supabase JWT on each request; roles `viewer`, `forecaster`, `admin` from `profiles.role`.
+- **Auth:** verify Supabase JWT on each request; roles `public`, `forecaster`, `coordinator` from `profiles.role`. Public read APIs accessible anonymously. Model activation is an operational task managed out-of-band by automated pipeline and system owner.
 - **Rate limits:** `slowapi` per user/IP; chat has its own tighter limit.
 - **Render free tier ⚠️:** sleeps after ~15 min idle, cold start ~30–60 s, 750 free hours/month per workspace. Mitigation: call `/health` when the dashboard loads and show a "waking up the server" state; before demo day, ping it 5 minutes ahead. Do **not** run a permanent keep-alive cron (it burns the 750 h).
 - **No ML training on Render.** It only loads the *active* model file from Supabase Storage if it needs to re-blend on demand (rare; normally blends are precomputed).

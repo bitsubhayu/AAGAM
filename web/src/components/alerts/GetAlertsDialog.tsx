@@ -19,6 +19,8 @@ import {
 } from "@/api/client";
 import type { Subscription } from "@/api/types";
 import { useMeta } from "@/api/useMeta";
+import { supabase } from "@/auth/supabase";
+import { useAuthStore } from "@/auth/authStore";
 
 interface GetAlertsDialogProps {
   isOpen: boolean;
@@ -80,6 +82,21 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
   }, [onSubscriptionUpdated]);
 
+  // Escape key and body scroll lock
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   // Check if token exists in localStorage on open
   useEffect(() => {
     if (!isOpen) return;
@@ -124,6 +141,19 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
       localStorage.setItem("aagam_user_email", email);
       if (resp.access_token) {
         localStorage.setItem("aagam_auth_token", resp.access_token);
+        if (resp.refresh_token) {
+          try {
+            const { data } = await supabase.auth.setSession({
+              access_token: resp.access_token,
+              refresh_token: resp.refresh_token,
+            });
+            if (data?.session) {
+              useAuthStore.getState().setSession(data.session);
+            }
+          } catch {
+            // non-fatal fallback
+          }
+        }
       }
       await loadSubscription();
     } catch (err: any) {
@@ -188,19 +218,19 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg bg-[#111922] border border-[#1E2A37] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[rgba(26,23,18,0.45)] backdrop-blur-sm">
+      <div className="relative w-full max-w-lg bg-surface border border-[rgba(26,23,18,0.07)] rounded-card shadow-[0_8px_48px_rgba(26,23,18,0.18)] overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1E2A37] bg-[#17212C]">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-md bg-[#3FD0B4]/10 text-[#3FD0B4] border border-[#3FD0B4]/30">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(26,23,18,0.07)] bg-[#F5F2EC]">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-md bg-[rgba(46,125,107,0.12)] text-[#2E7D6B] border border-[rgba(46,125,107,0.25)]">
               <Bell className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-[#E7EDF3]">
+              <h2 className="text-base font-semibold text-text-primary">
                 {step === "manage" ? "Manage Alert Subscriptions" : "Subscribe to Weather Alerts"}
               </h2>
-              <p className="text-xs text-[#A3B0BD]">
+              <p className="text-xs text-text-muted">
                 {step === "manage"
                   ? `Configured for ${email}`
                   : "Receive targeted multi-model email alerts via Brevo"}
@@ -209,7 +239,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-[#A3B0BD] hover:text-[#E7EDF3] rounded-md hover:bg-white/5 transition-colors"
+            className="p-1.5 text-text-muted hover:text-text-primary rounded-md hover:bg-[rgba(26,23,18,0.08)] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -219,9 +249,9 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {step === "email" && (
             <form onSubmit={handleSendOtp} className="space-y-4">
-              <div className="p-3 bg-[#17212C] border border-[#1E2A37] rounded-lg text-xs text-[#A3B0BD] space-y-1">
-                <p className="font-medium text-[#E7EDF3] flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#3FD0B4]" />
+              <div className="p-3 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-lg text-xs text-text-secondary space-y-1">
+                <p className="font-medium text-text-primary flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-accent" />
                   Passwordless Verification
                 </p>
                 <p>
@@ -230,23 +260,23 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-[#A3B0BD] mb-1.5">
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 w-4 h-4 text-[#70808F]" />
+                  <Mail className="absolute left-3 top-2.5 w-4 h-4 text-text-muted" />
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="officer@disaster.gov.in"
-                    className="w-full bg-[#0B1016] border border-[#1E2A37] rounded-lg pl-9 pr-3 py-2 text-sm text-[#E7EDF3] placeholder-[#70808F] focus:outline-none focus:border-[#3FD0B4]"
+                    className="w-full bg-white border border-[rgba(26,23,18,0.15)] rounded-lg pl-9 pr-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
                   />
                 </div>
               </div>
 
-              <Button type="submit" disabled={loading} className="w-full bg-[#3FD0B4] text-[#0B1016] hover:bg-[#3FD0B4]/90 font-medium">
+              <Button type="submit" disabled={loading} className="w-full bg-accent text-surface-dark hover:bg-accent/90 font-medium">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send 6-Digit Code"}
               </Button>
             </form>
@@ -254,12 +284,12 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
 
           {step === "otp" && (
             <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <div className="p-3 bg-[#17212C] border border-[#1E2A37] rounded-lg text-xs text-[#A3B0BD]">
-                We sent a 6-digit verification code to <span className="text-[#E7EDF3] font-medium">{email}</span>.
+              <div className="p-3 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-lg text-xs text-text-secondary">
+                We sent a 6-digit verification code to <span className="text-text-primary font-medium">{email}</span>.
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-[#A3B0BD] mb-1.5">
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">
                   Enter 6-Digit Code
                 </label>
                 <input
@@ -269,7 +299,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                   value={otpToken}
                   onChange={(e) => setOtpToken(e.target.value.trim())}
                   placeholder="123456"
-                  className="w-full text-center tracking-widest text-lg font-mono bg-[#0B1016] border border-[#1E2A37] rounded-lg px-3 py-2 text-[#E7EDF3] focus:outline-none focus:border-[#3FD0B4]"
+                  className="w-full text-center tracking-widest text-lg font-mono bg-white border border-[rgba(26,23,18,0.15)] rounded-lg px-3 py-2 text-text-primary focus:outline-none focus:border-accent"
                 />
               </div>
 
@@ -282,7 +312,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 >
                   Back
                 </Button>
-                <Button type="submit" disabled={loading} className="flex-1 bg-[#3FD0B4] text-[#0B1016] hover:bg-[#3FD0B4]/90">
+                <Button type="submit" disabled={loading} className="flex-1 bg-accent text-surface-dark hover:bg-accent/90">
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
                 </Button>
               </div>
@@ -292,37 +322,37 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
           {step === "manage" && (
             <div className="space-y-5">
               {/* Delivery Toggles */}
-              <div className="p-3 bg-[#17212C] border border-[#1E2A37] rounded-lg space-y-3">
+              <div className="p-3 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-lg space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-medium text-[#E7EDF3] block">Morning Daily Summary</span>
-                    <span className="text-[11px] text-[#A3B0BD]">07:00 IST digest of all active hazard events</span>
+                    <span className="text-xs font-medium text-text-primary block">Morning Daily Summary</span>
+                    <span className="text-[11px] text-text-muted">07:00 IST digest of all active hazard events</span>
                   </div>
                   <input
                     type="checkbox"
                     checked={dailySummary}
                     onChange={(e) => setDailySummary(e.target.checked)}
-                    className="accent-[#3FD0B4] w-4 h-4 rounded"
+                    className="accent-accent w-4 h-4 rounded"
                   />
                 </div>
 
-                <div className="flex items-center justify-between border-t border-[#1E2A37] pt-2.5">
+                <div className="flex items-center justify-between border-t border-[rgba(26,23,18,0.07)] pt-2.5">
                   <div>
-                    <span className="text-xs font-medium text-[#E7EDF3] block">Lifecycle Alert Changes</span>
-                    <span className="text-[11px] text-[#A3B0BD]">Immediate emails when threats upgrade or cancel</span>
+                    <span className="text-xs font-medium text-text-primary block">Lifecycle Alert Changes</span>
+                    <span className="text-[11px] text-text-muted">Immediate emails when threats upgrade or cancel</span>
                   </div>
                   <input
                     type="checkbox"
                     checked={lifecycleEmails}
                     onChange={(e) => setLifecycleEmails(e.target.checked)}
-                    className="accent-[#3FD0B4] w-4 h-4 rounded"
+                    className="accent-accent w-4 h-4 rounded"
                   />
                 </div>
               </div>
 
               {/* Minimum Severity Filter */}
               <div>
-                <label className="block text-xs font-medium text-[#A3B0BD] mb-2">
+                <label className="block text-xs font-medium text-text-secondary mb-2">
                   Minimum Alert Severity
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -333,8 +363,8 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                       onClick={() => setMinSeverity(sev)}
                       className={`px-3 py-2 rounded-lg border text-xs capitalize font-medium transition-all ${
                         minSeverity === sev
-                          ? "bg-[#3FD0B4]/10 border-[#3FD0B4] text-[#3FD0B4]"
-                          : "bg-[#17212C] border-[#1E2A37] text-[#A3B0BD] hover:border-[#70808F]"
+                          ? "bg-[rgba(46,125,107,0.12)] border-accent text-accent"
+                          : "bg-[#F5F2EC] border-[rgba(26,23,18,0.10)] text-text-secondary hover:border-[rgba(26,23,18,0.20)]"
                       }`}
                     >
                       {sev}
@@ -345,7 +375,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
 
               {/* Hazards Selector */}
               <div>
-                <label className="block text-xs font-medium text-[#A3B0BD] mb-2">
+                <label className="block text-xs font-medium text-text-secondary mb-2">
                   Monitored Hazards
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -363,12 +393,12 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                         onClick={() => toggleHazard(h.id)}
                         className={`px-2.5 py-2 rounded-lg border text-xs text-left font-medium transition-all flex items-center justify-between ${
                           checked
-                            ? "bg-[#17212C] border-[#3FD0B4] text-[#E7EDF3]"
-                            : "bg-[#0B1016] border-[#1E2A37] text-[#70808F]"
+                            ? "bg-[#F0EDE7] border-accent text-text-primary"
+                            : "bg-white border-[rgba(26,23,18,0.10)] text-text-muted"
                         }`}
                       >
                         <span>{h.label}</span>
-                        {checked && <CheckCircle2 className="w-3.5 h-3.5 text-[#3FD0B4]" />}
+                        {checked && <CheckCircle2 className="w-3.5 h-3.5 text-accent" />}
                       </button>
                     );
                   })}
@@ -378,7 +408,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               {/* Locations Selector */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-medium text-[#A3B0BD]">
+                  <label className="text-xs font-medium text-text-secondary">
                     Monitored Locations ({selectedLocations.length} selected)
                   </label>
                   <button
@@ -388,12 +418,12 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                         selectedLocations.length === locations.length ? [] : locations.map((l, i) => l.id ?? (i + 1))
                       )
                     }
-                    className="text-[11px] text-[#3FD0B4] hover:underline"
+                    className="text-[11px] text-accent hover:underline"
                   >
                     {selectedLocations.length === locations.length ? "Deselect All" : "Select All 40"}
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-2 bg-[#0B1016] border border-[#1E2A37] rounded-lg">
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-2 bg-white border border-[rgba(26,23,18,0.10)] rounded-lg">
                   {locations.map((loc, idx) => {
                     const locId = loc.id ?? (idx + 1);
                     const isSelected = selectedLocations.includes(locId);
@@ -404,12 +434,12 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                         onClick={() => toggleLocation(locId)}
                         className={`px-2 py-1 rounded text-left text-xs transition-colors flex items-center justify-between ${
                           isSelected
-                            ? "bg-[#3FD0B4]/15 text-[#3FD0B4] font-medium"
-                            : "text-[#A3B0BD] hover:bg-white/5"
+                            ? "bg-[rgba(46,125,107,0.12)] text-accent font-medium"
+                            : "text-text-secondary hover:bg-[rgba(26,23,18,0.04)]"
                         }`}
                       >
                         <span className="truncate">{loc.name}</span>
-                        {isSelected && <CheckCircle2 className="w-3 h-3 text-[#3FD0B4] shrink-0 ml-1" />}
+                        {isSelected && <CheckCircle2 className="w-3 h-3 text-accent shrink-0 ml-1" />}
                       </button>
                     );
                   })}
@@ -421,13 +451,13 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
 
         {/* Footer */}
         {step === "manage" && (
-          <div className="flex items-center justify-between px-6 py-4 border-t border-[#1E2A37] bg-[#17212C]">
+          <div className="flex items-center justify-between px-6 py-4 border-t border-[rgba(26,23,18,0.07)] bg-[#F5F2EC]">
             <Button
               variant="outline"
               size="sm"
               onClick={handleUnsubscribe}
               disabled={loading}
-              className="text-red-400 border-red-500/30 hover:bg-red-500/10 text-xs"
+              className="text-red-500 border-red-500/30 hover:bg-red-500/10 text-xs"
             >
               <Trash2 className="w-3.5 h-3.5 mr-1" />
               Unsubscribe
@@ -440,7 +470,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 size="sm"
                 onClick={handleSavePreferences}
                 disabled={loading}
-                className="bg-[#3FD0B4] text-[#0B1016] hover:bg-[#3FD0B4]/90 font-medium"
+                className="bg-accent text-surface-dark hover:bg-accent/90 font-medium"
               >
                 {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Preferences"}
               </Button>

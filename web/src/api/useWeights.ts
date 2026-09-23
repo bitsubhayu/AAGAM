@@ -14,7 +14,7 @@ export function useWeights(params: UseWeightsParams = {}) {
   if (params.variable) queryParams.set("variable", params.variable);
   if (params.region && params.region !== "ALL") queryParams.set("region", params.region);
   if (params.season && params.season !== "all") queryParams.set("season", params.season);
-  if (params.leadDays) queryParams.set("lead_days", params.leadDays.toString());
+  if (params.leadDays !== undefined) queryParams.set("lead_days", params.leadDays.toString());
 
   const qs = queryParams.toString();
   const endpoint = `/weights${qs ? `?${qs}` : ""}`;

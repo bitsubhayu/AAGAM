@@ -47,7 +47,7 @@ export const SkillPage: React.FC = () => {
   return (
     <div className="space-y-4 font-sans">
       {/* Top Filter & Metadata Bar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#161b22] p-3 rounded-lg border border-border">
+      <div className="flex items-center justify-between gap-3 flex-wrap bg-surface p-3 rounded-lg border border-[rgba(26,23,18,0.10)]">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-emerald-400" />
@@ -59,7 +59,7 @@ export const SkillPage: React.FC = () => {
             <select
               value={selectedRegion}
               onChange={(e) => setSelectedRegion(e.target.value)}
-              className="px-2.5 py-1 bg-[#21262d] border border-border rounded text-xs text-text-primary outline-none"
+              className="px-2.5 py-1 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded text-xs text-text-primary outline-none"
             >
               <option value="ALL">All India (40 Points)</option>
               <option value="NW">North-West (NW)</option>
@@ -72,7 +72,7 @@ export const SkillPage: React.FC = () => {
 
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-text-muted text-[11px]">Metric:</span>
-            <div className="flex items-center bg-[#21262d] p-0.5 rounded border border-border">
+            <div className="flex items-center bg-[#F0EDE7] p-0.5 rounded border border-[rgba(26,23,18,0.10)]">
               {(["mae", "rmse", "bias"] as const).map((m) => (
                 <button
                   key={m}
@@ -170,7 +170,7 @@ export const SkillPage: React.FC = () => {
               </CardDescription>
             </div>
 
-            <div className="flex items-center gap-1 bg-[#21262d] p-0.5 rounded border border-border text-xs">
+            <div className="flex items-center gap-1 bg-[#F0EDE7] p-0.5 rounded border border-[rgba(26,23,18,0.10)] text-xs">
               {[1, 2, 3, 5, 7].map((lead) => (
                 <button
                   key={lead}
@@ -202,7 +202,7 @@ export const SkillPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left border-collapse font-mono">
               <thead>
-                <tr className="border-b border-border bg-[#161b22] text-text-muted">
+                <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted">
                   <th className="p-2 font-sans">Model</th>
                   <th className="p-2">MAE</th>
                   <th className="p-2">RMSE</th>

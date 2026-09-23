@@ -8,6 +8,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { FreshnessBanner } from "@/components/layout/FreshnessBanner";
 import { WakingUpBanner } from "@/components/layout/WakingUpBanner";
 import { AssistantDrawer } from "@/components/assistant/AssistantDrawer";
+import { useAuthStore } from "@/auth/authStore";
+import { supabase } from "@/auth/supabase";
 
 // Pages
 import { OverviewPage } from "@/pages/OverviewPage";
@@ -48,6 +50,24 @@ function DashboardContent() {
   const [publicEventId, setPublicEventId] = useState<number | null>(parsePublicEventId);
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        useAuthStore.getState().setSession(session);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        useAuthStore.getState().setSession(session);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
     const handlePopState = () => {
       setPublicEventId(parsePublicEventId());
     };
@@ -64,6 +84,7 @@ function DashboardContent() {
   }, [healthLoading]);
 
   const isWakingUp = healthLoading && secondsElapsed >= 4;
+  const { role } = useAuthStore();
 
   if (publicEventId !== null) {
     return (
@@ -92,6 +113,9 @@ function DashboardContent() {
       case "alerts":
         return <ExtremeWeatherPage />;
       case "pipeline":
+        if (role === "public") {
+          return <OverviewPage />;
+        }
         return <PipelineHealthPage />;
       case "export":
         return <DataExportPage />;
@@ -103,7 +127,7 @@ function DashboardContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-text-primary flex flex-col font-sans select-text">
+    <div className="min-h-screen bg-canvas text-text-primary flex flex-col font-sans select-text">
       {/* Top Navigation & Status */}
       <TopHeader />
 
@@ -116,7 +140,7 @@ function DashboardContent() {
         <Sidebar />
 
         {/* Main Viewport Container */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-[#0d1117]">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-canvas">
           <div className="max-w-7xl mx-auto">{renderActiveTab()}</div>
         </main>
       </div>
@@ -124,17 +148,19 @@ function DashboardContent() {
       {/* Slide-out Assistant Drawer */}
       <AssistantDrawer />
 
-      {/* Rich Sonner Notifications */}
+      {/* Sonner Notifications — warm light theme */}
       <Toaster
-        theme="dark"
+        theme="light"
         position="bottom-right"
         toastOptions={{
           style: {
-            background: "#161b22",
-            border: "1px solid #30363d",
-            color: "#c9d1d9",
-            fontFamily: "'IBM Plex Sans', sans-serif",
+            background: "#FFFFFF",
+            border: "1px solid rgba(26,23,18,0.10)",
+            color: "#1A1712",
+            fontFamily: "'Instrument Sans', system-ui, sans-serif",
             fontSize: "12px",
+            borderRadius: "14px",
+            boxShadow: "0 1px 2px rgba(26,23,18,0.04), 0 12px 24px -8px rgba(26,23,18,0.10)",
           },
         }}
       />

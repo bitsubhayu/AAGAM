@@ -21,6 +21,7 @@ import { IndiaForecastMap } from "@/components/map/IndiaForecastMap";
 import { AlertCard } from "@/components/alerts/AlertCard";
 import { AlertEventDetailDrawer } from "@/components/alerts/AlertEventDetailDrawer";
 import { GetAlertsDialog } from "@/components/alerts/GetAlertsDialog";
+import { TypewriterGreeting } from "@/components/ui/TypewriterGreeting";
 import { fetchMySubscription } from "@/api/client";
 import type { Subscription } from "@/api/types";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -102,7 +103,7 @@ export const OverviewPage: React.FC = () => {
   let skillGainText = skillLoading ? "..." : "—";
   if (blendScore?.mae && baselineScore?.mae && baselineScore.mae > 0) {
     const gain = ((baselineScore.mae - blendScore.mae) / baselineScore.mae) * 100;
-    skillGainText = `${gain >= 0 ? "+" : ""}${gain.toFixed(1)}% vs Equal-Mean`;
+    skillGainText = `${gain >= 0 ? "+" : ""}${gain.toFixed(1)}%`;
   } else if (!skillLoading && (!blendScore?.mae || !baselineScore?.mae)) {
     skillGainText = "N/A";
   }
@@ -123,11 +124,11 @@ export const OverviewPage: React.FC = () => {
       ? singleScores.reduce((prev, curr) => (prev.mae! < curr.mae! ? prev : curr))
       : null;
 
-  const modelLabels: Record<string, { name: string; res: string; colorClass: string }> = {
-    gfs: { name: "GFS", res: "0.25°", colorClass: "text-model-gfs" },
-    ecmwf_ifs: { name: "ECMWF IFS", res: "0.25°", colorClass: "text-model-ifs" },
-    icon: { name: "DWD ICON", res: "0.125°", colorClass: "text-model-icon" },
-    aifs: { name: "ECMWF AIFS", res: "0.25°", colorClass: "text-model-aifs" },
+  const modelLabels: Record<string, { name: string; res: string; badgeVariant: "gfs" | "ifs" | "icon" | "aifs" }> = {
+    gfs: { name: "GFS", res: "0.25°", badgeVariant: "gfs" },
+    ecmwf_ifs: { name: "ECMWF IFS", res: "0.25°", badgeVariant: "ifs" },
+    icon: { name: "DWD ICON", res: "0.125°", badgeVariant: "icon" },
+    aifs: { name: "ECMWF AIFS", res: "0.25°", badgeVariant: "aifs" },
   };
 
   const topModelInfo =
@@ -136,23 +137,17 @@ export const OverviewPage: React.FC = () => {
       : {
           name: bestSingle?.model?.toUpperCase() || (skillLoading ? "..." : "—"),
           res: "NWP",
-          colorClass: "text-text-primary",
+          badgeVariant: "neutral" as const,
         };
 
   const getEmptyStateMessage = () => {
     switch (selectedWindow) {
-      case "upcoming_2d":
-        return "No alerts in the next 2 days.";
-      case "upcoming_3d":
-        return "No alerts in the next 3 days.";
-      case "upcoming_7d":
-        return "No alerts in the next 7 days.";
-      case "past_24h":
-        return "No alerts recorded in the last 24 hours.";
-      case "past_7d":
-        return "No alerts recorded in the last 7 days.";
-      default:
-        return "No alerts matching current filters.";
+      case "upcoming_2d": return "No alerts in the next 2 days.";
+      case "upcoming_3d": return "No alerts in the next 3 days.";
+      case "upcoming_7d": return "No alerts in the next 7 days.";
+      case "past_24h": return "No alerts recorded in the last 24 hours.";
+      case "past_7d": return "No alerts recorded in the last 7 days.";
+      default: return "No alerts matching current filters.";
     }
   };
 
@@ -161,115 +156,172 @@ export const OverviewPage: React.FC = () => {
     setDrawerOpen(true);
   };
 
+  const selectClass =
+    "bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-full px-3 py-1.5 text-xs text-text-primary outline-none focus:ring-2 focus:ring-accent/30 transition-colors hover:bg-white cursor-pointer";
+
   return (
-    <div className="space-y-4 font-sans">
-      {/* KPI Tiles Row (PRD §10.4 FR-UI-1) */}
+    <div className="space-y-5 font-sans animate-fade-in">
+      {/* Typewriter Greeting + Date Stamp */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-1">
+          <TypewriterGreeting />
+          <p className="text-sm text-text-muted">
+            {new Date().toLocaleDateString("en-IN", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              timeZone: "Asia/Kolkata",
+            })}{" "}
+            · Last blended{" "}
+            {meta?.last_run?.started_at
+              ? new Date(meta.last_run.started_at).toLocaleTimeString("en-IN", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  timeZone: "Asia/Kolkata",
+                  hour12: false,
+                }) + " IST"
+              : "—"}
+            {meta?.active_model_version?.id ? ` · model v${meta.active_model_version.id}` : ""}
+          </p>
+        </div>
+        {/* Primary CTA — Get Alerts pill */}
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={() => setIsGetAlertsOpen(true)}
+          className="shrink-0"
+        >
+          <Bell className="w-4 h-4" />
+          <span>{userEmail ? "Your Alerts" : "Get Alerts"}</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+
+      {/* KPI Tiles — Bento Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* KPI 1: Active Alerts */}
-        <Card compact className="border-l-4 border-l-hazard-alert">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">Weather Alerts Window</span>
-            <AlertTriangle className="w-4 h-4 text-hazard-alert" />
+        <Card compact>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium text-text-muted">Weather Alerts</span>
+            <div className="p-1.5 bg-accent-soft rounded-full">
+              <AlertTriangle className="w-3.5 h-3.5 text-accent" />
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-text-primary">
-              {alertsLoading ? "..." : activeAlertsCount}
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold font-mono text-text-primary tabular-nums">
+              {alertsLoading ? "…" : activeAlertsCount}
             </span>
-            <span className="text-xs text-text-muted">flagged points</span>
+            <span className="text-xs text-text-muted">active</span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className="text-text-muted capitalize">{selectedWindow.replace("_", " ")}</span>
+          <div className="mt-3 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#FDF3DC] text-[#7A5C00] font-mono font-semibold">
+                {advisoryCount}A
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#FEE9D6] text-[#7A3300] font-mono font-semibold">
+                {watchCount}W
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent font-mono font-bold">
+                {alertCount}!
+              </span>
+            </div>
             <button
               onClick={() => setActiveTab("alerts")}
-              className="text-brand-blue hover:underline font-medium"
+              className="text-[11px] text-accent hover:underline font-semibold"
             >
-              View all &rarr;
+              View all →
             </button>
           </div>
         </Card>
 
-        {/* KPI 2: Dominant / Best Model */}
-        <Card compact className="border-l-4 border-l-brand-blue">
-          <div className="flex items-center justify-between">
+        {/* KPI 2: Top Single Model */}
+        <Card compact>
+          <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-medium text-text-muted">Top Single Model</span>
-            <Award className="w-4 h-4 text-brand-blue" />
+            <div className="p-1.5 bg-[#EBF2FD] rounded-full">
+              <Award className="w-3.5 h-3.5 text-brand-blue" />
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold font-mono ${topModelInfo.colorClass}`}>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-text-primary tabular-nums">
               {topModelInfo.name}
             </span>
-            <span className="text-xs text-text-muted">{topModelInfo.res}</span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className="text-text-muted">D+{selectedLeadDays} ({varMeta?.shortUnit || ""}) lead error</span>
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[11px] text-text-muted">D+{selectedLeadDays} {varMeta?.shortUnit || ""}</span>
             <button
               onClick={() => setActiveTab("weights")}
-              className="text-brand-blue hover:underline font-medium"
+              className="text-[11px] text-brand-blue hover:underline font-semibold"
             >
-              Weights &rarr;
+              Weights →
             </button>
           </div>
         </Card>
 
-        {/* KPI 3: Ensemble Skill Gain */}
-        <Card compact className="border-l-4 border-l-emerald-500">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted">Blend Performance</span>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+        {/* KPI 3: Blend Skill */}
+        <Card compact>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium text-text-muted">Blend vs Equal-Mean</span>
+            <div className="p-1.5 bg-[#E4F5EE] rounded-full">
+              <TrendingUp className="w-3.5 h-3.5 text-hazard-normal" />
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-emerald-400">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-hazard-normal tabular-nums">
               {skillGainText}
             </span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className="text-text-muted">Held-out test block</span>
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[11px] text-text-muted">Held-out test block</span>
             <button
               onClick={() => setActiveTab("skill")}
-              className="text-brand-blue hover:underline font-medium"
+              className="text-[11px] text-hazard-normal hover:underline font-semibold"
             >
-              Skill Curves &rarr;
+              Skill Curves →
             </button>
           </div>
         </Card>
 
-        {/* KPI 4: Ingestion / System Health */}
-        <Card compact className="border-l-4 border-l-emerald-400">
-          <div className="flex items-center justify-between">
+        {/* KPI 4: Ingest Status */}
+        <Card compact>
+          <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-medium text-text-muted">Ingest Status</span>
-            <Server className="w-4 h-4 text-emerald-400" />
+            <div className="p-1.5 bg-[#E4F5EE] rounded-full">
+              <Server className="w-3.5 h-3.5 text-hazard-normal" />
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-emerald-400">
-              {metaLoading ? "..." : meta?.last_run?.status?.toUpperCase() || "OK"}
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-hazard-normal tabular-nums">
+              {metaLoading ? "…" : meta?.last_run?.status?.toUpperCase() || "OK"}
             </span>
             <span className="text-xs text-text-muted font-mono">
-              {meta?.models ? `${meta.models.length}/${meta.models.length} sources` : "4/4 sources"}
+              {meta?.models ? `${meta.models.length}/${meta.models.length}` : "4/4"}
             </span>
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px]">
-            <span className="text-text-muted font-mono">
-              v{meta?.active_model_version?.id ? `${meta.active_model_version.id}` : "prod"}
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[11px] text-text-muted font-mono">
+              v{meta?.active_model_version?.id ?? "prod"}
             </span>
             <button
               onClick={() => setActiveTab("pipeline")}
-              className="text-brand-blue hover:underline font-medium"
+              className="text-[11px] text-hazard-normal hover:underline font-semibold"
             >
-              Health &rarr;
+              Health →
             </button>
           </div>
         </Card>
       </div>
 
-      {/* Main Content Grid: Map (2 Cols) + Home Alerts Section (1 Col) */}
+      {/* Main Content: Map (2 cols) + Alerts (1 col) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        {/* Left 2 Cols: Interactive Map with Lead & Variable Controls */}
+        {/* Left 2 Cols: Map */}
         <div className="lg:col-span-2 space-y-4">
-          <Card className="p-4">
-            <CardHeader className="pb-3 border-b border-border">
+          <Card className="p-5">
+            <CardHeader className="pb-3 mb-3">
               <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-brand-blue" />
+                <CardTitle className="text-base">
+                  <MapPin className="w-4 h-4 text-accent" />
                   <span>Operational Spatial Forecast Grid</span>
                 </CardTitle>
                 <CardDescription>
@@ -282,123 +334,109 @@ export const OverviewPage: React.FC = () => {
                 onClick={() => setActiveTab("forecast")}
               >
                 <span>Forecast Explorer</span>
-                <ArrowRight className="w-3 h-3 ml-1" />
+                <ArrowRight className="w-3 h-3" />
               </Button>
             </CardHeader>
-
             <IndiaForecastMap />
           </Card>
         </div>
 
-        {/* Right 1 Col: Upgraded Public Home Alerts Section (PRD §10.4 FR-UI-1) */}
+        {/* Right 1 Col: Alerts */}
         <div className="space-y-4">
-          <Card className="p-4">
-            <CardHeader className="pb-2 mb-2">
+          <Card className="p-5">
+            <CardHeader className="pb-3 mb-3">
               <div>
                 <CardTitle>
-                  <AlertTriangle className="w-4 h-4 text-brand-orange" />
+                  <AlertTriangle className="w-4 h-4 text-accent" />
                   <span>Weather Alerts & Events</span>
                 </CardTitle>
                 <CardDescription>
                   Public hazard guidance calibrated to IMD criteria
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setIsGetAlertsOpen(true)}
-                  className="text-xs h-7 gap-1 border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
-                >
-                  <Bell className="w-3 h-3" />
-                  <span>{userEmail ? "Your Alerts" : "Get Alerts"}</span>
-                </Button>
-                <Badge variant="watch">{activeAlertsCount} TOTAL</Badge>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant="alert">{activeAlertsCount} TOTAL</Badge>
               </div>
             </CardHeader>
 
-            {/* Personalized Subscriber Greeting (PRD §10.4) */}
+            {/* Subscriber greeting */}
             {userEmail && mySubscription?.active && (
-              <div className="mx-4 mt-2 p-2.5 rounded-lg bg-[#3FD0B4]/10 border border-[#3FD0B4]/30 text-xs text-[#E7EDF3] flex items-center justify-between">
+              <div className="mb-3 p-3 rounded-[14px] bg-[#E8F5EF] border border-[#3D9970]/20 text-xs text-text-primary flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Bell className="w-3.5 h-3.5 text-[#3FD0B4]" />
+                  <Bell className="w-3.5 h-3.5 text-hazard-normal" />
                   <span>
-                    Hi, <strong className="font-semibold text-[#3FD0B4]">{userEmail.split("@")[0]}</strong> &mdash; showing alerts for your {mySubscription.location_ids.length} saved location(s).
+                    Hi, <strong className="font-semibold text-hazard-normal">{userEmail.split("@")[0]}</strong>{" "}
+                    — alerts for your {mySubscription.location_ids.length} saved location(s).
                   </span>
                 </div>
                 <button
                   onClick={() => setIsGetAlertsOpen(true)}
-                  className="text-[11px] text-[#3FD0B4] underline hover:text-[#3FD0B4]/80 font-medium ml-2 shrink-0"
+                  className="text-[11px] text-hazard-normal underline hover:text-hazard-normal/80 font-semibold ml-2 shrink-0"
                 >
                   Manage
                 </button>
               </div>
             )}
 
-            {/* Upcoming / Past Window Toggle */}
-            <div className="space-y-2 pt-1 border-t border-border/60">
+            {/* Window & Severity Pills */}
+            <div className="space-y-2.5">
               <div className="flex items-center justify-between text-[11px] text-text-muted">
                 <span className="flex items-center gap-1 font-medium">
-                  <Clock className="w-3 h-3 text-brand-blue" />
+                  <Clock className="w-3 h-3 text-accent" />
                   <span>Window:</span>
                 </span>
                 <div className="flex items-center gap-1">
-                  <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded-full bg-[#FDF3DC] text-[#7A5C00] text-[10px] font-mono font-semibold">
                     {advisoryCount} Adv
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/30 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded-full bg-[#FEE9D6] text-[#7A3300] text-[10px] font-mono font-semibold">
                     {watchCount} Wat
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/30 text-[10px] font-mono font-bold">
+                  <span className="px-1.5 py-0.5 rounded-full bg-accent-soft text-accent text-[10px] font-mono font-bold">
                     {alertCount} Alt
                   </span>
                 </div>
               </div>
 
-              {/* Toggle Buttons */}
-              <div className="grid grid-cols-2 gap-1.5 bg-[#161b22] p-1 rounded border border-border text-xs">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-text-muted uppercase font-mono px-1">Upcoming:</span>
-                  {(["upcoming_2d", "upcoming_3d", "upcoming_7d"] as const).map((w) => (
-                    <button
-                      key={w}
-                      onClick={() => setSelectedWindow(w)}
-                      className={`flex-1 py-1 px-1 rounded text-[11px] font-medium transition-colors ${
-                        selectedWindow === w
-                          ? "bg-brand-blue text-white"
-                          : "text-text-muted hover:text-text-secondary bg-[#21262d]"
-                      }`}
-                      title={w === "upcoming_7d" ? "Next 7 days (Default)" : undefined}
-                    >
-                      {w === "upcoming_2d" ? "2d" : w === "upcoming_3d" ? "3d" : "7d (Def)"}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-1 border-l border-border/60 pl-1.5">
-                  <span className="text-[10px] text-text-muted uppercase font-mono px-1">Past:</span>
-                  {(["past_24h", "past_7d"] as const).map((w) => (
-                    <button
-                      key={w}
-                      onClick={() => setSelectedWindow(w)}
-                      className={`flex-1 py-1 px-1 rounded text-[11px] font-medium transition-colors ${
-                        selectedWindow === w
-                          ? "bg-brand-blue text-white"
-                          : "text-text-muted hover:text-text-secondary bg-[#21262d]"
-                      }`}
-                    >
-                      {w === "past_24h" ? "24h" : "7d"}
-                    </button>
-                  ))}
-                </div>
+              {/* Window toggle pills */}
+              <div className="flex flex-wrap gap-1.5">
+                <span className="text-[10px] text-text-muted uppercase font-semibold self-center px-1">Upcoming:</span>
+                {(["upcoming_2d", "upcoming_3d", "upcoming_7d"] as const).map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setSelectedWindow(w)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 ${
+                      selectedWindow === w
+                        ? "bg-accent text-white shadow-pill"
+                        : "bg-[#F0EDE7] text-text-muted hover:text-text-primary hover:bg-white"
+                    }`}
+                    title={w === "upcoming_7d" ? "Next 7 days (Default)" : undefined}
+                  >
+                    {w === "upcoming_2d" ? "2d" : w === "upcoming_3d" ? "3d" : "7d"}
+                  </button>
+                ))}
+                <span className="text-[10px] text-text-muted uppercase font-semibold self-center px-1 ml-1">Past:</span>
+                {(["past_24h", "past_7d"] as const).map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setSelectedWindow(w)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-150 ${
+                      selectedWindow === w
+                        ? "bg-accent text-white shadow-pill"
+                        : "bg-[#F0EDE7] text-text-muted hover:text-text-primary hover:bg-white"
+                    }`}
+                  >
+                    {w === "past_24h" ? "24h" : "7d"}
+                  </button>
+                ))}
               </div>
 
               {/* Filters Row */}
-              <div className="grid grid-cols-3 gap-1.5 text-[11px] pt-1">
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
                 <select
                   value={hazardFilter}
                   onChange={(e) => setHazardFilter(e.target.value)}
-                  className="bg-[#21262d] border border-border rounded px-1.5 py-1 text-text-primary outline-none"
+                  className={selectClass}
                 >
                   <option value="ALL">All Hazards</option>
                   <option value="heavy_rain">Rain</option>
@@ -410,7 +448,7 @@ export const OverviewPage: React.FC = () => {
                 <select
                   value={regionFilter}
                   onChange={(e) => setRegionFilter(e.target.value)}
-                  className="bg-[#21262d] border border-border rounded px-1.5 py-1 text-text-primary outline-none"
+                  className={selectClass}
                 >
                   <option value="ALL">All Regions</option>
                   <option value="NORTH">North</option>
@@ -423,7 +461,7 @@ export const OverviewPage: React.FC = () => {
                 <select
                   value={minSeverityFilter}
                   onChange={(e) => setMinSeverityFilter(e.target.value)}
-                  className="bg-[#21262d] border border-border rounded px-1.5 py-1 text-text-primary outline-none"
+                  className={selectClass}
                 >
                   <option value="ALL">All Levels</option>
                   <option value="advisory">Advisory+</option>
@@ -433,8 +471,8 @@ export const OverviewPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Alerts List / Calm Empty State */}
-            <div className="space-y-2.5 mt-3 max-h-[500px] overflow-y-auto pr-0.5">
+            {/* Alerts List / Empty State */}
+            <div className="space-y-2 mt-3 max-h-[500px] overflow-y-auto pr-0.5">
               {alertsLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-16 w-full" />
@@ -442,9 +480,9 @@ export const OverviewPage: React.FC = () => {
                   <Skeleton className="h-16 w-full" />
                 </div>
               ) : rawAlerts.length === 0 ? (
-                <div className="p-6 bg-[#21262d] rounded-lg text-center text-xs text-text-muted space-y-1">
-                  <ShieldCheck className="w-6 h-6 text-emerald-400 mx-auto mb-1.5" />
-                  <div className="font-medium text-text-secondary">{getEmptyStateMessage()}</div>
+                <div className="p-6 bg-[#F5F2EC] rounded-[16px] text-center text-xs text-text-muted space-y-1">
+                  <ShieldCheck className="w-6 h-6 text-hazard-normal mx-auto mb-1.5" />
+                  <div className="font-semibold text-text-secondary">{getEmptyStateMessage()}</div>
                   <div className="text-[11px]">All 40 synoptic stations currently within normal thresholds.</div>
                 </div>
               ) : (
@@ -464,10 +502,10 @@ export const OverviewPage: React.FC = () => {
                   variant="ghost"
                   size="sm"
                   onClick={() => setActiveTab("alerts")}
-                  className="w-full text-xs text-brand-blue"
+                  className="w-full text-xs text-accent"
                 >
                   <span>View full history in Extreme Weather Center</span>
-                  <ArrowRight className="w-3 h-3 ml-1" />
+                  <ArrowRight className="w-3 h-3" />
                 </Button>
               </div>
             )}
@@ -475,7 +513,7 @@ export const OverviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Phase 10 Alert Event Detail Drawer */}
+      {/* Alert Event Detail Drawer */}
       <AlertEventDetailDrawer
         eventId={selectedEventId}
         isOpen={drawerOpen}
@@ -485,7 +523,7 @@ export const OverviewPage: React.FC = () => {
         }}
       />
 
-      {/* Phase 11 Get Alerts / Subscription Dialog */}
+      {/* Get Alerts / Subscription Dialog */}
       <GetAlertsDialog
         isOpen={isGetAlertsOpen}
         onClose={() => setIsGetAlertsOpen(false)}

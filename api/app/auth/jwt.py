@@ -45,6 +45,34 @@ def verify_supabase_jwt(token: str) -> Dict[str, Any]:
     Raises:
         jwt.PyJWTError: If token is expired, has an invalid signature, or is malformed.
     """
+    # 0. Local Demo authentication (strictly when ENABLE_LOCAL_DEMO_AUTH is true and token is a demo token)
+    if settings.ENABLE_LOCAL_DEMO_AUTH:
+        # Match direct demo tokens
+        if token in ("demo-public-token", "demo-token-public"):
+            return {
+                "sub": "00000000-0000-0000-0000-000000000001",
+                "email": "public@aagam.gov.in",
+                "role": "authenticated",
+                "app_metadata": {"role": "public"},
+                "user_metadata": {"role": "public"},
+            }
+        elif token in ("demo-forecaster-token", "demo-token-forecaster"):
+            return {
+                "sub": "00000000-0000-0000-0000-000000000002",
+                "email": "forecaster@aagam.gov.in",
+                "role": "authenticated",
+                "app_metadata": {"role": "forecaster"},
+                "user_metadata": {"role": "forecaster"},
+            }
+        elif token in ("demo-coordinator-token", "demo-token-coordinator"):
+            return {
+                "sub": "00000000-0000-0000-0000-000000000003",
+                "email": "coordinator@aagam.gov.in",
+                "role": "authenticated",
+                "app_metadata": {"role": "coordinator"},
+                "user_metadata": {"role": "coordinator"},
+            }
+
     # 1. Try symmetric verification if SUPABASE_JWT_SECRET is explicitly configured
     if settings.SUPABASE_JWT_SECRET:
         try:

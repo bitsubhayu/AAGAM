@@ -1,25 +1,18 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   Server,
-  RotateCcw,
   AlertCircle,
   Activity,
 } from "lucide-react";
 import { usePipelineStatus } from "@/api/usePipeline";
-import { useAuthStore } from "@/auth/authStore";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PipelineRunsTable } from "@/components/pipeline/PipelineRunsTable";
-import { ModelActivationModal } from "@/components/pipeline/ModelActivationModal";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export const PipelineHealthPage: React.FC = () => {
-  const { role } = useAuthStore();
   const { data: pipeline, isLoading, error } = usePipelineStatus();
-  const [activationModalOpen, setActivationModalOpen] = useState(false);
 
-  const isAdmin = role === "admin";
   const activeVer = pipeline?.active_model_version;
   const runs = pipeline?.last_runs || [];
 
@@ -27,12 +20,12 @@ export const PipelineHealthPage: React.FC = () => {
   const totalEstCalls = runs.reduce((acc, r) => acc + (r.api_calls_est ?? 0), 0);
 
   return (
-    <div className="space-y-4 font-sans">
+    <div className="space-y-4 font-sans animate-fade-in">
       {/* Top Header Card */}
-      <div className="bg-[#161b22] p-4 rounded-lg border border-border flex items-center justify-between flex-wrap gap-3">
+      <div className="bg-surface p-4 rounded-card shadow-card border border-[rgba(26,23,18,0.07)] flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-500/10 border border-purple-500/30 rounded-lg text-purple-400">
-            <Server className="w-5 h-5" />
+          <div className="p-2 bg-[#F0EBFD] rounded-full">
+            <Server className="w-5 h-5 text-[#8B6FD9]" />
           </div>
           <div>
             <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
@@ -44,31 +37,17 @@ export const PipelineHealthPage: React.FC = () => {
             </p>
           </div>
         </div>
-
-        {/* Admin Rollback Action */}
-        <div>
-          <Button
-            variant={isAdmin ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => setActivationModalOpen(true)}
-            disabled={!isAdmin}
-            title={isAdmin ? "Activate / Rollback model" : "Admin role required"}
-          >
-            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-            <span>{isAdmin ? "Activate / Rollback Model" : "Admin Only (Rollback)"}</span>
-          </Button>
-        </div>
       </div>
 
       {/* Telemetry KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Card compact>
           <span className="text-[11px] font-medium text-text-muted">Active Model Version</span>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-xl font-bold font-mono text-brand-blue">
-              {isLoading ? "..." : activeVer?.id ? `v${activeVer.id}` : "v1"}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl font-bold font-mono text-brand-blue tabular-nums">
+              {isLoading ? "…" : activeVer?.id ? `v${activeVer.id}` : "v1"}
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono">REGULARIZED</span>
+            <span className="text-[10px] text-hazard-normal font-mono">REGULARIZED</span>
           </div>
           <p className="text-[10px] text-text-muted mt-1 truncate font-mono">
             {activeVer?.storage_path || "Active production weights"}
@@ -77,8 +56,8 @@ export const PipelineHealthPage: React.FC = () => {
 
         <Card compact>
           <span className="text-[11px] font-medium text-text-muted">Pipeline Success Rate</span>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-xl font-bold font-mono text-emerald-400">
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl font-bold font-mono text-hazard-normal tabular-nums">
               {runs.length > 0 ? `${Math.round((successfulRuns / runs.length) * 100)}%` : "—"}
             </span>
             <span className="text-[10px] text-text-muted">
@@ -146,13 +125,6 @@ export const PipelineHealthPage: React.FC = () => {
           <PipelineRunsTable runs={runs} />
         )}
       </Card>
-
-      {/* Admin Activation Modal */}
-      <ModelActivationModal
-        isOpen={activationModalOpen}
-        onClose={() => setActivationModalOpen(false)}
-        currentActiveVersionId={activeVer?.id}
-      />
     </div>
   );
 };

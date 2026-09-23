@@ -132,3 +132,55 @@ export async function unsubscribeMySubscription(): Promise<UnsubscribeResponse> 
   });
 }
 
+export async function requestForecasterOtp(
+  name: string,
+  institution: string,
+  email: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>("/auth/forecaster/otp/request", {
+    method: "POST",
+    body: JSON.stringify({ name, institution, email }),
+  });
+}
+
+export async function verifyForecasterOtp(
+  email: string,
+  token: string
+): Promise<OtpVerifyResponse> {
+  const resp = await apiFetch<OtpVerifyResponse>("/auth/forecaster/otp/verify", {
+    method: "POST",
+    body: JSON.stringify({ email, token }),
+  });
+  if (resp.access_token) {
+    localStorage.setItem("aagam_auth_token", resp.access_token);
+    if (resp.user?.email) {
+      localStorage.setItem("aagam_user_email", resp.user.email);
+    }
+  }
+  return resp;
+}
+
+export interface ForecasterItem {
+  id: string;
+  email?: string;
+  name?: string;
+  org?: string;
+  role: string;
+}
+
+export async function fetchForecasters(): Promise<ForecasterItem[]> {
+  const resp = await apiFetch<{ forecasters: ForecasterItem[] }>("/auth/forecasters");
+  return resp.forecasters || [];
+}
+
+export async function promoteCoordinator(
+  userId: string
+): Promise<{ status: string; message: string; user_id: string; role: string }> {
+  return apiFetch<{ status: string; message: string; user_id: string; role: string }>(
+    `/auth/forecasters/${userId}/promote-coordinator`,
+    {
+      method: "POST",
+    }
+  );
+}
+

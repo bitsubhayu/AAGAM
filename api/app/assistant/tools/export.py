@@ -23,11 +23,17 @@ from core.config import settings
 
 logger = logging.getLogger("aagam.assistant.tools.export")
 
-EXPORT_SECRET = settings.SUPABASE_JWT_SECRET or "aagam_internal_export_signing_key_2026"
+def get_export_secret() -> str:
+    """Returns configured export signing secret from environment or raises ValueError."""
+    secret = settings.EXPORT_SIGNING_SECRET or settings.SUPABASE_JWT_SECRET
+    if not secret:
+        raise ValueError("Export signing secret is not configured (set EXPORT_SIGNING_SECRET or SUPABASE_JWT_SECRET in environment).")
+    return secret
 
 
 def create_signed_export_token(dataset: str, format_str: str, expires_in_seconds: int = 600) -> str:
     """Generates an HMAC-signed token expiring in expires_in_seconds (~10 minutes)."""
+    secret = get_export_secret()
     expires_at = int(time.time()) + expires_in_seconds
     payload = {
         "dataset": dataset,
@@ -38,7 +44,7 @@ def create_signed_export_token(dataset: str, format_str: str, expires_in_seconds
     payload_b64 = base64.urlsafe_b64encode(raw_json.encode("utf-8")).decode("utf-8").rstrip("=")
 
     signature = hmac.new(
-        EXPORT_SECRET.encode("utf-8"),
+        secret.encode("utf-8"),
         payload_b64.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
@@ -51,13 +57,14 @@ def verify_signed_export_token(token: str) -> Dict[str, Any]:
 
     Raises ValueError on invalid signature or expiration.
     """
+    secret = get_export_secret()
     parts = token.split(".")
     if len(parts) != 2:
         raise ValueError("Invalid export token format")
 
     payload_b64, signature = parts
     expected_sig = hmac.new(
-        EXPORT_SECRET.encode("utf-8"),
+        secret.encode("utf-8"),
         payload_b64.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()

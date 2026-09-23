@@ -46,14 +46,17 @@ export const CategoricalSkillChart: React.FC<CategoricalSkillChartProps> = ({
     tooltip: {
       trigger: "axis",
       axisPointer: { type: "shadow" },
-      backgroundColor: "#161b22",
-      borderColor: "#30363d",
-      textStyle: { color: "#c9d1d9", fontSize: 12 },
+      backgroundColor: "#FFFFFF",
+      borderColor: "rgba(26,23,18,0.12)",
+      borderWidth: 1,
+      borderRadius: 12,
+      extraCssText: "box-shadow: 0 4px 20px rgba(26,23,18,0.12);",
+      textStyle: { color: "#1A1712", fontSize: 12, fontFamily: "'Instrument Sans', system-ui" },
     },
     legend: {
       data: ["POD (Hit Rate ↑)", "FAR (False Alarm ↓)", "CSI (Critical Success ↑)"],
       top: 0,
-      textStyle: { color: "#8b949e", fontSize: 11 },
+      textStyle: { color: "#6B6560", fontSize: 11 },
     },
     grid: {
       left: "3%",
@@ -65,34 +68,34 @@ export const CategoricalSkillChart: React.FC<CategoricalSkillChartProps> = ({
     xAxis: {
       type: "category",
       data: categories,
-      axisLine: { lineStyle: { color: "#30363d" } },
-      axisLabel: { color: "#8b949e", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(26,23,18,0.15)" } },
+      axisLabel: { color: "#A09890", fontSize: 11 },
     },
     yAxis: {
       type: "value",
       name: "Score Ratio (0.0 to 1.0)",
       max: 1.0,
-      splitLine: { lineStyle: { color: "#21262d" } },
-      axisLabel: { color: "#8b949e", fontSize: 11, fontFamily: "monospace" },
+      splitLine: { lineStyle: { color: "rgba(26,23,18,0.07)" } },
+      axisLabel: { color: "#A09890", fontSize: 11, fontFamily: "monospace" },
     },
     series: [
       {
         name: "POD (Hit Rate ↑)",
         type: "bar",
         data: podData,
-        itemStyle: { color: "#2ea043" },
+        itemStyle: { color: "#4FA37A", borderRadius: [4, 4, 0, 0] },
       },
       {
         name: "FAR (False Alarm ↓)",
         type: "bar",
         data: farData,
-        itemStyle: { color: "#f85149" },
+        itemStyle: { color: "#E86440", borderRadius: [4, 4, 0, 0] },
       },
       {
         name: "CSI (Critical Success ↑)",
         type: "bar",
         data: csiData,
-        itemStyle: { color: "#388bfd" },
+        itemStyle: { color: "#4C7BD9", borderRadius: [4, 4, 0, 0] },
       },
     ],
   };

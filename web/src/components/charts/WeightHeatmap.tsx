@@ -48,36 +48,36 @@ export const WeightHeatmap: React.FC<WeightHeatmapProps> = ({
     switch (model) {
       case "gfs":
         return {
-          bg: `rgba(88, 166, 255, ${normalizedOpacity})`,
-          text: "#f0f6fc",
+          bg: `rgba(76, 123, 217, ${normalizedOpacity})`,
+          text: "#FFFFFF",
           label: "GFS",
-          color: "#58a6ff",
+          color: "#4C7BD9",
         };
       case "ecmwf_ifs":
         return {
-          bg: `rgba(63, 185, 80, ${normalizedOpacity})`,
-          text: "#f0f6fc",
+          bg: `rgba(79, 163, 122, ${normalizedOpacity})`,
+          text: "#FFFFFF",
           label: "IFS",
-          color: "#3fb950",
+          color: "#4FA37A",
         };
       case "icon":
         return {
-          bg: `rgba(240, 136, 62, ${normalizedOpacity})`,
-          text: "#f0f6fc",
+          bg: `rgba(201, 138, 30, ${normalizedOpacity})`,
+          text: "#FFFFFF",
           label: "ICON",
-          color: "#f0883e",
+          color: "#C98A1E",
         };
       case "aifs":
         return {
-          bg: `rgba(163, 113, 247, ${normalizedOpacity})`,
-          text: "#f0f6fc",
+          bg: `rgba(139, 111, 217, ${normalizedOpacity})`,
+          text: "#FFFFFF",
           label: "AIFS",
-          color: "#a371f7",
+          color: "#8B6FD9",
         };
       default:
         return {
-          bg: "rgba(56, 139, 253, 0.2)",
-          text: "#c9d1d9",
+          bg: "rgba(232, 100, 64, 0.18)",
+          text: "#1A1712",
           label: "EQUAL",
           color: "#388bfd",
         };
@@ -91,13 +91,13 @@ export const WeightHeatmap: React.FC<WeightHeatmapProps> = ({
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr>
-              <th className="p-2.5 text-left font-medium text-text-muted border-b border-border bg-[#161b22]">
+              <th className="p-2.5 text-left font-medium text-text-muted border-b border-[rgba(26,23,18,0.10)] bg-surface">
                 Region \ Lead
               </th>
               {LEADS.map((lead) => (
                 <th
                   key={lead}
-                  className="p-2.5 text-center font-mono font-medium text-text-secondary border-b border-border bg-[#161b22]"
+                  className="p-2.5 text-center font-mono font-medium text-text-secondary border-b border-[rgba(26,23,18,0.10)] bg-surface"
                 >
                   D+{lead}
                 </th>
@@ -106,8 +106,8 @@ export const WeightHeatmap: React.FC<WeightHeatmapProps> = ({
           </thead>
           <tbody>
             {REGIONS.map((region) => (
-              <tr key={region} className="border-b border-border/60">
-                <td className="p-2.5 font-semibold text-text-primary bg-[#161b22]/70">
+              <tr key={region} className="border-b border-[rgba(26,23,18,0.07)]">
+                <td className="p-2.5 font-semibold text-text-primary bg-surface/70">
                   {region}
                 </td>
                 {LEADS.map((lead) => {
@@ -121,7 +121,7 @@ export const WeightHeatmap: React.FC<WeightHeatmapProps> = ({
                     return (
                       <td
                         key={lead}
-                        className="p-2 text-center text-text-muted font-mono text-[11px] bg-[#161b22]/30"
+                        className="p-2 text-center text-text-muted font-mono text-[11px] bg-surface/30"
                       >
                         —
                       </td>

@@ -95,7 +95,7 @@ class GetAlertsArgs(BaseModel):
     """Arguments for get_alerts tool."""
 
     status: str = Field(default="active", description="Alert status: active, acknowledged, all")
-    hazard: Optional[str] = Field(None, description="Hazard type: heavy_rain, heat_wave, high_wind")
+    hazard: Optional[str] = Field(None, description="Hazard type: heavy_rain, heatwave, high_wind, heavy_rain_3day")
     region: Optional[str] = Field(None, description="Region code filter")
     min_severity: Optional[str] = Field(None, description="Minimum severity: advisory, watch, warning")
     max_lead_days: Optional[int] = Field(None, ge=0, le=7, description="Max lead days window")

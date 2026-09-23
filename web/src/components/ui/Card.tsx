@@ -12,8 +12,8 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   return (
     <div
-      className={`bg-surface border border-border rounded-lg shadow-sm ${
-        compact ? "p-3" : "p-4"
+      className={`bg-surface rounded-card shadow-card border border-[rgba(26,23,18,0.07)] transition-shadow duration-200 hover:shadow-card-hover ${
+        compact ? "p-4" : "p-5"
       } ${className}`}
       {...props}
     >
@@ -29,7 +29,7 @@ export const CardHeader: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
 }) => {
   return (
     <div
-      className={`flex items-center justify-between pb-3 mb-3 border-b border-border/60 ${className}`}
+      className={`flex items-center justify-between pb-3 mb-3 border-b border-[rgba(26,23,18,0.07)] ${className}`}
       {...props}
     >
       {children}

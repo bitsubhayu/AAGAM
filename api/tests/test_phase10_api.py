@@ -123,12 +123,12 @@ def test_ack_alert_event_unauthenticated_rejected(client):
     assert data["error"]["code"] == "UNAUTHORIZED"
 
 
-def test_ack_alert_event_viewer_forbidden(client):
-    """POST /api/v1/alerts/events/{id}/ack with viewer role must return 403."""
-    viewer_token = create_test_jwt(role="viewer")
+def test_ack_alert_event_public_forbidden(client):
+    """POST /api/v1/alerts/events/{id}/ack with public role must return 403."""
+    public_token = create_test_jwt(role="public")
     resp = client.post(
         "/api/v1/alerts/events/1/ack",
-        headers={"Authorization": f"Bearer {viewer_token}"},
+        headers={"Authorization": f"Bearer {public_token}"},
     )
     assert resp.status_code == 403
     data = resp.json()
@@ -148,14 +148,14 @@ def test_ack_alert_event_forecaster_allowed(client):
     assert data["error"]["code"] == "EVENT_NOT_FOUND"
 
 
-def test_ack_alert_event_admin_allowed(client):
-    """POST /api/v1/alerts/events/{id}/ack with admin role allowed (or 404 if event absent)."""
-    admin_token = create_test_jwt(role="admin")
+def test_ack_alert_event_coordinator_allowed(client):
+    """POST /api/v1/alerts/events/{id}/ack with coordinator role allowed (or 404 if event absent)."""
+    coordinator_token = create_test_jwt(role="coordinator")
     resp = client.post(
         "/api/v1/alerts/events/99999999/ack",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {coordinator_token}"},
     )
-    # Admin is authorized to acknowledge; non-existent ID yields 404
+    # Coordinator is authorized to acknowledge; non-existent ID yields 404
     assert resp.status_code == 404
     data = resp.json()
     assert data["error"]["code"] == "EVENT_NOT_FOUND"

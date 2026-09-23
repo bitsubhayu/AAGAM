@@ -54,14 +54,14 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
       title={
         <div className="flex items-center gap-2">
           <RotateCcw className="w-4 h-4 text-brand-blue" />
-          <span>Admin Model Version Rollback & Activation</span>
+          <span>Model Version Rollback & Activation</span>
         </div>
       }
-      description="Change active weights matrix and model parameters in PostgreSQL (PRD §12, Admin only)"
+      description="Change active weights matrix and model parameters in PostgreSQL (Automated Pipeline / System Owner)"
       maxWidth="md"
     >
       <div className="space-y-4 text-xs font-sans">
-        <div className="p-3 bg-[#21262d] rounded-lg border border-border space-y-2">
+        <div className="p-3 bg-[#F0EDE7] rounded-lg border border-[rgba(26,23,18,0.10)] space-y-2">
           <label className="font-semibold text-text-primary block">
             Target Model Version ID:
           </label>
@@ -70,7 +70,7 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
             value={targetId}
             onChange={(e) => setCustomTargetId(e.target.value)}
             placeholder={currentActiveVersionId ? String(currentActiveVersionId) : "e.g. 1"}
-            className="w-full p-2 bg-[#161b22] border border-border rounded text-text-primary font-mono text-sm"
+            className="w-full p-2 bg-surface border border-[rgba(26,23,18,0.10)] rounded text-text-primary font-mono text-sm"
           />
           <p className="text-[11px] text-text-muted">
             Current active version ID: <span className="font-mono text-brand-blue">#{currentActiveVersionId ?? "N/A"}</span>
@@ -85,7 +85,7 @@ export const ModelActivationModal: React.FC<ModelActivationModalProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[rgba(26,23,18,0.10)]">
           <Button variant="ghost" size="sm" onClick={handleClose}>
             Cancel
           </Button>

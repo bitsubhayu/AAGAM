@@ -23,7 +23,7 @@ export const WeightDetailDrawer: React.FC<WeightDetailDrawerProps> = ({
   onOpenOverride,
 }) => {
   const { role } = useAuthStore();
-  const canOverride = role === "forecaster" || role === "admin";
+  const canOverride = role === "forecaster" || role === "coordinator";
 
   const modelColors: Record<string, string> = {
     gfs: "#58a6ff",
@@ -36,8 +36,8 @@ export const WeightDetailDrawer: React.FC<WeightDetailDrawerProps> = ({
   const fallbackLevel = cellItems[0]?.fallback_level ?? "cell";
 
   return (
-    <div className="p-4 bg-surface border border-border rounded-lg space-y-4">
-      <div className="flex items-center justify-between border-b border-border/80 pb-3">
+    <div className="p-4 bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg space-y-4">
+      <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.09)] pb-3">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm text-text-primary">
@@ -57,7 +57,7 @@ export const WeightDetailDrawer: React.FC<WeightDetailDrawerProps> = ({
           size="sm"
           onClick={onOpenOverride}
           disabled={!canOverride}
-          title={canOverride ? "Apply audited override" : "Forecaster or Admin role required"}
+          title={canOverride ? "Apply audited override" : "Forecaster or Forecaster Coordinator role required"}
         >
           <Sliders className="w-3.5 h-3.5 mr-1" />
           <span>{canOverride ? "Override Weights" : "Forecaster Only"}</span>
@@ -82,7 +82,7 @@ export const WeightDetailDrawer: React.FC<WeightDetailDrawerProps> = ({
                   {(item.weight * 100).toFixed(1)}% ({item.weight.toFixed(3)})
                 </span>
               </div>
-              <div className="w-full bg-[#21262d] rounded-full h-2 overflow-hidden">
+              <div className="w-full bg-[#F0EDE7] rounded-full h-2 overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-300"
                   style={{ width: `${pct}%`, backgroundColor: color }}
@@ -94,8 +94,8 @@ export const WeightDetailDrawer: React.FC<WeightDetailDrawerProps> = ({
       </div>
 
       {/* Telemetry & Fallback Info */}
-      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/60 text-xs">
-        <div className="p-2.5 bg-[#21262d] rounded border border-border">
+      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[rgba(26,23,18,0.07)] text-xs">
+        <div className="p-2.5 bg-[#F0EDE7] rounded border border-[rgba(26,23,18,0.10)]">
           <span className="text-text-muted text-[11px] block">Sample Verification Count:</span>
           <span className="font-mono font-bold text-text-primary text-sm">
             n = {sampleCount}
@@ -107,7 +107,7 @@ export const WeightDetailDrawer: React.FC<WeightDetailDrawerProps> = ({
           )}
         </div>
 
-        <div className="p-2.5 bg-[#21262d] rounded border border-border">
+        <div className="p-2.5 bg-[#F0EDE7] rounded border border-[rgba(26,23,18,0.10)]">
           <span className="text-text-muted text-[11px] block">Fallback Tier Applied:</span>
           <span className="font-mono font-bold text-text-primary text-sm uppercase">
             {fallbackLevel}

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
 from api.app.assistant.location_resolver import resolve_location
@@ -50,11 +51,11 @@ class GetForecastTool(BaseTool):
         location_id = location["id"]
         location_name = location["name"]
 
-        active_version = "v2026-09-14"
+        active_version = "active"
         if context.conn is not None:
             v = await get_active_model_version_cached(context.conn)
-            if v and v.get("name"):
-                active_version = v["name"]
+            if v:
+                active_version = v.get("name") or v.get("storage_path") or f"version-{v.get('id', 1)}"
 
         # 2. Query database for blended and per-model forecasts
         columns = [
@@ -115,26 +116,82 @@ class GetForecastTool(BaseTool):
                         "models_over_threshold": over_thresh,
                     })
             except Exception as e:
-                logger.warning(f"Database query failed in get_forecast: {e}; generating synthetic series")
+                logger.error(f"Database query failed in get_forecast: {e}")
+                return ToolEnvelope(
+                    ok=False,
+                    artifact_id="none",
+                    title=f"Forecast query failed for {location_name}",
+                    columns=["status", "error"],
+                    n_rows=1,
+                    preview=[["error", f"Database query failed: {str(e)}"]],
+                    stats={},
+                    meta={
+                        "location": location_name,
+                        "location_id": location_id,
+                        "variable": args.variable,
+                        "error": str(e),
+                    },
+                )
 
-        # Fallback if no database rows found
+        # Query authoritative parquet dataset if database rows empty or connection offline
         if not full_rows:
-            from datetime import timedelta
-            now = datetime.now(timezone.utc)
-            base_val = 42.1 if args.variable == "rain_mm" else (36.5 if args.variable == "tmax_c" else 28.0)
-            for d in range(args.lead_days_max + 1):
-                cur_date = (now + timedelta(days=d)).strftime("%Y-%m-%d")
-                b_val = round(base_val + (d * 1.5), 1)
-                full_rows.append({
-                    "valid_date": cur_date,
-                    "blended": b_val,
-                    "gfs": round(b_val - 2.0, 1),
-                    "ecmwf_ifs": round(b_val + 3.1, 1),
-                    "icon": round(b_val - 1.2, 1),
-                    "aifs": round(b_val + 0.8, 1),
-                    "spread": round(5.1, 1),
-                    "models_over_threshold": 1 if b_val > 50 else 0,
-                })
+            parquet_path = Path(__file__).resolve().parents[4] / "data" / "blended_forecasts_test.parquet"
+            if parquet_path.exists():
+                try:
+                    import pandas as pd
+                    df = pd.read_parquet(parquet_path)
+                    sub = df[(df["location_id"] == location_id) & (df["variable"] == args.variable) & (df["lead_days"] <= args.lead_days_max)]
+                    if not sub.empty:
+                        latest_date = sub["valid_date"].max()
+                        sub_latest = sub[sub["valid_date"] == latest_date].sort_values("lead_days")
+                        if sub_latest.empty:
+                            sub_latest = sub.sort_values(["valid_date", "lead_days"]).head(args.lead_days_max)
+                        for _, r in sub_latest.iterrows():
+                            vd_str = str(r["valid_date"])
+                            b_val = round(float(r["blended"]), 2)
+                            g_val = round(float(r["f_gfs"]), 2)
+                            i_val = round(float(r["f_ecmwf_ifs"]), 2)
+                            ic_val = round(float(r["f_icon"]), 2)
+                            ai_val = round(float(r["f_aifs"]), 2)
+                            sp_val = round(float(r["spread"]), 2) if pd.notna(r["spread"]) else round(max(g_val, i_val, ic_val, ai_val) - min(g_val, i_val, ic_val, ai_val), 2)
+                            ot_val = int(r["models_over_threshold"]) if pd.notna(r["models_over_threshold"]) else 0
+                            full_rows.append({
+                                "valid_date": vd_str,
+                                "blended": b_val,
+                                "gfs": g_val,
+                                "ecmwf_ifs": i_val,
+                                "icon": ic_val,
+                                "aifs": ai_val,
+                                "spread": sp_val,
+                                "models_over_threshold": ot_val,
+                            })
+                except Exception as e:
+                    logger.debug(f"Parquet query fallback error: {e}")
+
+        # Empty result if no records found
+        if not full_rows:
+            return ToolEnvelope(
+                ok=True,
+                artifact_id="none",
+                title=f"No forecast records found — {location_name}, {args.variable}",
+                columns=columns,
+                n_rows=0,
+                preview=[],
+                stats={
+                    "message": "No forecast records available for this location and variable",
+                    "variable": args.variable,
+                    "lead_days_max": args.lead_days_max,
+                },
+                meta={
+                    "location": location_name,
+                    "location_id": location_id,
+                    "variable": args.variable,
+                    "model_version": active_version,
+                    "issue_time": datetime.now(timezone.utc).isoformat(),
+                    "source": "blended_forecasts",
+                    "resolved": True,
+                },
+            )
 
         # Calculate summary statistics
         blended_vals = [r["blended"] for r in full_rows]

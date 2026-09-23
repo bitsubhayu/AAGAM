@@ -2,108 +2,85 @@ import { create } from "zustand";
 import { supabase } from "./supabase";
 import type { Session, User } from "@supabase/supabase-js";
 
-export type UserRole = "viewer" | "forecaster" | "admin";
+export type UserRole = "public" | "forecaster" | "coordinator";
 
-export interface DemoUser {
+export interface UserProfile {
   id: string;
-  name: string;
+  email: string;
   role: UserRole;
-  title: string;
-  organization: string;
+  display_name?: string | null;
+  org?: string | null;
 }
-
-export const DEMO_PROFILES: Record<UserRole, DemoUser> = {
-  viewer: {
-    id: "00000000-0000-0000-0000-000000000001",
-    name: "Mr. K. Rao",
-    role: "viewer",
-    title: "State Disaster Duty Officer",
-    organization: "State Disaster Management Authority (SDMA)",
-  },
-  forecaster: {
-    id: "00000000-0000-0000-0000-000000000002",
-    name: "Dr. Meera Sen",
-    role: "forecaster",
-    title: "Senior Duty Meteorologist",
-    organization: "National Centre for Medium Range Weather Forecasting (NCMRWF)",
-  },
-  admin: {
-    id: "00000000-0000-0000-0000-000000000003",
-    name: "AAGAM DevOps Lead",
-    role: "admin",
-    title: "System Administrator",
-    organization: "Ministry of Earth Sciences (MoES) IT Cell",
-  },
-};
 
 interface AuthState {
   user: User | null;
   session: Session | null;
   role: UserRole;
+  profile: UserProfile | null;
   token: string | null;
-  isDemo: boolean;
-  demoProfile: DemoUser | null;
   isLoading: boolean;
-  setSession: (session: Session | null) => void;
-  setDemoRole: (role: UserRole) => void;
+  setSession: (session: Session | null) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
-// Generate an unpadded client-side HS256 JWT for local evaluation / demo switcher
-function generateLocalDemoJwt(role: UserRole, uid: string, email: string): string {
-  const header = { alg: "HS256", typ: "JWT" };
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    sub: uid,
-    email,
-    role: "authenticated",
-    app_metadata: { role },
-    user_metadata: { role },
-    iat: now,
-    exp: now + 86400 * 7, // 7 days
-  };
+async function fetchAuthoritativeProfile(userId: string): Promise<UserProfile | null> {
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id, role, display_name, org")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  const b64url = (obj: any) =>
-    btoa(JSON.stringify(obj))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
+    if (error || !data) {
+      return null;
+    }
 
-  // Note: on localhost with SUPABASE_JWT_SECRET or test bearer, standard structure
-  return `${b64url(header)}.${b64url(payload)}.c2lnbmF0dXJl`;
+    const roleStr = String(data.role || "").toLowerCase();
+    const validRole: UserRole =
+      roleStr === "coordinator" || roleStr === "forecaster" ? roleStr : "public";
+
+    return {
+      id: String(data.user_id),
+      email: "",
+      role: validRole,
+      display_name: data.display_name,
+      org: data.org,
+    };
+  } catch (err) {
+    console.warn("Failed to fetch authoritative profile:", err);
+    return null;
+  }
 }
 
-export const useAuthStore = create<AuthState>((set) => {
-  // Initialize from storage or default to forecaster demo role for rapid judge/evaluator inspection
-  const initialDemoRole = (localStorage.getItem("aagam_demo_role") as UserRole) || "forecaster";
+export const useAuthStore = create<AuthState>((set, get) => {
   const initialToken = localStorage.getItem("aagam_auth_token");
 
   return {
     user: null,
     session: null,
-    role: initialDemoRole,
+    role: "public",
+    profile: null,
     token: initialToken,
-    isDemo: true,
-    demoProfile: DEMO_PROFILES[initialDemoRole],
     isLoading: true,
 
-    setSession: (session: Session | null) => {
-      if (session) {
-        const user = session.user;
-        const role =
-          (user.app_metadata?.role as UserRole) ||
-          (user.user_metadata?.role as UserRole) ||
-          "viewer";
+    setSession: async (session: Session | null) => {
+      if (session?.user) {
         localStorage.setItem("aagam_auth_token", session.access_token);
-        localStorage.removeItem("aagam_demo_role");
+        const profile = await fetchAuthoritativeProfile(session.user.id);
+        const metaRole =
+          (session.user.app_metadata?.role as UserRole) ||
+          (session.user.user_metadata?.role as UserRole);
+        const resolvedRole: UserRole =
+          profile?.role ||
+          (metaRole === "coordinator" || metaRole === "forecaster" ? metaRole : "public");
 
         set({
           session,
-          user,
-          role,
+          user: session.user,
+          role: resolvedRole,
+          profile,
           token: session.access_token,
-          isDemo: false,
-          demoProfile: null,
           isLoading: false,
         });
       } else {
@@ -111,28 +88,21 @@ export const useAuthStore = create<AuthState>((set) => {
         set({
           session: null,
           user: null,
-          role: "viewer",
+          role: "public",
+          profile: null,
           token: null,
-          isDemo: false,
-          demoProfile: null,
           isLoading: false,
         });
       }
     },
 
-    setDemoRole: (role: UserRole) => {
-      const profile = DEMO_PROFILES[role];
-      const token = generateLocalDemoJwt(role, profile.id, `${role}@aagam.gov.in`);
-      localStorage.setItem("aagam_auth_token", token);
-      localStorage.setItem("aagam_demo_role", role);
-
-      set({
-        role,
-        isDemo: true,
-        demoProfile: profile,
-        token,
-        isLoading: false,
-      });
+    refreshProfile: async () => {
+      const user = get().user;
+      if (!user) return;
+      const profile = await fetchAuthoritativeProfile(user.id);
+      if (profile) {
+        set({ profile, role: profile.role });
+      }
     },
 
     signOut: async () => {
@@ -142,16 +112,38 @@ export const useAuthStore = create<AuthState>((set) => {
         console.error("Sign out error", err);
       }
       localStorage.removeItem("aagam_auth_token");
-      localStorage.removeItem("aagam_demo_role");
+      localStorage.removeItem("aagam_user_email");
       set({
         user: null,
         session: null,
         token: null,
-        role: "viewer",
-        isDemo: false,
-        demoProfile: null,
+        role: "public",
+        profile: null,
         isLoading: false,
       });
     },
   };
 });
+
+// Singleton session synchronization
+let authInitialized = false;
+
+export function initializeAuthSync(): void {
+  if (authInitialized) return;
+  authInitialized = true;
+
+  // 1. Initial real session resolution
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    useAuthStore.getState().setSession(session);
+  });
+
+  // 2. Real-time auth subscription
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    await useAuthStore.getState().setSession(session);
+  });
+}
+
+// Auto-start listener in browser environment
+if (typeof window !== "undefined") {
+  initializeAuthSync();
+}

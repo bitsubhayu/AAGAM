@@ -103,7 +103,7 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4 text-xs font-sans">
         {/* Sliders */}
-        <div className="space-y-3 p-3 bg-[#21262d] rounded-lg border border-border">
+        <div className="space-y-3 p-3 bg-[#F0EDE7] rounded-lg border border-[rgba(26,23,18,0.10)]">
           <span className="font-semibold text-text-primary block">
             Adjust Model Contribution (Must sum to 100%):
           </span>
@@ -137,7 +137,7 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. ECMWF IFS significantly overpredicting convective moisture across coastal Odisha..."
             rows={3}
-            className="w-full p-2.5 bg-[#21262d] border border-border rounded-md text-text-primary text-xs focus:ring-2 focus:ring-brand-blue/50 outline-none"
+            className="w-full p-2.5 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-md text-text-primary text-xs focus:ring-2 focus:ring-brand-blue/50 outline-none"
             required
           />
           <div className="flex justify-between text-[10px] text-text-muted">
@@ -154,7 +154,7 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
           <select
             value={expiresHours}
             onChange={(e) => setExpiresHours(parseInt(e.target.value, 10))}
-            className="w-full p-2 bg-[#21262d] border border-border rounded-md text-text-primary text-xs outline-none"
+            className="w-full p-2 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-md text-text-primary text-xs outline-none"
           >
             <option value={12}>12 Hours (Single Duty Cycle)</option>
             <option value={24}>24 Hours (Full Diurnal Cycle)</option>
@@ -173,7 +173,7 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/80">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[rgba(26,23,18,0.09)]">
           <Button variant="ghost" size="sm" type="button" onClick={onClose}>
             Cancel
           </Button>

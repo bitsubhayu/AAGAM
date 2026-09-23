@@ -49,7 +49,7 @@ async def list_alerts(
     hazard: Optional[str] = Query(None, description="Hazard type: heavy_rain, heatwave, high_wind, high_uncertainty, heavy_rain_3day"),
     region: Optional[str] = Query(None, description="Region filter"),
     min_severity: Optional[str] = Query(None, description="Minimum severity filter: advisory, watch, alert"),
-    max_lead_days: Optional[int] = Query(None, ge=1, le=8, description="Maximum lead days filter (1-8)"),
+    max_lead_days: Optional[int] = Query(None, ge=0, le=7, description="Maximum lead days filter (0-7)"),
     limit: int = Query(50, ge=1, le=200, description="Max alerts to return (1-200)"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     response: Response = None,

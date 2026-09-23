@@ -25,9 +25,9 @@ export function useAlerts(params: UseAlertsParams = {}) {
   if (params.hazard && params.hazard !== "ALL") queryParams.set("hazard", params.hazard);
   if (params.region && params.region !== "ALL") queryParams.set("region", params.region);
   if (params.minSeverity && params.minSeverity !== "ALL") queryParams.set("min_severity", params.minSeverity);
-  if (params.maxLeadDays) queryParams.set("max_lead_days", params.maxLeadDays.toString());
-  if (params.limit) queryParams.set("limit", params.limit.toString());
-  if (params.offset) queryParams.set("offset", params.offset.toString());
+  if (params.maxLeadDays !== undefined) queryParams.set("max_lead_days", params.maxLeadDays.toString());
+  if (params.limit !== undefined) queryParams.set("limit", params.limit.toString());
+  if (params.offset !== undefined) queryParams.set("offset", params.offset.toString());
 
   const qs = queryParams.toString();
   const endpoint = `/alerts${qs ? `?${qs}` : ""}`;

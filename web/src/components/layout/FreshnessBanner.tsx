@@ -15,9 +15,9 @@ export const FreshnessBanner: React.FC = () => {
   if (diffHours <= 9) return null;
 
   return (
-    <div className="bg-amber-950/80 border-b border-amber-800/80 px-4 py-2 flex items-center justify-between text-xs text-amber-200">
+    <div className="bg-[#FDF6E8] border-b border-[#D9A441]/30 px-4 py-2 flex items-center justify-between text-xs text-[#7A5C00]">
       <div className="flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 text-hazard-advisory shrink-0" />
+        <AlertTriangle className="w-4 h-4 text-[#D9A441] shrink-0" />
         <span>
           <strong>Stale Forecast Advisory:</strong> Last pipeline cycle was completed{" "}
           <span className="font-mono">{Math.round(diffHours)} hours ago</span> (
@@ -29,7 +29,7 @@ export const FreshnessBanner: React.FC = () => {
           IST). Operational forecasts are normally refreshed every 6 hours.
         </span>
       </div>
-      <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/60 border border-amber-700/60 font-mono">
+      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#D9A441]/15 border border-[#D9A441]/40 font-mono text-[#7A5C00] shrink-0 ml-3">
         DATA &gt; 9H OLD
       </span>
     </div>

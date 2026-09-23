@@ -1,81 +1,138 @@
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-sans/700.css";
+/* ── Instrument Sans (UI typeface) ──────────────────────────────────── */
+@import "@fontsource/instrument-sans/400.css";
+@import "@fontsource/instrument-sans/500.css";
+@import "@fontsource/instrument-sans/600.css";
+@import "@fontsource/instrument-sans/700.css";
+
+/* ── IBM Plex Mono (tabular data figures, timestamps, code) ─────────── */
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/600.css";
+
+/* ── Leaflet ─────────────────────────────────────────────────────────── */
 @import "leaflet/dist/leaflet.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens ───────────────────────────────────────────────────── */
 :root {
-  color-scheme: dark;
-  --bg-app: #0d1117;
-  --bg-surface: #161b22;
-  --bg-surface-raised: #21262d;
-  --border-default: #30363d;
-  --border-subtle: #21262d;
-  --text-primary: #f0f6fc;
-  --text-secondary: #c9d1d9;
-  --text-muted: #8b949e;
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg-canvas:       #EDEAE4;
+  --bg-surface:      #FFFFFF;
+  --bg-surface-2:    #F0EDE7;
+
+  /* Ink */
+  --ink-1:           #1A1712;
+  --ink-2:           #6B6560;
+  --ink-3:           #A09890;
+
+  /* Brand pill (logo badge, dark icon buttons) */
+  --pill-dark:       #1C1915;
+
+  /* Single brand accent — CTA, alert severity */
+  --accent:          #E86440;
+  --accent-soft:     #F9D8CE;
+
+  /* Divider / subtle border */
+  --line:            rgba(26, 23, 18, 0.09);
+
+  /* Card geometry */
+  --radius-card:     20px;
+  --shadow-card:     0 1px 2px rgba(26,23,18,0.04), 0 12px 24px -8px rgba(26,23,18,0.10);
+  --shadow-card-hover: 0 2px 4px rgba(26,23,18,0.06), 0 16px 32px -8px rgba(26,23,18,0.16);
+
+  /* Severity */
+  --sev-advisory:    #D9A441;
+  --sev-watch:       #E07B2E;
+  --sev-alert:       var(--accent);
+
+  /* Model colors */
+  --m-gfs:           #4C7BD9;
+  --m-ifs:           #8B6FD9;
+  --m-icon:          #4FA37A;
+  --m-aifs:          #C98A1E;
 }
 
+/* ── Base ────────────────────────────────────────────────────────────── */
 body {
   margin: 0;
-  background-color: #0d1117;
-  color: #c9d1d9;
-  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-canvas);
+  color: var(--ink-1);
+  font-family: 'Instrument Sans', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Tabular Numerals for Numerical Consistency */
-.tabular-nums, table, code, pre, .font-mono {
+/* ── Tabular numerals for data figures ───────────────────────────────── */
+.tabular-nums,
+table,
+code,
+pre,
+.font-mono {
   font-family: 'IBM Plex Mono', monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom Sleek Scrollbar for Dense Tables */
+/* ── Scrollbar — warm & slim ─────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: var(--bg-canvas);
 }
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: rgba(23, 20, 15, 0.18);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: rgba(23, 20, 15, 0.30);
 }
 
-/* Leaflet Dark Customization */
+/* ── Leaflet — light palette ─────────────────────────────────────────── */
 .leaflet-container {
-  background-color: #0d1117 !important;
-  font-family: 'IBM Plex Sans', sans-serif !important;
+  background-color: var(--bg-canvas) !important;
+  font-family: 'Instrument Sans', system-ui, sans-serif !important;
 }
 
-.leaflet-popup-content-wrapper, .leaflet-popup-tip {
-  background: #161b22 !important;
-  color: #c9d1d9 !important;
-  border: 1px solid #30363d !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
-  border-radius: 8px !important;
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--bg-surface) !important;
+  color: var(--ink-1) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: var(--shadow-card) !important;
+  border-radius: 12px !important;
 }
 
 .leaflet-popup-content {
   margin: 10px 14px !important;
-  line-height: 1.4 !important;
+  line-height: 1.5 !important;
+  color: var(--ink-2) !important;
 }
 
 .leaflet-container a.leaflet-popup-close-button {
-  color: #8b949e !important;
+  color: var(--ink-3) !important;
   padding: 4px 6px !important;
 }
 .leaflet-container a.leaflet-popup-close-button:hover {
-  color: #f0f6fc !important;
+  color: var(--ink-1) !important;
+}
+
+/* Leaflet tile filter for light basemap (slightly muted) */
+.leaflet-tile {
+  filter: saturate(0.85) brightness(1.02);
+}
+
+/* ── Global motion preference ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

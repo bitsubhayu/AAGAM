@@ -31,7 +31,7 @@ async def get_history(
     limit: int = Query(100, ge=1, le=1000, description="Page size (maximum 1,000)"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     response: Response = None,
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> HistoryResponse:
     """Returns paginated historical forecast data (PRD §12: page size <= 1,000; total <= 5,000)."""

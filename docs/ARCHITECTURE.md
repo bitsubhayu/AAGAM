@@ -190,7 +190,7 @@ flowchart TB
 | Area | Implementation Mechanism | Enforcement Level |
 |---|---|---|
 | **API Authentication** | Supabase JWT (ES256 / HS256) | All non-public endpoints |
-| **Authorization** | Role-Based Access Control (RBAC) via `profiles` table | `viewer`, `forecaster`, `admin` |
+| **Authorization** | Role-Based Access Control (RBAC) via `profiles` table | `public`, `forecaster`, `coordinator` |
 | **Database Isolation** | PostgreSQL Row Level Security (RLS) with session claims | Enforced at DB kernel |
 | **Connection Security** | SSL/TLS required (`sslmode=require`) | All DB connections |
 | **API Rate Limiting** | SlowAPI (60 req/min general, 10 req/min assistant) | HTTP 429 with `retry_after` |

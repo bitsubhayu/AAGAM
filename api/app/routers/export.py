@@ -30,10 +30,10 @@ async def export_dataset(
     variable: Optional[str] = Query(None, description="Variable filter"),
     location: Optional[str] = Query(None, description="Location slug filter"),
     token: Optional[str] = Query(None, description="Signed export token for download URLs"),
-    current_user: CurrentUser = Depends(require_role("any")),
+    current_user: CurrentUser = Depends(require_role("public")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> StreamingResponse:
-    """Streams data exports as CSV or JSON (PRD §12, role: any)."""
+    """Streams data exports as CSV or JSON (PRD §12: requires signed token or authenticated session)."""
     dataset_clean = dataset.lower().strip()
     if dataset_clean in ("forecast", "history"):
         dataset_clean = "forecasts"

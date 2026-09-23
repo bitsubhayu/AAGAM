@@ -47,7 +47,7 @@ export const WeightMapsPage: React.FC = () => {
   return (
     <div className="space-y-4 font-sans">
       {/* Top Filter Bar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap bg-[#161b22] p-3 rounded-lg border border-border">
+      <div className="flex items-center justify-between gap-3 flex-wrap bg-surface p-3 rounded-lg border border-[rgba(26,23,18,0.10)]">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-brand-blue" />
@@ -60,7 +60,7 @@ export const WeightMapsPage: React.FC = () => {
             <select
               value={selectedSeason}
               onChange={(e) => setSelectedSeason(e.target.value)}
-              className="px-2.5 py-1 bg-[#21262d] border border-border rounded text-xs text-text-primary capitalize outline-none"
+              className="px-2.5 py-1 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded text-xs text-text-primary capitalize outline-none"
             >
               <option value="monsoon">Southwest Monsoon (Jun–Sep)</option>
               <option value="postmonsoon">Post-Monsoon (Oct–Dec)</option>
@@ -76,7 +76,7 @@ export const WeightMapsPage: React.FC = () => {
         </div>
 
         {/* View Toggle */}
-        <div className="flex items-center gap-1 bg-[#21262d] p-0.5 rounded border border-border">
+        <div className="flex items-center gap-1 bg-[#F0EDE7] p-0.5 rounded border border-[rgba(26,23,18,0.10)]">
           <button
             onClick={() => setViewMode("heatmap")}
             className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-colors ${
@@ -148,7 +148,7 @@ export const WeightMapsPage: React.FC = () => {
                 onOpenOverride={() => setOverrideModalOpen(true)}
               />
             ) : (
-              <div className="h-full min-h-[300px] p-6 bg-surface border border-border rounded-lg flex flex-col items-center justify-center text-center text-xs text-text-muted space-y-2">
+              <div className="h-full min-h-[300px] p-6 bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg flex flex-col items-center justify-center text-center text-xs text-text-muted space-y-2">
                 <Sliders className="w-8 h-8 text-brand-blue/50" />
                 <p className="font-semibold text-text-secondary">Cell Details Inspector</p>
                 <p className="max-w-xs text-[11px]">
@@ -192,14 +192,14 @@ export const WeightMapsPage: React.FC = () => {
         </CardHeader>
 
         {!overrides || overrides.length === 0 ? (
-          <div className="p-4 bg-[#21262d] rounded text-center text-xs text-text-muted">
+          <div className="p-4 bg-[#F0EDE7] rounded text-center text-xs text-text-muted">
             No active forecaster weight overrides currently in effect. Baseline model matrix active.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
-                <tr className="border-b border-border bg-[#161b22] text-text-muted font-mono">
+                <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted font-mono">
                   <th className="p-2.5">Region</th>
                   <th className="p-2.5">Lead</th>
                   <th className="p-2.5">Adjusted Weights</th>
@@ -210,7 +210,7 @@ export const WeightMapsPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-border/60">
                 {overrides.map((ov) => (
-                  <tr key={ov.id} className="hover:bg-[#21262d]/50">
+                  <tr key={ov.id} className="hover:bg-[#F0EDE7]/50">
                     <td className="p-2.5 font-bold">{ov.region}</td>
                     <td className="p-2.5 font-mono">+{ov.lead_days}d</td>
                     <td className="p-2.5 font-mono text-[11px]">

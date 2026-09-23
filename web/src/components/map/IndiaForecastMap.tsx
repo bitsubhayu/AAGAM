@@ -40,7 +40,7 @@ export const IndiaForecastMap: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="w-full h-[450px] bg-[#161b22] border border-border rounded-lg flex items-center justify-center p-6">
+      <div className="w-full h-[450px] bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg flex items-center justify-center p-6">
         <div className="space-y-3 w-full max-w-md text-center">
           <Skeleton className="h-64 w-full" />
           <p className="text-xs text-text-muted">Loading 40-station spatial grid...</p>
@@ -51,7 +51,7 @@ export const IndiaForecastMap: React.FC = () => {
 
   if (error || !mapData) {
     return (
-      <div className="w-full h-[450px] bg-[#161b22] border border-border rounded-lg flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-full h-[450px] bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg flex flex-col items-center justify-center p-6 text-center">
         <AlertTriangle className="w-8 h-8 text-hazard-advisory mb-2" />
         <p className="text-xs font-semibold text-text-primary">Unable to load spatial forecast</p>
         <p className="text-[11px] text-text-muted mt-1 max-w-sm">
@@ -62,9 +62,9 @@ export const IndiaForecastMap: React.FC = () => {
   }
 
   return (
-    <div className="relative w-full h-[480px] bg-[#161b22] border border-border rounded-lg overflow-hidden">
+    <div className="relative w-full h-[480px] bg-surface border border-[rgba(26,23,18,0.10)] rounded-lg overflow-hidden">
       {/* Map Header Overlay */}
-      <div className="absolute top-3 left-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-border rounded-md px-3 py-2 text-xs shadow-md">
+      <div className="absolute top-3 left-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-[rgba(26,23,18,0.10)] rounded-md px-3 py-2 text-xs shadow-md">
         <div className="font-semibold text-text-primary flex items-center gap-1.5">
           <CloudRain className="w-3.5 h-3.5 text-brand-blue" />
           <span>{varMeta.label}</span>
@@ -85,8 +85,16 @@ export const IndiaForecastMap: React.FC = () => {
         className="w-full h-full"
       >
         <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; OpenStreetMap'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution={
+            import.meta.env.VITE_MAPTILER_KEY && import.meta.env.VITE_MAPTILER_KEY !== "your-maptiler-key"
+              ? '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          }
+          url={
+            import.meta.env.VITE_MAPTILER_KEY && import.meta.env.VITE_MAPTILER_KEY !== "your-maptiler-key"
+              ? `https://api.maptiler.com/maps/dataviz-light/{z}/{x}/{y}.png?key=${import.meta.env.VITE_MAPTILER_KEY}`
+              : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          }
         />
 
         {mapData.points.map((pt) => {
@@ -107,7 +115,7 @@ export const IndiaForecastMap: React.FC = () => {
             >
               <Popup>
                 <div className="p-1 min-w-[200px] text-xs font-sans">
-                  <div className="flex items-center justify-between border-b border-border/80 pb-1.5 mb-1.5">
+                  <div className="flex items-center justify-between border-b border-[rgba(26,23,18,0.09)] pb-1.5 mb-1.5">
                     <span className="font-bold text-text-primary">{pt.name}</span>
                     <Badge variant="outline">{pt.region}</Badge>
                   </div>
@@ -163,7 +171,7 @@ export const IndiaForecastMap: React.FC = () => {
       </MapContainer>
 
       {/* Map Legend Footer */}
-      <div className="absolute bottom-3 right-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-border rounded-md px-3 py-1.5 text-[11px] shadow-md flex items-center gap-3">
+      <div className="absolute bottom-3 right-3 z-[1000] bg-surface/90 backdrop-blur-xs border border-[rgba(26,23,18,0.10)] rounded-md px-3 py-1.5 text-[11px] shadow-md flex items-center gap-3">
         <span className="text-text-muted text-[10px] uppercase font-semibold">Severity</span>
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-hazard-normal inline-block" />

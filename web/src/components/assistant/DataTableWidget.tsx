@@ -84,15 +84,15 @@ export const DataTableWidget: React.FC<DataTableWidgetProps> = ({
   const downloadJsonUrl = `${API_BASE.replace("/api/v1", "")}${dataTable.download_links.json}`;
 
   return (
-    <div className="my-2 rounded border border-border bg-[#111922] overflow-hidden text-xs">
+    <div className="my-2 rounded border border-[rgba(26,23,18,0.10)] bg-[#111922] overflow-hidden text-xs">
       {/* Table Header Bar */}
-      <div className="px-3 py-2 bg-[#161b22] border-b border-border flex flex-wrap items-center justify-between gap-2">
+      <div className="px-3 py-2 bg-surface border-b border-[rgba(26,23,18,0.10)] flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           <TableIcon className="w-3.5 h-3.5 text-brand-blue flex-shrink-0" />
           <span className="font-semibold text-text-primary truncate" title={dataTable.title}>
             {dataTable.title}
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#21262d] text-text-muted font-mono">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#F0EDE7] text-text-muted font-mono">
             {dataTable.n_rows_total} rows
           </span>
         </div>
@@ -101,7 +101,7 @@ export const DataTableWidget: React.FC<DataTableWidgetProps> = ({
         <div className="flex items-center gap-1">
           <button
             onClick={handleCopyCSV}
-            className="flex items-center gap-1 px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-text-secondary hover:text-text-primary text-[11px] transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-[#F0EDE7] hover:bg-[#E8E4DC] text-text-secondary hover:text-text-primary text-[11px] transition-colors"
             title="Copy as CSV"
           >
             {copied ? <Check className="w-3 h-3 text-brand-green" /> : <Copy className="w-3 h-3" />}
@@ -112,7 +112,7 @@ export const DataTableWidget: React.FC<DataTableWidgetProps> = ({
             href={downloadCsvUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-text-secondary hover:text-text-primary text-[11px] transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-[#F0EDE7] hover:bg-[#E8E4DC] text-text-secondary hover:text-text-primary text-[11px] transition-colors"
             title="Download CSV"
           >
             <Download className="w-3 h-3" />
@@ -123,7 +123,7 @@ export const DataTableWidget: React.FC<DataTableWidgetProps> = ({
             href={downloadJsonUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 rounded bg-[#21262d] hover:bg-[#30363d] text-text-secondary hover:text-text-primary text-[11px] transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded bg-[#F0EDE7] hover:bg-[#E8E4DC] text-text-secondary hover:text-text-primary text-[11px] transition-colors"
             title="Download JSON"
           >
             <Download className="w-3 h-3" />
@@ -146,7 +146,7 @@ export const DataTableWidget: React.FC<DataTableWidgetProps> = ({
       {/* Scrollable Data Table Container */}
       <div className="overflow-x-auto max-h-72 overflow-y-auto">
         <table className="w-full text-left border-collapse text-[11px]">
-          <thead className="bg-[#1c2430] text-text-secondary sticky top-0 z-10 border-b border-border shadow-sm">
+          <thead className="bg-[#1c2430] text-text-secondary sticky top-0 z-10 border-b border-[rgba(26,23,18,0.10)] shadow-sm">
             <tr>
               {dataTable.columns.map((col, idx) => {
                 const isSorted = sortColIndex === idx;
@@ -198,7 +198,7 @@ export const DataTableWidget: React.FC<DataTableWidgetProps> = ({
 
       {/* Pagination Footer Indicator */}
       {dataTable.n_rows_total > dataTable.rows.length && (
-        <div className="px-3 py-1.5 bg-[#161b22] border-t border-border text-[10px] text-text-muted flex items-center justify-between">
+        <div className="px-3 py-1.5 bg-surface border-t border-[rgba(26,23,18,0.10)] text-[10px] text-text-muted flex items-center justify-between">
           <span>
             Showing first {dataTable.rows.length} of {dataTable.n_rows_total} rows.
           </span>

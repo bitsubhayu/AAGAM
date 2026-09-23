@@ -6,8 +6,6 @@ import {
   Copy,
   Check,
   AlertCircle,
-  Eye,
-  EyeOff,
 } from "lucide-react";
 import { useUIStore, VARIABLES } from "@/store/uiStore";
 import { useForecast } from "@/api/useForecast";
@@ -34,8 +32,6 @@ export const ForecastExplorerPage: React.FC = () => {
   );
 
   const [searchTerm] = useState("");
-  const [showEnvelope, setShowEnvelope] = useState(true);
-  const [showThresholds, setShowThresholds] = useState(true);
   const [copied, setCopied] = useState(false);
 
   const [visibleModels, setVisibleModels] = useState({
@@ -97,7 +93,7 @@ export const ForecastExplorerPage: React.FC = () => {
             <select
               value={selectedLocationSlug}
               onChange={(e) => setSelectedLocationSlug(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-[#161b22] border border-border rounded-md text-xs text-text-primary focus:ring-2 focus:ring-brand-blue/50 outline-none"
+              className="w-full pl-9 pr-3 py-2 bg-surface border border-[rgba(26,23,18,0.10)] rounded-md text-xs text-text-primary focus:ring-2 focus:ring-brand-blue/50 outline-none"
             >
               {filteredLocations.map((loc) => (
                 <option key={loc.slug} value={loc.slug}>
@@ -108,27 +104,8 @@ export const ForecastExplorerPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Display Toggles */}
-        <div className="md:col-span-2 flex items-end gap-2">
-          <Button
-            variant={showEnvelope ? "primary" : "secondary"}
-            size="sm"
-            onClick={() => setShowEnvelope(!showEnvelope)}
-            className="text-xs"
-          >
-            {showEnvelope ? <Eye className="w-3.5 h-3.5 mr-1" /> : <EyeOff className="w-3.5 h-3.5 mr-1" />}
-            <span>Uncertainty Envelope</span>
-          </Button>
-
-          <Button
-            variant={showThresholds ? "secondary" : "outline"}
-            size="sm"
-            onClick={() => setShowThresholds(!showThresholds)}
-            className="text-xs"
-          >
-            <span>IMD Thresholds</span>
-          </Button>
-
+        {/* Actions */}
+        <div className="md:col-span-2 flex items-end gap-2 justify-end">
           <Button
             variant="outline"
             size="sm"
@@ -166,7 +143,7 @@ export const ForecastExplorerPage: React.FC = () => {
               className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
                 visibleModels.blended
                   ? "bg-brand-blue/20 text-brand-blue border-brand-blue"
-                  : "bg-transparent text-text-muted border-border opacity-50"
+                  : "bg-transparent text-text-muted border-[rgba(26,23,18,0.10)] opacity-50"
               }`}
             >
               ● AAGAM Blend
@@ -176,7 +153,7 @@ export const ForecastExplorerPage: React.FC = () => {
               className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
                 visibleModels.gfs
                   ? "bg-blue-950/40 text-model-gfs border-blue-700"
-                  : "bg-transparent text-text-muted border-border opacity-50"
+                  : "bg-transparent text-text-muted border-[rgba(26,23,18,0.10)] opacity-50"
               }`}
             >
               ● GFS
@@ -186,7 +163,7 @@ export const ForecastExplorerPage: React.FC = () => {
               className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
                 visibleModels.ecmwf_ifs
                   ? "bg-emerald-950/40 text-model-ifs border-emerald-700"
-                  : "bg-transparent text-text-muted border-border opacity-50"
+                  : "bg-transparent text-text-muted border-[rgba(26,23,18,0.10)] opacity-50"
               }`}
             >
               ● ECMWF IFS
@@ -196,7 +173,7 @@ export const ForecastExplorerPage: React.FC = () => {
               className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
                 visibleModels.icon
                   ? "bg-amber-950/40 text-model-icon border-amber-700"
-                  : "bg-transparent text-text-muted border-border opacity-50"
+                  : "bg-transparent text-text-muted border-[rgba(26,23,18,0.10)] opacity-50"
               }`}
             >
               ● ICON
@@ -206,7 +183,7 @@ export const ForecastExplorerPage: React.FC = () => {
               className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-all ${
                 visibleModels.aifs
                   ? "bg-purple-950/40 text-model-aifs border-purple-700"
-                  : "bg-transparent text-text-muted border-border opacity-50"
+                  : "bg-transparent text-text-muted border-[rgba(26,23,18,0.10)] opacity-50"
               }`}
             >
               ● AIFS (AI)
@@ -228,8 +205,6 @@ export const ForecastExplorerPage: React.FC = () => {
             series={forecast.series}
             variable={selectedVariable}
             locationName={currentLocation?.name || selectedLocationSlug}
-            showEnvelope={showEnvelope}
-            showThresholds={showThresholds}
             visibleModels={visibleModels}
           />
         )}
@@ -257,7 +232,7 @@ export const ForecastExplorerPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
-                <tr className="border-b border-border bg-[#161b22] text-text-muted font-mono">
+                <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted font-mono">
                   <th className="p-2.5">Valid Date (IST)</th>
                   <th className="p-2.5">Lead</th>
                   <th className="p-2.5 text-brand-blue font-bold">AAGAM Blend</th>
@@ -271,7 +246,7 @@ export const ForecastExplorerPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-border/60 font-mono text-[11px]">
                 {forecast.series.map((s) => (
-                  <tr key={s.valid_date} className="hover:bg-[#21262d]/50 transition-colors">
+                  <tr key={s.valid_date} className="hover:bg-[#F0EDE7]/50 transition-colors">
                     <td className="p-2.5 font-sans font-medium text-text-primary">
                       {s.valid_date}
                     </td>

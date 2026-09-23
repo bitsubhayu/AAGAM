@@ -35,13 +35,16 @@ export const SkillComparisonChart: React.FC<SkillComparisonChartProps> = ({
     animationDuration: 300,
     tooltip: {
       trigger: "axis",
-      backgroundColor: "#161b22",
-      borderColor: "#30363d",
-      textStyle: { color: "#c9d1d9", fontSize: 12 },
+      backgroundColor: "#FFFFFF",
+      borderColor: "rgba(26,23,18,0.12)",
+      borderWidth: 1,
+      borderRadius: 12,
+      extraCssText: "box-shadow: 0 4px 20px rgba(26,23,18,0.12);",
+      textStyle: { color: "#1A1712", fontSize: 12, fontFamily: "'Instrument Sans', system-ui" },
       formatter: (params: any) => {
         if (!params?.length) return "";
         let out = `<div style="padding: 2px 4px;">`;
-        out += `<div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid #30363d; padding-bottom: 4px;">`;
+        out += `<div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid rgba(26,23,18,0.10); padding-bottom: 4px; color: #1A1712;">`;
         out += `Lead Day ${params[0].axisValue} · ${metric.toUpperCase()}`;
         out += `</div>`;
         params.forEach((p: any) => {
@@ -59,7 +62,7 @@ export const SkillComparisonChart: React.FC<SkillComparisonChartProps> = ({
     legend: {
       data: ["AAGAM Blend", "GFS (NOAA)", "ECMWF IFS", "DWD ICON", "ECMWF AIFS", "Equal-Mean Baseline"],
       top: 0,
-      textStyle: { color: "#8b949e", fontSize: 11 },
+      textStyle: { color: "#6B6560", fontSize: 11 },
       icon: "circle",
     },
     grid: {
@@ -72,8 +75,8 @@ export const SkillComparisonChart: React.FC<SkillComparisonChartProps> = ({
     xAxis: {
       type: "category",
       data: leads.map((l) => `D+${l}`),
-      axisLine: { lineStyle: { color: "#30363d" } },
-      axisLabel: { color: "#8b949e", fontSize: 11 },
+      axisLine: { lineStyle: { color: "rgba(26,23,18,0.15)" } },
+      axisLabel: { color: "#A09890", fontSize: 11 },
     },
     yAxis: {
       type: "value",

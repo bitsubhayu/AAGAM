@@ -233,52 +233,52 @@ def test_prevent_self_role_escalation():
 
     try:
         with conn.cursor() as cur:
-            # 1. Create a normal user (trigger automatically creates profile with role 'viewer')
+            # 1. Create a normal user (trigger automatically creates profile with role 'public')
             cur.execute("""
                 INSERT INTO auth.users (id, email, role)
-                VALUES (%s, 'viewer_user@aagam.local', 'authenticated');
+                VALUES (%s, 'public_user@aagam.local', 'authenticated');
             """, (test_user_id,))
 
             cur.execute("SELECT role FROM profiles WHERE user_id = %s;", (test_user_id,))
             initial_role = cur.fetchone()[0]
-            assert initial_role == "viewer", "Auto-created profile must have default 'viewer' role"
+            assert initial_role == "public", "Auto-created profile must have default 'public' role"
 
             # 2. Simulate normal authenticated user session
             cur.execute("BEGIN;")
             cur.execute("SET LOCAL ROLE authenticated;")
             cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (test_user_id,))
 
-            # Attempt self-escalation to admin
-            cur.execute("UPDATE profiles SET role = 'admin' WHERE user_id = %s;", (test_user_id,))
+            # Attempt self-escalation to coordinator
+            cur.execute("UPDATE profiles SET role = 'coordinator' WHERE user_id = %s;", (test_user_id,))
             assert cur.rowcount == 0, "Normal authenticated user must NOT be able to update their profile or role"
 
             # Attempt client-side profile creation
             with pytest.raises(Exception) as excinfo:
                 cur.execute("""
                     INSERT INTO profiles (user_id, role, display_name)
-                    VALUES (%s, 'admin', 'Unauthorized Admin');
+                    VALUES (%s, 'coordinator', 'Unauthorized Coordinator');
                 """, (str(uuid.uuid4()),))
             assert "violates row-level security policy" in str(excinfo.value).lower() or "permission denied" in str(excinfo.value).lower()
 
             cur.execute("ROLLBACK;")
 
-            # 3. Confirm profile role remains strictly 'viewer'
+            # 3. Confirm profile role remains strictly 'public'
             cur.execute("SELECT role FROM profiles WHERE user_id = %s;", (test_user_id,))
-            assert cur.fetchone()[0] == "viewer", "Role must remain 'viewer' after attempted escalation"
+            assert cur.fetchone()[0] == "public", "Role must remain 'public' after attempted escalation"
 
-            # 4. Verify admin user CAN manage profiles
+            # 4. Verify coordinator user CAN manage profiles
             cur.execute("""
                 INSERT INTO auth.users (id, email, role)
-                VALUES (%s, 'admin_user@aagam.local', 'authenticated');
+                VALUES (%s, 'coordinator_user@aagam.local', 'authenticated');
             """, (admin_user_id,))
-            cur.execute("UPDATE profiles SET role = 'admin' WHERE user_id = %s;", (admin_user_id,))
+            cur.execute("UPDATE profiles SET role = 'coordinator' WHERE user_id = %s;", (admin_user_id,))
 
             cur.execute("BEGIN;")
             cur.execute("SET LOCAL ROLE authenticated;")
             cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (admin_user_id,))
 
-            cur.execute("UPDATE profiles SET display_name = 'Verified Viewer' WHERE user_id = %s;", (test_user_id,))
-            assert cur.rowcount == 1, "Admin user must be allowed to manage profiles"
+            cur.execute("UPDATE profiles SET display_name = 'Verified Public' WHERE user_id = %s;", (test_user_id,))
+            assert cur.rowcount == 1, "Coordinator user must be allowed to manage profiles"
             cur.execute("ROLLBACK;")
 
     finally:
