@@ -39,6 +39,12 @@ SEVERITY_TEXT_LABELS = {
     "alert": "Alert (Take Action)",
 }
 
+SEVERITY_RANKS = {
+    "advisory": 1,
+    "watch": 2,
+    "alert": 3,
+}
+
 
 @dataclass
 class Alert:

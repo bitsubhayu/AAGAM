@@ -109,7 +109,9 @@ class LivePipelineRunner:
     def get_connection(self):
         if not self.db_url:
             raise RuntimeError("DATABASE_URL is required for live pipeline operations.")
-        conn = psycopg2.connect(self.db_url)
+        from core.config import sanitize_db_url
+        clean_url = sanitize_db_url(self.db_url)
+        conn = psycopg2.connect(clean_url)
         conn.autocommit = True
         return conn
 

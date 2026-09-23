@@ -1,9 +1,24 @@
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def sanitize_db_url(url: Optional[str]) -> Optional[str]:
+    """Sanitizes DATABASE_URL by percent-encoding credentials with special characters (like '@')."""
+    if not url:
+        return url
+    if url.count("@") > 1 and "://" in url:
+        prefix, remainder = url.split("://", 1)
+        user_pass, host_db = remainder.rsplit("@", 1)
+        if ":" in user_pass:
+            user, password = user_pass.split(":", 1)
+            encoded_password = urllib.parse.quote(urllib.parse.unquote(password), safe="")
+            return f"{prefix}://{user}:{encoded_password}@{host_db}"
+    return url
 
 
 class Settings(BaseSettings):
@@ -23,6 +38,11 @@ class Settings(BaseSettings):
     EXPORT_SIGNING_SECRET: Optional[str] = Field(default=None)
     SUPABASE_JWKS_URL: Optional[str] = Field(default=None)
     DATABASE_URL: Optional[str] = Field(default=None)
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def validate_database_url(cls, v: Optional[str]) -> Optional[str]:
+        return sanitize_db_url(v)
     DB_POOL_MIN_SIZE: int = Field(default=1)
     DB_POOL_MAX_SIZE: int = Field(default=10)
     API_V1_STR: str = Field(default="/api/v1")
