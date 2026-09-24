@@ -38,6 +38,7 @@ from api.app.routers import (
     health,
     history,
     meta,
+    model_versioning,
     models,
     pipeline,
     skill,
@@ -195,6 +196,7 @@ app.include_router(export.router)
 app.include_router(chat.router)
 app.include_router(pipeline.router)
 app.include_router(models.router)
+app.include_router(model_versioning.router)
 
 
 if __name__ == "__main__":

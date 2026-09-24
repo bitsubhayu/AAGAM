@@ -1,0 +1,76 @@
+# ==============================================================================
+# AAGAM — Automated Model-Version Switching Configuration
+# ==============================================================================
+# Authoritative source: AAGAM_MODEL_VERSIONING_DESIGN.md
+#                       AAGAM_MODEL_VERSIONING_ANTIGRAVITY_SPEC.md
+#
+# SAFETY: This engine is DORMANT by default.
+# enabled: false ensures that all state-machine advancement and automated
+# switching logic no-ops. Do NOT set to true in production until Milestone M4
+# soak passes and security prerequisites are satisfied.
+# ==============================================================================
+
+# Master activation flag
+enabled: false
+
+# Composite Scoring Weights (Design Doc §H)
+# Normalized across MAE, RMSE, Bias, and CSI.
+# If CSI is missing for a variable (e.g. tmax, wind), remaining weights are renormalized.
+weights:
+  w_mae: 0.40   # Primary continuous accuracy metric (PRD §2, M1/M2)
+  w_rmse: 0.30  # Penalty for large misses / heavy-tail errors
+  w_bias: 0.15  # Systematic error guardrail
+  w_csi: 0.15   # Hazard guidance critical success index (rain only)
+
+# Formulation B: Operational Promotion-Risk Margin Parameters (Design Doc §K.1)
+# Do NOT describe as a statistical standard error or confidence interval.
+margin:
+  base_margin: 0.02                 # Absolute composite-score margin hurdle (2.0%)
+  target_sample_volume: 1000        # Full statistical confidence sample volume
+  min_total_sample_floor: 150       # Minimum total samples across all qualifying strata (5 * 30)
+  regional_non_regression_limit: -0.01 # Max allowed degradation in any single region (-1.0%)
+
+# Evidence & Sample Floors (Design Doc §I)
+floors:
+  min_samples_per_stratum: 30       # Minimum verified forecasts per stratum
+  min_strata: 5                     # Minimum qualifying strata per evaluation window
+  min_regions_represented: 5        # All 5 configured AAGAM regions must contribute qualifying strata
+  min_lead_days: 4                  # Minimum distinct lead days represented (out of 0-7)
+  min_csi_events: 10                # Minimum threshold-crossing rain events for CSI term
+
+# Configured AAGAM Meteorological Regions
+regions:
+  - EAST_NE
+  - SOUTH
+  - CENTRAL
+  - NW
+  - HIMALAYAN
+
+# Evaluation Window Definitions in Days (Design Doc §F)
+windows:
+  recent_days: 14                   # Recent operational window
+  seasonal_days: 90                 # Same-season window
+  longterm_max_days: 180            # Baseline verified history window (~26 weeks)
+
+# Dwell Times & Stage Durations in Days (Design Doc §K.3, §L, §M)
+durations:
+  weekly_cycle_days: 7              # Dwell time between evaluation cycle 1 and cycle 2 confirmation
+  shadow_days: 7                    # Duration candidate runs silently in shadow mode
+  canary_days: 14                   # Duration candidate serves 5 canary locations
+  active_min_dwell_days: 14         # Minimum dwell time before an active version can be replaced
+  consecutive_cycles_required: 2   # Consecutive weekly confirmation cycles required (hysteresis)
+
+# Rollback Triggers & Safety Cooldowns (Design Doc §O)
+rollback:
+  mae_degradation_pct: 0.25         # Trailing-3-day MAE worse than baseline by > 25%
+  min_samples_mae_trigger: 20       # Minimum samples to evaluate MAE degradation
+  bias_explosion_factor: 3.0        # Absolute bias triples versus baseline
+  min_samples_bias_trigger: 20      # Minimum samples to evaluate bias explosion
+  csi_drop_absolute: 0.15           # CSI drops by > 0.15 absolute versus baseline
+  min_events_csi_trigger: 3         # Minimum real events required to evaluate CSI drop
+  pipeline_consecutive_failures: 3  # Consecutive 6-hourly cycle blend failures (18h)
+  coverage_degraded_threshold: 0.50 # > 50% locations degraded in cycle
+  coverage_consecutive_cycles: 2    # Consecutive degraded coverage cycles
+  cooldown_days: 7                  # Mandatory cooldown period post-rollback
+  circuit_breaker_window_days: 14   # Rolling window to track repeated rollbacks
+  circuit_breaker_max_rollbacks: 2  # Rollbacks within window triggering complete automation freeze

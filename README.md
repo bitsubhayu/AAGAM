@@ -5,8 +5,8 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6.svg)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL%2015-3ECF8E.svg)](https://supabase.com/)
-[![Groq](https://img.shields.io/badge/Groq-Llama%203.3%2070B-F55036.svg)](https://groq.com/)
-[![Tests](https://img.shields.io/badge/Tests-182%20Passed-brightgreen.svg)]()
+[![Groq](https://img.shields.io/badge/Groq-GPT--OSS%20120B-F55036.svg)](https://groq.com/)
+[![Tests](https://img.shields.io/badge/Tests-435%20Passed-brightgreen.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Smart India Hackathon 2026 — Problem Statement 26081**  
@@ -23,7 +23,7 @@ Global Numerical Weather Prediction (NWP) models (NOAA GFS, ECMWF IFS, DWD ICON)
 - **Hierarchical AI Stacking:** Dynamically combines ECMWF IFS, NOAA GFS, DWD ICON, and ECMWF AIFS using regularized Ridge Regression and LightGBM models conditioned on region, climate season, and 1–7 day lead times.
 - **Uncertainty & Spread Estimation:** Computes ensemble standard deviation (`spread`) and consensus metrics (`models_over_threshold`) to provide confidence bounds for forecasters.
 - **IMD-Compliant Alert Engine:** Automated color-coded threshold exceedance alerts (Green, Yellow, Orange, Red) for extreme precipitation ($\ge 64.5$ mm), heatwaves ($\ge 40^\circ\text{C}$), and severe wind gusts.
-- **Grounded AI Assistant:** Powered by Groq's low-latency LPUs running `llama-3.3-70b-versatile`, equipped with 6 deterministic backend inspection tools and a deterministic Number Guard to eliminate hallucinations.
+- **Grounded AI Assistant:** Powered by Groq's low-latency LPUs running `openai/gpt-oss-120b` (with `openai/gpt-oss-20b` fallback), equipped with 6 deterministic backend inspection tools and a deterministic Number Guard to eliminate hallucinations.
 - **Enterprise High Availability:** Sub-500ms API reads, zero-downtime model rollback (330 ms), automated nightly Parquet disaster recovery backups, and graceful 4-level fallback degradation.
 
 ---
@@ -145,7 +145,7 @@ For detailed architectural diagrams, data flows, and security models, see [`docs
 
 | Category | Endpoint | Method | Role | Description |
 |---|---|---|---|---|
-| **Health** | `/api/v1/health` | `GET` | `anon` | Database connectivity probe and service status. |
+| **Health** | `/health` | `GET` | `anon` | Database connectivity probe and service status (unprefixed liveness probe). |
 | **Metadata** | `/api/v1/meta` | `GET` | `anon` | 40 synoptic locations, regions, active model version, last pipeline cycle. |
 | **Forecast** | `/api/v1/forecast` | `GET` | `anon` | 1–7 day blended forecast, individual NWP models, and ensemble spread. |
 | **Map Layer** | `/api/v1/map` | `GET` | `anon` | Geospatial payload for 40 stations filtered by date and variable. |
@@ -154,7 +154,8 @@ For detailed architectural diagrams, data flows, and security models, see [`docs
 | **Weights** | `/api/v1/weights` | `GET` | `anon` | Region and season-specific weights for GFS, IFS, ICON, and AIFS. |
 | **History** | `/api/v1/history` | `GET` | `anon` | Time-series historical observations and past model performance. |
 | **Pipeline** | `/api/v1/pipeline/status`| `GET` | `anon` | Execution logs, row counts, and status of automated cron cycles. |
-| **Models** | `/api/v1/models/{id}/activate` | `POST` | `admin` | Zero-downtime atomic model version activation and instant rollback. |
+| **Models** | `/api/v1/models/{id}/activate` | `POST` | `coordinator` | Operational endpoint (hard-disabled in web API; pipeline-managed). |
+| **Artifacts** | `/api/v1/artifacts/{id}` | `GET` | `owner/coordinator` | Paginated assistant stored data artifact retrieval. |
 | **Assistant** | `/api/v1/assistant/chat` | `POST` | `anon` | Streaming SSE endpoint for AI meteorologist tool orchestration. |
 | **Export** | `/api/v1/export` | `GET` | `anon` | CSV/Parquet telemetry and forecast data export. |
 
@@ -165,7 +166,7 @@ For detailed architectural diagrams, data flows, and security models, see [`docs
 AAGAM enforces rigorous test coverage across pipelines, ML algorithms, API security, and agent tools.
 
 ```powershell
-# Run the complete Python test suite (182+ tests)
+# Run the complete Python test suite (435 tests)
 .venv\Scripts\pytest.exe -v
 
 # Run Python linter & code style checks

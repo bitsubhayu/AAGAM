@@ -58,6 +58,9 @@ class LivePipelineRunner:
         self.db_url = db_url or settings.DATABASE_URL
         self.locations = self._load_locations()
         self.regions_cfg = get_regions()
+        self._artifact_cache: Dict[str, Any] = {}
+        from pipeline.models.registry import ModelRegistry
+        self.model_registry = ModelRegistry(db_url=self.db_url) if self.db_url else model_registry
 
     def _load_locations(self) -> List[Dict[str, Any]]:
         """Loads all 40 authoritative locations with coordinates and terrain."""
@@ -217,7 +220,142 @@ class LivePipelineRunner:
             logger.error(f"Unexpected error in live fetch: {e}")
             return records, api_calls_est, f"ERROR: {e}"
 
-    def run_ingest_and_blend(self, dry_run: bool = False) -> Dict[str, Any]:
+    def _load_model_artifacts(
+        self, storage_path_str: Optional[str] = None
+    ) -> Tuple[Any, Any, Dict[Tuple[str, int], SelectionDecision], AagamBlender]:
+        """Loads and caches model artifacts (Ridge, LightGBM, Selection, Blender) for a version."""
+        path_key = storage_path_str or "models"
+        if not hasattr(self, "_artifact_cache"):
+            self._artifact_cache: Dict[
+                str, Tuple[Any, Any, Dict[Tuple[str, int], SelectionDecision], AagamBlender]
+            ] = {}
+
+        if path_key in self._artifact_cache:
+            return self._artifact_cache[path_key]
+
+        target_dir = Path(path_key)
+        if not target_dir.exists():
+            target_dir = Path("models")
+
+        # Load Ridge
+        ridge_path = target_dir / "ridge_weights.joblib"
+        if not ridge_path.exists():
+            ridge_path = Path("models/ridge_weights.joblib")
+        ridge_engine = joblib.load(ridge_path)
+
+        # Load LightGBM
+        lgbm_engine = LightGBMEngine(models_dir=target_dir)
+        try:
+            lgbm_engine.load_models(input_dir=target_dir)
+        except Exception:
+            lgbm_engine.load_models(input_dir=Path("models"))
+
+        # Load Selection decisions
+        decisions_path = target_dir / "blend_selection.json"
+        if not decisions_path.exists():
+            decisions_path = Path("models/blend_selection.json")
+        selection_decisions: Dict[Tuple[str, int], SelectionDecision] = {}
+        if decisions_path.exists():
+            with open(decisions_path, "r", encoding="utf-8") as f:
+                raw_dec = json.load(f)
+            for k, v in raw_dec.items():
+                selection_decisions[(v["variable"], int(v["lead_days"]))] = SelectionDecision(**v)
+
+        blender = AagamBlender(selection_decisions=selection_decisions)
+        self._artifact_cache[path_key] = (ridge_engine, lgbm_engine, selection_decisions, blender)
+        return self._artifact_cache[path_key]
+
+    def run_model_versioning_boundary(
+        self,
+        conn: Any,
+        cycle_started_at: datetime,
+        mock_evaluations: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Executes model-versioning lifecycle evaluation within a strict isolated failure boundary.
+
+        M4 Invariant (Design Doc §U, §X):
+        Any exception in model-versioning MUST:
+        - be recorded separately as job='model-versioning'
+        - never convert job='ingest-blend' into FAILURE
+        - never corrupt existing blend output
+        - never prevent the normal active version from producing forecasts
+        - never stop normal alert generation
+        """
+        v_started = datetime.now(timezone.utc)
+        try:
+            from pipeline.versioning.config import load_model_switching_config
+            from pipeline.versioning.lifecycle import run_versioning_pipeline_step
+
+            cfg = load_model_switching_config()
+            if not cfg.enabled:
+                logger.debug("Model-versioning is dormant (enabled: false); skipping.")
+                return {"status": "DORMANT", "message": "Model switching is disabled."}
+
+            result = run_versioning_pipeline_step(
+                conn=conn,
+                locations=self.locations,
+                pipeline_run_id=None,
+                now_dt=cycle_started_at,
+                config=cfg,
+                mock_evaluations=mock_evaluations,
+            )
+            v_finished = datetime.now(timezone.utc)
+
+            # Record SUCCESS in pipeline_runs for job='model-versioning'
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s);
+                        """,
+                        (
+                            "model-versioning",
+                            v_started,
+                            v_finished,
+                            "SUCCESS",
+                            1 if result.get("transition_occurred") or result.get("rollback_occurred") else 0,
+                            0,
+                            f"Model-versioning completed: status={result.get('status')}, decision={result.get('decision')}, reason={result.get('reason')}",
+                        ),
+                    )
+            except Exception as pr_err:
+                logger.warning(f"Could not record model-versioning success in pipeline_runs: {pr_err}")
+
+            return result
+
+        except Exception as e:
+            v_finished = datetime.now(timezone.utc)
+            logger.error(f"Isolated failure boundary caught model-versioning error: {e}", exc_info=True)
+            # Record FAILED in pipeline_runs for job='model-versioning'
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s);
+                        """,
+                        (
+                            "model-versioning",
+                            v_started,
+                            v_finished,
+                            "FAILED",
+                            0,
+                            0,
+                            f"Model-versioning subsystem failed: {e}",
+                        ),
+                    )
+            except Exception as pr_err:
+                logger.warning(f"Could not record model-versioning failure in pipeline_runs: {pr_err}")
+
+            # Safely return error summary; DO NOT re-raise!
+            return {"status": "FAILED", "error": str(e)}
+
+    def run_ingest_and_blend(
+        self,
+        dry_run: bool = False,
+        mock_evaluations: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Executes full live ingestion, model blending, alert evaluation, and database write."""
         started_at = datetime.now(timezone.utc)
         logger.info(f"=== Starting AAGAM Ingest-Blend Cycle (dry_run={dry_run}) ===")
@@ -320,53 +458,126 @@ class LivePipelineRunner:
         pivoted["season"] = [get_season(d) for d in pd.to_datetime(pivoted["valid_date"]).dt.date]
         pivoted["regime"] = [get_regime(v, m) for v, m in zip(pivoted["variable"], pivoted["mean"])]
 
-        # 4. Load active model version artifacts
-        active_ver = model_registry.get_active_version()
+        # 3. Model-Versioning Step (Design Doc §U, §X: isolated failure boundary)
+        self.run_model_versioning_boundary(conn, started_at, mock_evaluations=mock_evaluations)
+
+        # 4. Resolve Active and Canary Serving Versions
+        active_ver = (self.model_registry or model_registry).get_active_version()
         version_id = active_ver["id"] if active_ver else None
-        active_dir = Path(active_ver["storage_path"]) if active_ver else Path("models")
-        if not active_dir.exists():
-            active_dir = Path("models")
+        active_dir_str = active_ver["storage_path"] if active_ver else "models"
 
-        logger.info(f"Using active model version {version_id} from {active_dir}")
+        logger.info(f"Using active model version {version_id} from {active_dir_str}")
 
-        # Load Ridge model
-        ridge_path = active_dir / "ridge_weights.joblib"
-        if not ridge_path.exists():
-            ridge_path = Path("models/ridge_weights.joblib")
-        ridge_engine = joblib.load(ridge_path)
+        # Load active model artifacts
+        ridge_engine, lgbm_engine, selection_decisions, blender = self._load_model_artifacts(active_dir_str)
 
-        # Load LightGBM models
-        lgbm_engine = LightGBMEngine(models_dir=active_dir)
-        try:
-            lgbm_engine.load_models(input_dir=active_dir)
-        except Exception:
-            lgbm_engine.load_models(input_dir=Path("models"))
-
-        # Load Selection decisions
-        decisions_path = active_dir / "blend_selection.json"
-        if not decisions_path.exists():
-            decisions_path = Path("models/blend_selection.json")
-        selection_decisions = {}
-        if decisions_path.exists():
-            with open(decisions_path, "r", encoding="utf-8") as f:
-                raw_dec = json.load(f)
-            for k, v in raw_dec.items():
-                selection_decisions[(v["variable"], int(v["lead_days"]))] = SelectionDecision(**v)
-
-        # 5. Predict with Ridge & LightGBM
+        # 5. Predict with Ridge & LightGBM for active version
         pred_ridge, degraded_ridge = ridge_engine.predict_dataframe(pivoted)
         pred_lgbm = lgbm_engine.predict_dataframe(pivoted)
 
-        # 6. Blend dataframe using AagamBlender
-        blender = AagamBlender(selection_decisions=selection_decisions)
+        # 6. Blend dataframe using active version blender
         df_blended = blender.blend_dataframe(
             df=pivoted,
             pred_ridge=pred_ridge,
             pred_lgbm=pred_lgbm,
             degraded_ridge=degraded_ridge,
         )
+        df_blended["version_id"] = version_id
 
-        # 7. Evaluate extreme hazards
+        # Query active canary assignments and in-flight shadow candidate
+        canary_map: Dict[int, int] = {}
+        shadow_cand: Optional[Dict[str, Any]] = None
+        try:
+            from pipeline.versioning.canary import get_active_canary_assignments
+            from pipeline.versioning.lifecycle import get_candidates_in_flight
+
+            canary_map = get_active_canary_assignments(conn)
+            in_flight = get_candidates_in_flight(conn)
+            for c in in_flight:
+                if c["status"] == "shadow":
+                    shadow_cand = c
+                    break
+        except Exception as meta_err:
+            logger.warning(f"Could not load canary or shadow metadata: {meta_err}")
+
+        # Process Canary serving if active (Design Doc §M)
+        if canary_map:
+            canary_version_ids = set(canary_map.values())
+            for c_ver_id in canary_version_ids:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT storage_path FROM model_versions WHERE id = %s;", (c_ver_id,))
+                        row = cur.fetchone()
+                        canary_storage = row[0] if row else "models"
+
+                    c_ridge, c_lgbm, _, c_blender = self._load_model_artifacts(canary_storage)
+                    c_pred_ridge, c_deg_ridge = c_ridge.predict_dataframe(pivoted)
+                    c_pred_lgbm = c_lgbm.predict_dataframe(pivoted)
+                    df_canary = c_blender.blend_dataframe(
+                        df=pivoted,
+                        pred_ridge=c_pred_ridge,
+                        pred_lgbm=c_pred_lgbm,
+                        degraded_ridge=c_deg_ridge,
+                    )
+                    df_canary["version_id"] = c_ver_id
+
+                    # Replace rows for assigned canary locations
+                    assigned_locs = [loc_id for loc_id, v_id in canary_map.items() if v_id == c_ver_id]
+                    mask_canary = df_blended["location_id"].isin(assigned_locs)
+
+                    blend_cols = [
+                        "blended",
+                        "ridge",
+                        "lgbm",
+                        "equal_mean",
+                        "spread",
+                        "models_over_threshold",
+                        "degraded",
+                        "version_id",
+                    ]
+                    for col in blend_cols:
+                        if col in df_canary.columns:
+                            df_blended.loc[mask_canary, col] = df_canary.loc[mask_canary, col]
+
+                    logger.info(
+                        f"Served canary version {c_ver_id} for {len(assigned_locs)} locations: {assigned_locs}"
+                    )
+                except Exception as canary_err:
+                    logger.error(
+                        f"Error processing canary blend for version {c_ver_id}: {canary_err}",
+                        exc_info=True,
+                    )
+
+        # Process Shadow candidate pass (Design Doc §L, silent evaluation buffer)
+        if shadow_cand:
+            try:
+                s_ver_id = shadow_cand["id"]
+                s_storage = shadow_cand.get("storage_path") or "models"
+                s_ridge, s_lgbm, _, s_blender = self._load_model_artifacts(s_storage)
+                s_pred_ridge, s_deg_ridge = s_ridge.predict_dataframe(pivoted)
+                s_pred_lgbm = s_lgbm.predict_dataframe(pivoted)
+                df_shadow = s_blender.blend_dataframe(
+                    df=pivoted,
+                    pred_ridge=s_pred_ridge,
+                    pred_lgbm=s_pred_lgbm,
+                    degraded_ridge=s_deg_ridge,
+                )
+                df_shadow["version_id"] = s_ver_id
+
+                from pipeline.versioning.shadow import save_shadow_predictions
+
+                shadow_file, total_shadow_rows = save_shadow_predictions(df_shadow, s_ver_id)
+                logger.info(
+                    f"Generated shadow blend for candidate {s_ver_id} ({len(df_shadow)} new rows, "
+                    f"{total_shadow_rows} total accumulated rows persisted to {shadow_file} and durable storage)."
+                )
+            except Exception as shadow_err:
+                logger.error(
+                    f"Error processing shadow blend for candidate {shadow_cand['id']}: {shadow_err}",
+                    exc_info=True,
+                )
+
+        # 7. Evaluate extreme hazards (alerts follow the serving version of each location)
         logger.info("Evaluating Phase 4 extreme weather hazard rules...")
         extreme_engine = ExtremeGuidanceEngine()
         alerts_list = extreme_engine.evaluate_all(df_blended)
@@ -387,7 +598,7 @@ class LivePipelineRunner:
                 float(row["spread"]) if pd.notna(row["spread"]) else None,
                 int(row["models_over_threshold"]),
                 bool(row["degraded"]),
-                version_id,
+                int(row["version_id"]) if pd.notna(row.get("version_id")) and row.get("version_id") is not None else version_id,
             )
             for _, row in df_blended.iterrows()
         ]

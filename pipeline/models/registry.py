@@ -146,8 +146,6 @@ class ModelRegistry:
 
         return passed, reason, active_version
 
-        return passed, reason, active_version
-
     def register_version(
         self,
         version_date: Optional[str] = None,
@@ -155,8 +153,17 @@ class ModelRegistry:
         metrics: Optional[Dict[str, Any]] = None,
         force_activate: bool = False,
         tolerance: float = DEFAULT_TOLERANCE,
+        parent_version_id: Optional[int] = None,
+        algorithm_type: str = "ridge_lgbm_stacking",
+        evaluation_policy: str = "staged_v2",
+        config_hash: Optional[str] = None,
+        training_window_start: Optional[Any] = None,
+        training_window_end: Optional[Any] = None,
+        validation_window_start: Optional[Any] = None,
+        validation_window_end: Optional[Any] = None,
+        created_by: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Packages, registers, and conditionally activates a model version."""
+        """Packages, registers, and conditionally activates or stages a model version."""
         if not version_date:
             version_date = datetime.now(timezone.utc).strftime("%Y%m%d")
 
@@ -175,6 +182,14 @@ class ModelRegistry:
                     "registered_at": datetime.now(timezone.utc).isoformat(),
                     "validation_mae": {"rain_mm": 1.9826, "tmax_c": 1.0236, "wind_max_kmh": 2.0672},
                 }
+
+        # Extract temporal windows from metrics if not explicitly passed
+        if not training_window_start and isinstance(metrics.get("training_period"), dict):
+            training_window_start = metrics["training_period"].get("start")
+            training_window_end = metrics["training_period"].get("end")
+        if not validation_window_start and isinstance(metrics.get("validation_period"), dict):
+            validation_window_start = metrics["validation_period"].get("start")
+            validation_window_end = metrics["validation_period"].get("end")
 
         # Copy artifacts to dated directory
         artifact_patterns = [
@@ -202,7 +217,27 @@ class ModelRegistry:
 
         # Evaluate quality gate
         gate_passed, gate_reason, active_ver = self.evaluate_quality_gate(metrics, tolerance=tolerance)
-        should_activate = force_activate or gate_passed
+
+        # Resolve parent version ID from currently active model if not passed
+        resolved_parent_id = parent_version_id
+        if resolved_parent_id is None and active_ver:
+            resolved_parent_id = active_ver.get("id")
+
+        # Determine activation policy and status
+        # Under staged_v2 rollout, newly registered versions enter 'candidate' status
+        # rather than auto-activating on quality-gate pass.
+        from pipeline.versioning.config import load_switching_config
+        switching_cfg = load_switching_config()
+
+        if switching_cfg.enabled and evaluation_policy == "staged_v2":
+            should_activate = False
+            status = "candidate"
+            activated_at = None
+        else:
+            # Legacy single-gate behavior (or when model-switching is dormant)
+            should_activate = force_activate or gate_passed
+            status = "active" if should_activate else "rejected"
+            activated_at = datetime.now(timezone.utc) if should_activate else None
 
         # Upload artifacts to Supabase storage bucket `models`
         uploaded_to_storage = []
@@ -220,30 +255,63 @@ class ModelRegistry:
         version_id = None
         if conn:
             try:
+                now_ts = datetime.now(timezone.utc)
                 with conn.cursor() as cur:
                     if should_activate:
-                        # Deactivate currently active version
-                        cur.execute("UPDATE model_versions SET is_active = false WHERE is_active = true;")
+                        # Deactivate currently active version atomically
+                        cur.execute(
+                            """
+                            UPDATE model_versions
+                            SET is_active = false, status = 'superseded', deactivated_at = %s
+                            WHERE is_active = true;
+                            """,
+                            (now_ts,),
+                        )
 
-                    # Insert new model version
+                    # Insert new model version with Phase 1 lifecycle schema
                     cur.execute(
                         """
-                        INSERT INTO model_versions (storage_path, metrics, is_active)
-                        VALUES (%s, %s, %s)
-                        RETURNING id;
+                        INSERT INTO model_versions (
+                            storage_path, metrics, is_active,
+                            parent_version_id, algorithm_type, evaluation_policy, config_hash,
+                            training_window_start, training_window_end,
+                            validation_window_start, validation_window_end,
+                            status, activated_at, created_by
+                        ) VALUES (
+                            %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s,
+                            %s, %s,
+                            %s, %s, %s
+                        ) RETURNING id;
                         """,
-                        (storage_path, json.dumps(metrics), should_activate),
+                        (
+                            storage_path,
+                            json.dumps(metrics),
+                            should_activate,
+                            resolved_parent_id,
+                            algorithm_type,
+                            evaluation_policy,
+                            config_hash,
+                            training_window_start,
+                            training_window_end,
+                            validation_window_start,
+                            validation_window_end,
+                            status,
+                            activated_at,
+                            created_by,
+                        ),
                     )
                     version_id = cur.fetchone()[0]
 
-                    # Populate weights table if ridge_weights_table.parquet exists
+                    # Populate weights table if ridge_weights_table.parquet exists and model activated
                     weights_table_file = target_version_dir / "ridge_weights_table.parquet"
                     if weights_table_file.exists() and should_activate:
                         self._populate_weights_table(cur, version_id, weights_table_file)
 
                 logger.info(
                     f"Registered model version {version_id} ({storage_path}): "
-                    f"is_active={should_activate}. {gate_reason}"
+                    f"status={status}, is_active={should_activate}, policy={evaluation_policy}. {gate_reason}"
                 )
             finally:
                 conn.close()
@@ -253,6 +321,9 @@ class ModelRegistry:
             "version_date": version_date,
             "storage_path": storage_path,
             "is_active": should_activate,
+            "status": status,
+            "parent_version_id": resolved_parent_id,
+            "evaluation_policy": evaluation_policy,
             "quality_gate_passed": gate_passed,
             "quality_gate_reason": gate_reason,
             "artifacts_copied": copied_artifacts,
@@ -321,9 +392,24 @@ class ModelRegistry:
                 if not target:
                     raise ValueError(f"Target model version {target_version_id} does not exist.")
 
-                # In transaction: deactivate current and activate target
-                cur.execute("UPDATE model_versions SET is_active = false WHERE is_active = true;")
-                cur.execute("UPDATE model_versions SET is_active = true WHERE id = %s;", (target_version_id,))
+                now_ts = datetime.now(timezone.utc)
+                # In transaction: deactivate current and activate target with proper statuses
+                cur.execute(
+                    """
+                    UPDATE model_versions
+                    SET is_active = false, status = 'rolled_back', deactivated_at = %s
+                    WHERE is_active = true;
+                    """,
+                    (now_ts,),
+                )
+                cur.execute(
+                    """
+                    UPDATE model_versions
+                    SET is_active = true, status = 'active', activated_at = %s
+                    WHERE id = %s;
+                    """,
+                    (now_ts, target_version_id),
+                )
 
             logger.info(f"Successfully rolled back active model to version {target_version_id} ({target[1]}).")
             return {

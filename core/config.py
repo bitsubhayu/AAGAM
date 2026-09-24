@@ -72,7 +72,10 @@ class Settings(BaseSettings):
     )
 
     # Local evaluation and testing demo authentication
-    ENABLE_LOCAL_DEMO_AUTH: bool = Field(default=True)
+    # SECURITY: Defaults to False — demo tokens are only accepted when explicitly
+    # enabled via ENABLE_LOCAL_DEMO_AUTH=true in the environment. Must never be
+    # True in production deployments. (AUTH-001 fix)
+    ENABLE_LOCAL_DEMO_AUTH: bool = Field(default=False)
 
     @property
     def cors_origins(self) -> List[str]:

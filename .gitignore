@@ -68,3 +68,4 @@ scratch/
 *.grd
 *.GRD
 data/backups/
+data/shadow/

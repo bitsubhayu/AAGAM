@@ -391,3 +391,89 @@ class ModelActivationResponse(BaseModel):
     storage_path: str
     metrics: Dict[str, Any]
     activated_at: str
+
+
+# ==============================================================================
+# Model Versioning & Lifecycle Endpoints (Design Doc §S, §T, Phase 4)
+# ==============================================================================
+class ModelVersionEvaluationItem(BaseModel):
+    id: int
+    version_id: int
+    pipeline_run_id: Optional[int] = None
+    window_type: str
+    window_start: str
+    window_end: str
+    composite_score: Optional[float] = None
+    strata_included: int
+    strata_excluded: int
+    regions_covered: Optional[int] = 0
+    locations_covered: Optional[int] = None
+    lead_days_covered: int
+    sample_counts: Dict[str, Any] = Field(default_factory=dict)
+    metrics_detail: Dict[str, Any] = Field(default_factory=dict)
+    computed_at: str
+
+
+class ModelVersionSummary(BaseModel):
+    id: int
+    status: str
+    algorithm_type: str
+    evaluation_policy: str
+    is_active: bool
+    parent_version_id: Optional[int] = None
+    created_at: str
+    activated_at: Optional[str] = None
+    deactivated_at: Optional[str] = None
+    created_by: Optional[str] = None
+    recent_evaluation: Optional[Dict[str, Any]] = None
+
+
+class ModelVersionDecisionItem(BaseModel):
+    id: int
+    decision: str
+    previous_version_id: Optional[int] = None
+    candidate_version_id: Optional[int] = None
+    composite_recent_prev: Optional[float] = None
+    composite_recent_cand: Optional[float] = None
+    composite_seasonal_prev: Optional[float] = None
+    composite_seasonal_cand: Optional[float] = None
+    composite_longterm_prev: Optional[float] = None
+    composite_longterm_cand: Optional[float] = None
+    sample_counts: Dict[str, Any] = Field(default_factory=dict)
+    evaluation_window_start: Optional[str] = None
+    evaluation_window_end: Optional[str] = None
+    reason: str
+    triggered_by: Optional[str] = None
+    pipeline_run_id: Optional[int] = None
+    algorithm_version: str
+    created_at: str
+
+
+class AutomationStateResponse(BaseModel):
+    id: int = 1
+    frozen: bool
+    frozen_reason: Optional[str] = None
+    frozen_by: Optional[str] = None
+    frozen_at: Optional[str] = None
+    cooldown_until: Optional[str] = None
+    rollback_count_14d: int = 0
+    updated_at: str
+    current_candidate: Optional[Dict[str, Any]] = None
+
+
+class FreezeRequest(BaseModel):
+    reason: str = Field(..., min_length=10, description="Mandatory reason for freezing automation (min 10 chars)")
+
+
+class UnfreezeRequest(BaseModel):
+    reason: str = Field(..., min_length=10, description="Mandatory reason for unfreezing automation (min 10 chars)")
+
+
+class ForceLastKnownGoodRequest(BaseModel):
+    reason: str = Field(..., min_length=10, description="Mandatory reason for forcing last-known-good model (min 10 chars)")
+
+
+class DisableCandidateRequest(BaseModel):
+    reason: str = Field(..., min_length=10, description="Mandatory reason for disabling candidate (min 10 chars)")
+
+

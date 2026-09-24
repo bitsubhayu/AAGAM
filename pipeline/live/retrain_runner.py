@@ -161,11 +161,20 @@ class RetrainRunner:
             json.dump(metrics, f, indent=2)
 
         # 6. Register model version with quality gate
+        from pipeline.versioning.config import load_switching_config
+        switching_cfg = load_switching_config()
+        evaluation_policy = "staged_v2" if switching_cfg.enabled else "legacy_single_gate"
+
         reg_result = model_registry.register_version(
             version_date=retrain_date,
             source_dir=target_dir,
             metrics=metrics,
             tolerance=tolerance,
+            evaluation_policy=evaluation_policy,
+            training_window_start=metrics["training_period"]["start"],
+            training_window_end=metrics["training_period"]["end"],
+            validation_window_start=metrics["validation_period"]["start"],
+            validation_window_end=metrics["validation_period"]["end"],
         )
 
         finished_at = datetime.now(timezone.utc)
@@ -187,7 +196,7 @@ class RetrainRunner:
                         "SUCCESS",
                         1,
                         0,
-                        f"Weekly retraining completed in {duration_sec:.1f}s. Version ID: {reg_result['version_id']}, Active: {reg_result['is_active']}. {reg_result['quality_gate_reason']}",
+                        f"Weekly retraining completed in {duration_sec:.1f}s. Version ID: {reg_result['version_id']}, Status: {reg_result.get('status')}, Active: {reg_result['is_active']}. {reg_result['quality_gate_reason']}",
                     ),
                 )
         finally:
@@ -197,6 +206,8 @@ class RetrainRunner:
             "status": "SUCCESS",
             "version_id": reg_result["version_id"],
             "is_active": reg_result["is_active"],
+            "status_label": reg_result.get("status"),
+            "evaluation_policy": reg_result.get("evaluation_policy"),
             "quality_gate_passed": reg_result["quality_gate_passed"],
             "quality_gate_reason": reg_result["quality_gate_reason"],
             "storage_path": reg_result["storage_path"],

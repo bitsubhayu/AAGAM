@@ -108,6 +108,9 @@ async def get_current_user(
         return CurrentUser(user_id=user_id, email=email, role=user_role)
 
     # Fetch authoritative role from `profiles` table
+    # AUTH-002 fix: role is ONLY sourced from the profiles table.
+    # If the DB lookup fails or returns no row, role defaults to 'public'
+    # unconditionally — JWT claims are never trusted for role assignment.
     user_role = "public"
     try:
         # Inject RLS claims so the connection acts in the context of the user
@@ -118,11 +121,7 @@ async def get_current_user(
         )
         if row and row["role"]:
             user_role = row["role"]
-        else:
-            # Check if role is present in app_metadata or user_metadata
-            app_meta = payload.get("app_metadata", {})
-            user_meta = payload.get("user_metadata", {})
-            user_role = app_meta.get("role") or user_meta.get("role") or "public"
+        # If no profile row exists, user_role stays 'public' — never escalated
     except Exception as e:
         logger.warning(f"Failed to query user profile for {user_id}: {e}")
         user_role = "public"
