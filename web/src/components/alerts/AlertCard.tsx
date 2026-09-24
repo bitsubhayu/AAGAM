@@ -9,12 +9,13 @@ import {
   Clock,
   Check,
   Activity,
+  XCircle,
 } from "lucide-react";
 import type { AlertItem } from "@/api/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useAuthStore } from "@/auth/authStore";
-import { useAcknowledgeAlert } from "@/api/useAlerts";
+import { useAcknowledgeAlert, useCancelAlert } from "@/api/useAlerts";
 import { toast } from "sonner";
 import { WhyFlaggedModal } from "./WhyFlaggedModal";
 
@@ -26,10 +27,12 @@ interface AlertCardProps {
 export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) => {
   const { role } = useAuthStore();
   const ackMutation = useAcknowledgeAlert();
+  const cancelMutation = useCancelAlert();
   const [whyModalOpen, setWhyModalOpen] = useState(false);
 
   const canAck = role === "forecaster" || role === "coordinator";
   const isAcknowledged = alert.status === "acknowledged";
+  const isCancelled = alert.status === "cancelled" || alert.lifecycle_state === "cancelled";
 
   const getHazardIcon = () => {
     switch (alert.hazard) {
@@ -53,6 +56,31 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
     return "";
   };
 
+  const formatIST = (isoString?: string | null) => {
+    if (!isoString) return "";
+    try {
+      const d = new Date(isoString);
+      return (
+        d.toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          timeZone: "Asia/Kolkata",
+        }) +
+        " " +
+        d.toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "Asia/Kolkata",
+        }) +
+        " IST"
+      );
+    } catch {
+      return isoString;
+    }
+  };
+
   const handleAcknowledge = async () => {
     if (!canAck) {
       toast.error("Forecaster or Forecaster Coordinator authorization required to acknowledge alerts.");
@@ -63,6 +91,22 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
       toast.success(`Alert #${alert.id} for ${alert.location_name} acknowledged.`);
     } catch (err: any) {
       toast.error(`Failed to acknowledge alert: ${err.message}`);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!canAck) {
+      toast.error("Forecaster or Coordinator authorization required to cancel alerts.");
+      return;
+    }
+    if (!confirm(`Are you sure you want to cancel Alert #${alert.id} for ${alert.location_name}? The alert record will remain visible in audit logs as cancelled.`)) {
+      return;
+    }
+    try {
+      await cancelMutation.mutateAsync(alert.id);
+      toast.success(`Alert #${alert.id} has been cancelled.`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to cancel alert");
     }
   };
 
@@ -82,7 +126,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
       case "downgraded":
         return "bg-[#FDF3DC] text-[#7A5C00] border border-[#D9A441]/30";
       case "cancelled":
-        return "bg-[#F0EDE7] text-text-muted border border-[rgba(26,23,18,0.10)] line-through";
+        return "bg-red-50 text-red-800 border border-red-200";
       default:
         return "bg-[#F0EDE7] text-text-muted border border-[rgba(26,23,18,0.10)]";
     }
@@ -92,7 +136,9 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
     <>
       <div
         className={`p-3.5 rounded-[16px] border transition-all duration-150 ${
-          isAcknowledged
+          isCancelled
+            ? "bg-[#FAF7F5] border-red-200/70 opacity-90 shadow-none"
+            : isAcknowledged
             ? "bg-[#F5F2EC] border-[rgba(26,23,18,0.07)] opacity-70"
             : "bg-surface border-[rgba(26,23,18,0.09)] hover:border-accent/30 hover:shadow-card"
         }`}
@@ -111,13 +157,20 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
               <Badge variant={severityVariant} showIcon>
                 {alert.severity.toUpperCase()}
               </Badge>
-              {alert.lifecycle_state && (
-                <span className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded-full ${getLifecycleBadgeClass(alert.lifecycle_state)}`}>
-                  {alert.lifecycle_state}
-                  {alert.previous_severity && alert.lifecycle_state !== "new" && ` (from ${alert.previous_severity})`}
+              {isCancelled ? (
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 font-bold flex items-center gap-1">
+                  <XCircle className="w-3 h-3 text-red-700" />
+                  <span>CANCELLED</span>
                 </span>
+              ) : (
+                alert.lifecycle_state && (
+                  <span className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded-full ${getLifecycleBadgeClass(alert.lifecycle_state)}`}>
+                    {alert.lifecycle_state}
+                    {alert.previous_severity && alert.lifecycle_state !== "new" && ` (from ${alert.previous_severity})`}
+                  </span>
+                )
               )}
-              {isAcknowledged && (
+              {isAcknowledged && !isCancelled && (
                 <span className="flex items-center gap-1 text-[10px] text-hazard-normal font-mono">
                   <CheckCircle2 className="w-3 h-3" />
                   ACKNOWLEDGED
@@ -125,10 +178,21 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
               )}
             </div>
 
+            {/* Authoritative Cancellation Notice */}
+            {isCancelled && (
+              <div className="text-[11px] text-red-800 bg-red-50/90 px-2.5 py-1 rounded border border-red-200/60 font-medium flex items-center gap-1.5 my-1">
+                <XCircle className="w-3.5 h-3.5 text-red-700 shrink-0" />
+                <span>
+                  Cancelled by <strong>{alert.cancelled_by_name || "Authorized Forecaster"}</strong>
+                  {alert.cancelled_at ? ` · ${formatIST(alert.cancelled_at)}` : ""}
+                </span>
+              </div>
+            )}
+
             <div className="flex items-center gap-4 text-xs text-text-secondary pt-0.5">
               <div>
                 <span className="text-text-muted text-[11px]">Forecast: </span>
-                <span className="font-mono font-bold text-text-primary text-sm tabular-nums">
+                <span className={`font-mono font-bold text-sm tabular-nums ${isCancelled ? "text-text-secondary line-through" : "text-text-primary"}`}>
                   {alert.value !== null && alert.value !== undefined ? alert.value.toFixed(1) : "—"} {getUnit()}
                 </span>
               </div>
@@ -183,18 +247,36 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
               </Button>
             </div>
 
-            {!isAcknowledged && (
-              <Button
-                variant={canAck ? "secondary" : "outline"}
-                size="sm"
-                onClick={handleAcknowledge}
-                disabled={!canAck || ackMutation.isPending}
-                className="text-xs h-7 px-2.5"
-                title={canAck ? "Acknowledge alert" : "Forecaster or Forecaster Coordinator permission required"}
-              >
-                <Check className="w-3 h-3 mr-1 text-hazard-normal" />
-                <span>{canAck ? "Acknowledge" : "Public (Read Only)"}</span>
-              </Button>
+            {!isCancelled && (
+              <div className="flex items-center gap-1.5">
+                {!isAcknowledged && (
+                  <Button
+                    variant={canAck ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={handleAcknowledge}
+                    disabled={!canAck || ackMutation.isPending}
+                    className="text-xs h-7 px-2.5"
+                    title={canAck ? "Acknowledge alert" : "Forecaster or Forecaster Coordinator permission required"}
+                  >
+                    <Check className="w-3 h-3 mr-1 text-hazard-normal" />
+                    <span>{canAck ? "Acknowledge" : "Public (Read Only)"}</span>
+                  </Button>
+                )}
+
+                {canAck && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCancel}
+                    disabled={cancelMutation.isPending}
+                    className="text-xs h-7 px-2 text-hazard-alert hover:bg-red-50 border-red-200"
+                    title="Cancel Alert (keeps audit record visible)"
+                  >
+                    <XCircle className="w-3 h-3 mr-1 text-hazard-alert" />
+                    <span>Cancel</span>
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>

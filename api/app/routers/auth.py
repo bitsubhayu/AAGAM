@@ -10,13 +10,19 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from api.app.auth.dependencies import CurrentUser, require_role
 from api.app.db.pool import get_db_conn
 from api.app.db.supabase import get_supabase_client
 from core.config import settings
+from core.schemas import (
+    CheckAccessRequest,
+    CheckAccessResponse,
+    ForecasterAccessRequestCreate,
+    ForecasterAccessRequestItem,
+)
 
 logger = logging.getLogger("aagam.api.auth")
 
@@ -51,8 +57,6 @@ class OtpVerify(BaseModel):
 
 
 class ForecasterOtpRequest(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100, description="Full name of forecaster")
-    institution: str = Field(..., min_length=2, max_length=150, description="Meteorological or research institution")
     email: str = Field(
         ...,
         min_length=3,
@@ -60,6 +64,9 @@ class ForecasterOtpRequest(BaseModel):
         pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
         description="Forecaster institutional email address",
     )
+    name: Optional[str] = Field(None, max_length=100, description="Optional full name of forecaster")
+    institution: Optional[str] = Field(None, max_length=150, description="Optional meteorological or research institution")
+
 
 
 class ForecasterOtpVerify(BaseModel):
@@ -220,13 +227,155 @@ async def verify_otp(
     )
 
 
+async def _is_email_approved_forecaster(conn: asyncpg.Connection, email: str) -> bool:
+    """Checks if email belongs to an approved forecaster/coordinator account.
+
+    Approved accounts have:
+    - a profiles record with role in ('forecaster', 'coordinator')
+    - OR an approved access request in forecaster_access_requests table
+    - OR demo auth forecaster/coordinator accounts if local demo auth is enabled
+    """
+    clean_email = email.strip().lower()
+
+    # 1. Local demo auth accounts for test fixtures
+    demo_approved = ("forecaster@aagam.gov.in", "coordinator@aagam.gov.in", "admin@aagam.gov.in")
+    if settings.ENABLE_LOCAL_DEMO_AUTH and (clean_email in demo_approved or clean_email.endswith("@aagam.gov.in")):
+        return True
+
+    # 2. Check profiles joined with auth.users
+    try:
+        prof_row = await conn.fetchrow(
+            """
+            SELECT p.role
+            FROM profiles p
+            JOIN auth.users u ON p.user_id = u.id
+            WHERE LOWER(u.email) = $1 AND p.role IN ('forecaster', 'coordinator')
+            LIMIT 1;
+            """,
+            clean_email,
+        )
+        if prof_row:
+            return True
+    except Exception as e:
+        logger.warning(f"Error querying profiles for approved forecaster {clean_email}: {e}")
+
+    # 3. Check forecaster_access_requests table
+    try:
+        req_row = await conn.fetchrow(
+            """
+            SELECT id FROM forecaster_access_requests
+            WHERE LOWER(email) = $1 AND status = 'approved'
+            LIMIT 1;
+            """,
+            clean_email,
+        )
+        if req_row:
+            return True
+    except Exception as e:
+        logger.warning(f"Error querying forecaster_access_requests for {clean_email}: {e}")
+
+    return False
+
+
+@router.post(
+    "/forecaster/check-access",
+    response_model=CheckAccessResponse,
+    summary="Check if email belongs to an approved forecaster/coordinator account",
+)
+async def check_forecaster_access(
+    payload: CheckAccessRequest,
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> CheckAccessResponse:
+    """Checks whether an email belongs to an approved Forecaster or Coordinator."""
+    clean_email = payload.email.strip().lower()
+    approved = await _is_email_approved_forecaster(conn, clean_email)
+    role = None
+    if approved:
+        prof_row = await conn.fetchrow(
+            """
+            SELECT p.role
+            FROM profiles p
+            JOIN auth.users u ON p.user_id = u.id
+            WHERE LOWER(u.email) = $1
+            LIMIT 1;
+            """,
+            clean_email,
+        )
+        role = prof_row["role"] if prof_row else "forecaster"
+
+    return CheckAccessResponse(
+        status="ok",
+        email=payload.email,
+        is_approved=approved,
+        role=role,
+    )
+
+
+@router.post(
+    "/forecaster/request-access",
+    summary="Submit a Forecaster access request for coordinator review",
+)
+async def request_forecaster_access(
+    payload: ForecasterAccessRequestCreate,
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> Dict[str, str]:
+    """Submits an access request for unapproved candidates to be reviewed by a Forecaster Coordinator."""
+    clean_email = payload.email.strip().lower()
+
+    if await _is_email_approved_forecaster(conn, clean_email):
+        return {
+            "status": "ok",
+            "message": "This email is already approved for Forecaster access. Please proceed with login.",
+        }
+
+    existing = await conn.fetchrow(
+        "SELECT id, status FROM forecaster_access_requests WHERE LOWER(email) = $1 AND status = 'pending'",
+        clean_email,
+    )
+    if existing:
+        return {
+            "status": "ok",
+            "message": "Your access request has already been submitted and is pending review by a Forecaster Coordinator.",
+        }
+
+    await conn.execute(
+        """
+        INSERT INTO forecaster_access_requests (name, email, institution, status, created_at)
+        VALUES ($1, $2, $3, 'pending', NOW())
+        """,
+        payload.name.strip(),
+        clean_email,
+        payload.institution.strip() if payload.institution else None,
+    )
+    logger.info(f"Forecaster access request submitted for {clean_email} ({payload.name})")
+    return {
+        "status": "ok",
+        "message": "Your access request has been submitted successfully. A Forecaster Coordinator will review it.",
+    }
+
+
 @router.post(
     "/forecaster/otp/request",
     status_code=status.HTTP_200_OK,
-    summary="Request a 6-digit OTP code for Forecaster registration/login",
+    summary="Request a 6-digit OTP code for Forecaster login (approved accounts only)",
 )
-async def request_forecaster_otp(payload: ForecasterOtpRequest) -> Dict[str, str]:
-    """Requests a 6-digit OTP code sent via email for verified forecaster onboarding."""
+async def request_forecaster_otp(
+    payload: ForecasterOtpRequest,
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> Dict[str, str]:
+    """Requests a 6-digit OTP code sent via email for approved forecasters/coordinators only."""
+    clean_email = payload.email.strip().lower()
+    is_approved = await _is_email_approved_forecaster(conn, clean_email)
+    if not is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "ACCESS_NOT_APPROVED",
+                "message": "This email is not an approved Forecaster or Coordinator account. Please request forecaster access.",
+                "retry_after": None,
+            },
+        )
+
     client = get_supabase_client()
     if client is None:
         raise HTTPException(
@@ -236,22 +385,22 @@ async def request_forecaster_otp(payload: ForecasterOtpRequest) -> Dict[str, str
 
     try:
         client.auth.sign_in_with_otp({
-            "email": payload.email,
+            "email": clean_email,
             "options": {
                 "data": {
-                    "display_name": payload.name,
-                    "institution": payload.institution,
+                    "display_name": payload.name or "Forecaster",
+                    "institution": payload.institution or "Meteorological Organization",
                 },
                 "email_redirect_to": settings.AUTH_REDIRECT_URL,
             },
         })
-        logger.info(f"Forecaster OTP requested for {payload.email} ({payload.name}, {payload.institution})")
+        logger.info(f"Forecaster OTP requested for approved email {clean_email}")
         return {
             "status": "ok",
             "message": "A 6-digit forecaster verification code has been sent to your email address.",
         }
     except Exception as e:
-        logger.error(f"Failed to request Forecaster OTP for {payload.email}: {e}")
+        logger.error(f"Failed to request Forecaster OTP for {clean_email}: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "OTP_REQUEST_FAILED", "message": str(e)},
@@ -262,13 +411,13 @@ async def request_forecaster_otp(payload: ForecasterOtpRequest) -> Dict[str, str
     "/forecaster/otp/verify",
     status_code=status.HTTP_200_OK,
     response_model=OtpVerifyResponse,
-    summary="Verify Forecaster OTP code, upsert forecaster profile, and return session",
+    summary="Verify Forecaster OTP code, load authoritative profile role, and return session",
 )
 async def verify_forecaster_otp(
     payload: ForecasterOtpVerify,
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> OtpVerifyResponse:
-    """Verifies OTP code for forecaster, sets role='forecaster' in profiles table, and returns authenticated session."""
+    """Verifies OTP code for forecaster, resolves authoritative role from profiles table, and returns authenticated session."""
     client = get_supabase_client()
     if client is None:
         raise HTTPException(
@@ -276,14 +425,16 @@ async def verify_forecaster_otp(
             detail={"code": "AUTH_UNAVAILABLE", "message": "Supabase authentication client is not configured."},
         )
 
+    clean_email = payload.email.strip().lower()
+
     try:
         auth_resp = client.auth.verify_otp({
-            "email": payload.email,
+            "email": clean_email,
             "token": payload.token.strip(),
             "type": "email",
         })
     except Exception as e:
-        logger.warning(f"Forecaster OTP verification failed for {payload.email}: {e}")
+        logger.warning(f"Forecaster OTP verification failed for {clean_email}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "INVALID_OTP", "message": "Invalid or expired verification code."},
@@ -299,38 +450,37 @@ async def verify_forecaster_otp(
     user = auth_resp.user
     user_id = str(user.id)
 
-    meta = getattr(user, "user_metadata", {}) or {}
-    disp_name = payload.name or meta.get("display_name") or meta.get("name") or "Forecaster"
-    inst = payload.institution or meta.get("institution") or meta.get("org") or "Meteorological Organization"
-
-    # Part 11: Upsert profile with authoritative role = 'forecaster' (never trust client-supplied role)
-    try:
-        await conn.execute(
-            """
-            INSERT INTO profiles (user_id, display_name, org, role, updated_at)
-            VALUES ($1::uuid, $2, $3, 'forecaster', NOW())
-            ON CONFLICT (user_id) DO UPDATE
-            SET display_name = COALESCE($2, profiles.display_name),
-                org = COALESCE($3, profiles.org),
-                role = CASE WHEN profiles.role = 'coordinator' THEN 'coordinator' ELSE 'forecaster' END,
-                updated_at = NOW();
-            """,
-            user_id,
-            disp_name,
-            inst,
-        )
-    except Exception as e:
-        logger.error(f"Failed to upsert forecaster profile for {user_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "PROFILE_UPDATE_FAILED", "message": "Failed to configure forecaster profile."},
-        )
-
-    # Check updated profile
+    # Fetch authoritative profile
     prof_row = await conn.fetchrow("SELECT role, display_name, org FROM profiles WHERE user_id = $1::uuid", user_id)
-    assigned_role = prof_row["role"] if prof_row else "forecaster"
-    assigned_name = prof_row["display_name"] if prof_row else disp_name
-    assigned_org = prof_row["org"] if prof_row else inst
+
+    # If no profile or role is public, check if an approved request exists for this email
+    if not prof_row or prof_row["role"] == "public":
+        req_row = await conn.fetchrow(
+            "SELECT name, institution FROM forecaster_access_requests WHERE LOWER(email) = $1 AND status = 'approved' ORDER BY reviewed_at DESC LIMIT 1",
+            clean_email,
+        )
+        if req_row:
+            cand_name = req_row["name"] or payload.name or "Forecaster"
+            cand_org = req_row["institution"] or payload.institution or "Meteorological Organization"
+            await conn.execute(
+                """
+                INSERT INTO profiles (user_id, display_name, org, role, updated_at)
+                VALUES ($1::uuid, $2, $3, 'forecaster', NOW())
+                ON CONFLICT (user_id) DO UPDATE
+                SET display_name = COALESCE($2, profiles.display_name),
+                    org = COALESCE($3, profiles.org),
+                    role = CASE WHEN profiles.role = 'coordinator' THEN 'coordinator' ELSE 'forecaster' END,
+                    updated_at = NOW();
+                """,
+                user_id,
+                cand_name,
+                cand_org,
+            )
+            prof_row = await conn.fetchrow("SELECT role, display_name, org FROM profiles WHERE user_id = $1::uuid", user_id)
+
+    assigned_role = prof_row["role"] if prof_row else "public"
+    assigned_name = prof_row["display_name"] if prof_row else payload.name
+    assigned_org = prof_row["org"] if prof_row else payload.institution
 
     return OtpVerifyResponse(
         status="ok",
@@ -340,12 +490,13 @@ async def verify_forecaster_otp(
         refresh_token=session.refresh_token,
         user=UserSummary(
             id=user_id,
-            email=user.email or payload.email,
+            email=user.email or clean_email,
             role=assigned_role,
             display_name=assigned_name,
             org=assigned_org,
         ),
     )
+
 
 
 @router.post(
@@ -448,3 +599,148 @@ async def list_forecasters(
         )
         for r in rows
     ]
+
+
+@router.get(
+    "/forecaster/requests",
+    response_model=List[ForecasterAccessRequestItem],
+    summary="List all forecaster access requests (Coordinator only)",
+)
+async def list_forecaster_requests(
+    current_user: CurrentUser = Depends(require_role("coordinator")),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> List[ForecasterAccessRequestItem]:
+    """Returns all forecaster access requests for coordinator review."""
+    rows = await conn.fetch(
+        """
+        SELECT id, name, email, institution, status, created_at, reviewed_by, reviewed_at, rejection_reason
+        FROM forecaster_access_requests
+        ORDER BY created_at DESC;
+        """
+    )
+    return [
+        ForecasterAccessRequestItem(
+            id=r["id"],
+            name=r["name"],
+            email=r["email"],
+            institution=r["institution"],
+            status=r["status"],
+            created_at=r["created_at"].isoformat() if r["created_at"] else "",
+            reviewed_by=str(r["reviewed_by"]) if r["reviewed_by"] else None,
+            reviewed_at=r["reviewed_at"].isoformat() if r["reviewed_at"] else None,
+            rejection_reason=r["rejection_reason"],
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/forecaster/requests/{id}/approve",
+    status_code=status.HTTP_200_OK,
+    summary="Approve a forecaster access request (Coordinator only)",
+)
+async def approve_forecaster_request(
+    id: int = Path(..., description="ID of the access request to approve"),
+    current_user: CurrentUser = Depends(require_role("coordinator")),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> Dict[str, Any]:
+    """Approves a forecaster access request, setting status='approved' and updating/creating profile role='forecaster'."""
+    req = await conn.fetchrow(
+        "SELECT id, name, email, institution, status FROM forecaster_access_requests WHERE id = $1",
+        id,
+    )
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "REQUEST_NOT_FOUND", "message": f"Access request {id} not found."},
+        )
+
+    if req["status"] == "approved":
+        return {"status": "ok", "message": f"Request {id} for {req['email']} is already approved."}
+
+    async with conn.transaction():
+        await conn.execute(
+            """
+            UPDATE forecaster_access_requests
+            SET status = 'approved',
+                reviewed_by = $1::uuid,
+                reviewed_at = NOW()
+            WHERE id = $2
+            """,
+            current_user.user_id,
+            id,
+        )
+
+        # Check if auth.users has an existing user with this email
+        user_row = await conn.fetchrow(
+            "SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1)",
+            req["email"],
+        )
+        if user_row:
+            u_id = user_row["id"]
+            await conn.execute(
+                """
+                INSERT INTO profiles (user_id, display_name, org, role, updated_at)
+                VALUES ($1::uuid, $2, $3, 'forecaster', NOW())
+                ON CONFLICT (user_id) DO UPDATE
+                SET display_name = COALESCE($2, profiles.display_name),
+                    org = COALESCE($3, profiles.org),
+                    role = CASE WHEN profiles.role = 'coordinator' THEN 'coordinator' ELSE 'forecaster' END,
+                    updated_at = NOW();
+                """,
+                u_id,
+                req["name"],
+                req["institution"],
+            )
+
+    logger.info(f"Coordinator {current_user.user_id} approved forecaster access for {req['email']} (request {id})")
+    return {
+        "status": "ok",
+        "message": f"Forecaster access for {req['name']} ({req['email']}) has been approved.",
+        "request_id": id,
+        "email": req["email"],
+        "status": "approved",
+    }
+
+
+@router.post(
+    "/forecaster/requests/{id}/reject",
+    status_code=status.HTTP_200_OK,
+    summary="Reject a forecaster access request (Coordinator only)",
+)
+async def reject_forecaster_request(
+    id: int = Path(..., description="ID of the access request to reject"),
+    current_user: CurrentUser = Depends(require_role("coordinator")),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> Dict[str, Any]:
+    """Rejects a forecaster access request."""
+    req = await conn.fetchrow(
+        "SELECT id, name, email, status FROM forecaster_access_requests WHERE id = $1",
+        id,
+    )
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "REQUEST_NOT_FOUND", "message": f"Access request {id} not found."},
+        )
+
+    await conn.execute(
+        """
+        UPDATE forecaster_access_requests
+        SET status = 'rejected',
+            reviewed_by = $1::uuid,
+            reviewed_at = NOW()
+        WHERE id = $2
+        """,
+        current_user.user_id,
+        id,
+    )
+    logger.info(f"Coordinator {current_user.user_id} rejected forecaster access for {req['email']} (request {id})")
+    return {
+        "status": "ok",
+        "message": f"Forecaster access for {req['email']} has been rejected.",
+        "request_id": id,
+        "email": req["email"],
+        "status": "rejected",
+    }
+

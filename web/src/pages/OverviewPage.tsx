@@ -299,9 +299,13 @@ export const OverviewPage: React.FC = () => {
               {meta?.models ? `${meta.models.length}/${meta.models.length}` : "4/4"}
             </span>
           </div>
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-[11px] text-text-muted font-mono">
-              v{meta?.active_model_version?.id ?? "prod"}
+          <div className="mt-3 flex items-center justify-between flex-wrap gap-1">
+            <span className="text-[11px] text-text-secondary font-mono font-medium">
+              {meta?.active_model_version?.id
+                ? (meta.active_model_version.previous_version_id && meta.active_model_version.previous_version_id !== meta.active_model_version.id
+                    ? `Current version switched: V${meta.active_model_version.previous_version_id} → V${meta.active_model_version.id}`
+                    : `Current version V${meta.active_model_version.id}`)
+                : "Current version V1"}
             </span>
             <button
               onClick={() => setActiveTab("pipeline")}

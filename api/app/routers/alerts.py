@@ -16,7 +16,9 @@ from api.app.services.track_record import fetch_track_record
 from core.config import settings
 from core.schemas import (
     AlertAckResponse,
+    AlertCancelResponse,
     AlertEventAckResponse,
+    AlertEventCancelResponse,
     AlertEventDetailResponse,
     AlertEventItem,
     AlertItem,
@@ -76,10 +78,13 @@ async def list_alerts(
         SELECT a.id, a.created_at, a.issue_time, a.location_id, l.name as location_name,
                l.slug as location_slug, l.region, a.hazard, a.severity, a.valid_date,
                a.lead_days, a.value, a.models_over, a.spread, a.rule, a.status,
-               a.acknowledged_by, a.acknowledged_at, a.event_id, a.lifecycle_state,
+               a.acknowledged_by, a.acknowledged_at, a.cancelled_by, a.cancelled_at,
+               cp.display_name as cancelled_by_name,
+               a.event_id, a.lifecycle_state,
                a.previous_severity, a.rarity_label
         FROM alerts a
         JOIN locations l ON a.location_id = l.id
+        LEFT JOIN profiles cp ON a.cancelled_by = cp.user_id
         WHERE true
     """
     params: List[Any] = []
@@ -103,8 +108,8 @@ async def list_alerts(
         params.append(status_filter.lower())
         idx += 1
     elif not status_filter and selected_window.startswith("upcoming"):
-        query += f" AND a.status = ${idx}"
-        params.append("active")
+        query += f" AND a.status != ${idx}"
+        params.append("expired")
         idx += 1
 
     if hazard:
@@ -167,6 +172,9 @@ async def list_alerts(
                 status=alert_status,
                 acknowledged_by=str(r["acknowledged_by"]) if r["acknowledged_by"] else None,
                 acknowledged_at=r["acknowledged_at"].isoformat() if r["acknowledged_at"] else None,
+                cancelled_by=str(r.get("cancelled_by")) if r.get("cancelled_by") else None,
+                cancelled_at=r.get("cancelled_at").isoformat() if r.get("cancelled_at") else None,
+                cancelled_by_name=r.get("cancelled_by_name"),
                 event_id=r["event_id"],
                 lifecycle_state=r["lifecycle_state"],
                 previous_severity=r["previous_severity"],
@@ -195,9 +203,11 @@ async def get_alert_event(
         """
         SELECT e.id, e.location_id, l.name as location_name, l.slug as location_slug, l.region,
                e.hazard, e.status, e.severity_peak, e.value_peak, e.start_date, e.end_date,
-               e.first_detected_at, e.last_updated_at, e.outcome, e.verified_at
+               e.first_detected_at, e.last_updated_at, e.outcome, e.verified_at,
+               e.cancelled_by, e.cancelled_at, cp.display_name as cancelled_by_name
         FROM alert_events e
         JOIN locations l ON e.location_id = l.id
+        LEFT JOIN profiles cp ON e.cancelled_by = cp.user_id
         WHERE e.id = $1;
         """,
         id,
@@ -229,6 +239,9 @@ async def get_alert_event(
         last_updated_at=event_row["last_updated_at"].isoformat() if event_row["last_updated_at"] else "",
         outcome=event_row["outcome"],
         verified_at=event_row["verified_at"].isoformat() if event_row["verified_at"] else None,
+        cancelled_by=str(event_row.get("cancelled_by")) if event_row.get("cancelled_by") else None,
+        cancelled_at=event_row.get("cancelled_at").isoformat() if event_row.get("cancelled_at") else None,
+        cancelled_by_name=event_row.get("cancelled_by_name"),
     )
 
     # Fetch child alerts
@@ -237,10 +250,13 @@ async def get_alert_event(
         SELECT a.id, a.created_at, a.issue_time, a.location_id, l.name as location_name,
                l.slug as location_slug, l.region, a.hazard, a.severity, a.valid_date,
                a.lead_days, a.value, a.models_over, a.spread, a.rule, a.status,
-               a.acknowledged_by, a.acknowledged_at, a.event_id, a.lifecycle_state,
+               a.acknowledged_by, a.acknowledged_at, a.cancelled_by, a.cancelled_at,
+               cp.display_name as cancelled_by_name,
+               a.event_id, a.lifecycle_state,
                a.previous_severity, a.rarity_label
         FROM alerts a
         JOIN locations l ON a.location_id = l.id
+        LEFT JOIN profiles cp ON a.cancelled_by = cp.user_id
         WHERE a.event_id = $1
         ORDER BY a.valid_date ASC, a.issue_time DESC;
         """,
@@ -277,6 +293,9 @@ async def get_alert_event(
             status=r["status"],
             acknowledged_by=str(r["acknowledged_by"]) if r["acknowledged_by"] else None,
             acknowledged_at=r["acknowledged_at"].isoformat() if r["acknowledged_at"] else None,
+            cancelled_by=str(r.get("cancelled_by")) if r.get("cancelled_by") else None,
+            cancelled_at=r.get("cancelled_at").isoformat() if r.get("cancelled_at") else None,
+            cancelled_by_name=r.get("cancelled_by_name"),
             event_id=r["event_id"],
             lifecycle_state=r["lifecycle_state"],
             previous_severity=r["previous_severity"],
@@ -482,3 +501,104 @@ async def acknowledge_alert(
         acknowledged_by=str(updated["acknowledged_by"]),
         acknowledged_at=updated["acknowledged_at"].isoformat(),
     )
+
+
+@router.post("/alerts/{id}/cancel", response_model=AlertCancelResponse)
+@router.post("/alerts/{id}/disable", response_model=AlertCancelResponse)
+async def cancel_alert(
+    id: int = Path(..., description="Numeric ID of the alert to cancel"),
+    current_user: CurrentUser = Depends(require_role("forecaster+")),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> AlertCancelResponse:
+    """Cancels an alert without physical deletion (role: forecaster+)."""
+    alert_row = await conn.fetchrow("SELECT id, status, event_id FROM alerts WHERE id = $1", id)
+    if not alert_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "ALERT_NOT_FOUND", "message": f"Alert with id {id} not found."},
+        )
+
+    await set_rls_claims(conn, current_user.user_id, role="authenticated")
+    updated = await conn.fetchrow(
+        """
+        UPDATE alerts
+        SET status = 'cancelled',
+            lifecycle_state = 'cancelled',
+            cancelled_by = $1::uuid,
+            cancelled_at = NOW()
+        WHERE id = $2
+        RETURNING id, status, cancelled_by, cancelled_at;
+        """,
+        current_user.user_id,
+        id,
+    )
+
+    p_row = await conn.fetchrow("SELECT display_name FROM profiles WHERE user_id = $1::uuid", current_user.user_id)
+    disp_name = p_row["display_name"] if p_row and p_row["display_name"] else "Forecaster"
+
+    logger.info(f"Forecaster {current_user.user_id} cancelled alert #{id}")
+    return AlertCancelResponse(
+        id=updated["id"],
+        status=updated["status"],
+        cancelled_by=str(updated["cancelled_by"]),
+        cancelled_at=updated["cancelled_at"].isoformat(),
+        cancelled_by_name=disp_name,
+    )
+
+
+@router.post("/alerts/events/{id}/cancel", response_model=AlertEventCancelResponse)
+@router.post("/alerts/events/{id}/disable", response_model=AlertEventCancelResponse)
+async def cancel_alert_event(
+    id: int = Path(..., description="Numeric ID of the alert event to cancel"),
+    current_user: CurrentUser = Depends(require_role("forecaster+")),
+    conn: asyncpg.Connection = Depends(get_db_conn),
+) -> AlertEventCancelResponse:
+    """Cancels an alert event and all child alerts without physical deletion (role: forecaster+)."""
+    event_row = await conn.fetchrow("SELECT id, status FROM alert_events WHERE id = $1", id)
+    if not event_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "EVENT_NOT_FOUND", "message": f"Alert event with id {id} not found."},
+        )
+
+    await set_rls_claims(conn, current_user.user_id, role="authenticated")
+    async with conn.transaction():
+        updated_evt = await conn.fetchrow(
+            """
+            UPDATE alert_events
+            SET status = 'cancelled',
+                cancelled_by = $1::uuid,
+                cancelled_at = NOW(),
+                last_updated_at = NOW()
+            WHERE id = $2
+            RETURNING id, status, cancelled_by, cancelled_at;
+            """,
+            current_user.user_id,
+            id,
+        )
+
+        await conn.execute(
+            """
+            UPDATE alerts
+            SET status = 'cancelled',
+                lifecycle_state = 'cancelled',
+                cancelled_by = $1::uuid,
+                cancelled_at = NOW()
+            WHERE event_id = $2;
+            """,
+            current_user.user_id,
+            id,
+        )
+
+    p_row = await conn.fetchrow("SELECT display_name FROM profiles WHERE user_id = $1::uuid", current_user.user_id)
+    disp_name = p_row["display_name"] if p_row and p_row["display_name"] else "Forecaster"
+
+    logger.info(f"Forecaster {current_user.user_id} cancelled alert event #{id}")
+    return AlertEventCancelResponse(
+        id=updated_evt["id"],
+        status=updated_evt["status"],
+        cancelled_by=str(updated_evt["cancelled_by"]),
+        cancelled_at=updated_evt["cancelled_at"].isoformat(),
+        cancelled_by_name=disp_name,
+    )
+

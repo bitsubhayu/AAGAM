@@ -34,7 +34,7 @@ async def get_metadata(
         conn = await db_pool.get_connection()
         try:
             ver_row = await conn.fetchrow(
-                "SELECT id, created_at, storage_path, metrics, is_active FROM model_versions WHERE is_active = true LIMIT 1"
+                "SELECT id, created_at, storage_path, metrics, is_active, parent_version_id FROM model_versions WHERE is_active = true LIMIT 1"
             )
             if ver_row:
                 metrics_val = ver_row["metrics"]
@@ -43,12 +43,36 @@ async def get_metadata(
                         metrics_val = json.loads(metrics_val)
                     except Exception:
                         pass
+
+                # Check for recent version switch decision
+                switch_row = await conn.fetchrow(
+                    """
+                    SELECT previous_version_id, candidate_version_id, created_at
+                    FROM model_version_decisions
+                    WHERE decision IN ('PROMOTED', 'ROLLED_BACK')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                )
+                prev_vid = None
+                switched_at = None
+                if (
+                    switch_row
+                    and switch_row["previous_version_id"] is not None
+                    and switch_row["candidate_version_id"] == ver_row["id"]
+                ):
+                    prev_vid = switch_row["previous_version_id"]
+                    switched_at = switch_row["created_at"].isoformat() if switch_row["created_at"] else None
+
                 active_version = {
                     "id": ver_row["id"],
                     "created_at": ver_row["created_at"].isoformat() if ver_row["created_at"] else None,
                     "storage_path": ver_row["storage_path"],
                     "metrics": metrics_val,
                     "is_active": ver_row["is_active"],
+                    "parent_version_id": ver_row["parent_version_id"],
+                    "previous_version_id": prev_vid,
+                    "switched_at": switched_at,
                 }
 
             run_row = await conn.fetchrow(

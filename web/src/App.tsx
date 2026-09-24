@@ -21,6 +21,7 @@ import { AssistantPage } from "@/pages/AssistantPage";
 import { PipelineHealthPage } from "@/pages/PipelineHealthPage";
 import { DataExportPage } from "@/pages/DataExportPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { ForecasterRequestsPage } from "@/pages/ForecasterRequestsPage";
 import { PublicEventSharePage } from "@/pages/PublicEventSharePage";
 
 function parsePublicEventId(): number | null {
@@ -139,6 +140,11 @@ function DashboardContent() {
         return <PipelineHealthPage />;
       case "export":
         return <DataExportPage />;
+      case "forecaster-requests":
+        if (role !== "coordinator") {
+          return <OverviewPage />;
+        }
+        return <ForecasterRequestsPage />;
       case "settings":
         return <SettingsPage />;
       default:

@@ -17,8 +17,9 @@ import {
   Copy,
   Send,
   Sparkles,
+  XCircle,
 } from "lucide-react";
-import { useAlertEvent, useAcknowledgeAlertEvent } from "@/api/useAlerts";
+import { useAlertEvent, useAcknowledgeAlertEvent, useCancelAlertEvent } from "@/api/useAlerts";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useAuthStore } from "@/auth/authStore";
@@ -38,6 +39,32 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
   const { role } = useAuthStore();
   const { data, isLoading, error } = useAlertEvent(isOpen ? eventId : null);
   const ackMutation = useAcknowledgeAlertEvent();
+  const cancelEventMutation = useCancelAlertEvent();
+
+  const formatIST = (isoString?: string | null) => {
+    if (!isoString) return "";
+    try {
+      const d = new Date(isoString);
+      return (
+        d.toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          timeZone: "Asia/Kolkata",
+        }) +
+        " " +
+        d.toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "Asia/Kolkata",
+        }) +
+        " IST"
+      );
+    } catch {
+      return isoString;
+    }
+  };
 
   React.useEffect(() => {
     if (isOpen) {
@@ -61,9 +88,11 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
   const childAlerts = data?.alerts || [];
   const lifecycleHistory = data?.lifecycle_history || [];
 
+  const isEventCancelled = event?.status === "cancelled";
   const hasActiveAlerts = childAlerts.some((a) => a.status === "active");
   const isFullyAcknowledged = childAlerts.length > 0 && childAlerts.every((a) => a.status === "acknowledged");
   const canAck = (role === "forecaster" || role === "coordinator") && event?.status === "active" && hasActiveAlerts;
+  const canCancel = (role === "forecaster" || role === "coordinator") && !isEventCancelled;
 
   const getHazardIcon = (hazard?: string) => {
     switch (hazard) {
@@ -95,6 +124,19 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
     }
   };
 
+  const handleCancelEvent = async () => {
+    if (!eventId || !canCancel) return;
+    if (!confirm(`Are you sure you want to cancel Alert Event #${eventId}? The record will remain auditable in the database as cancelled.`)) {
+      return;
+    }
+    try {
+      await cancelEventMutation.mutateAsync(eventId);
+      toast.success(`Alert Event #${eventId} has been cancelled.`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to cancel event");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[2000] flex justify-end bg-[rgba(26,23,18,0.45)] backdrop-blur-sm animate-in fade-in">
       <div className="relative w-full max-w-xl h-full bg-surface border-l border-[rgba(26,23,18,0.10)] flex flex-col shadow-2xl overflow-hidden font-sans">
@@ -114,10 +156,17 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                     <Badge variant={getSeverityVariant(event.severity_peak)} showIcon>
                       {event.severity_peak.toUpperCase()}
                     </Badge>
-                    <Badge variant="outline" className="capitalize text-[11px]">
-                      {event.status}
-                    </Badge>
-                    {isFullyAcknowledged && (
+                    {isEventCancelled ? (
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 font-bold flex items-center gap-1">
+                        <XCircle className="w-3 h-3 text-red-700" />
+                        <span>CANCELLED</span>
+                      </span>
+                    ) : (
+                      <Badge variant="outline" className="capitalize text-[11px]">
+                        {event.status}
+                      </Badge>
+                    )}
+                    {isFullyAcknowledged && !isEventCancelled && (
                       <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center gap-1">
                         <Check className="w-3 h-3" />
                         <span>Acknowledged</span>
@@ -132,6 +181,15 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
                 <span>•</span>
                 <span className="capitalize">{event?.hazard.replace("_", " ")}</span>
               </p>
+              {isEventCancelled && (
+                <div className="text-[11px] text-red-800 bg-red-50/90 px-2 py-0.5 rounded border border-red-200/60 font-medium flex items-center gap-1.5 mt-1">
+                  <XCircle className="w-3 h-3 text-red-700 shrink-0" />
+                  <span>
+                    Cancelled by <strong>{event.cancelled_by_name || "Authorized Forecaster"}</strong>
+                    {event.cancelled_at ? ` · ${formatIST(event.cancelled_at)}` : ""}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <button
@@ -519,6 +577,19 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
               >
                 <Check className="w-3.5 h-3.5 mr-1" />
                 <span>{ackMutation.isPending ? "Acknowledging..." : "Acknowledge Event"}</span>
+              </Button>
+            )}
+            {canCancel && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCancelEvent}
+                disabled={cancelEventMutation.isPending}
+                className="text-xs text-hazard-alert border-red-200 hover:bg-red-50"
+                title="Cancel Event (preserves auditable record in database)"
+              >
+                <XCircle className="w-3.5 h-3.5 mr-1 text-hazard-alert" />
+                <span>{cancelEventMutation.isPending ? "Cancelling..." : "Cancel Event"}</span>
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={onClose} className="text-xs">

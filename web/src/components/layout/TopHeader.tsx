@@ -191,10 +191,10 @@ export const TopHeader: React.FC = () => {
                 }
               }}
               className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 bg-pill text-white rounded-full text-xs font-medium hover:opacity-90 transition-opacity shadow-pill"
-              title="Forecaster Login & Registration"
+              title="Forecaster Access"
             >
               <LogIn className="w-3 h-3" />
-              <span>Forecaster Portal</span>
+              <span>Forecaster Access</span>
             </button>
           </div>
         )}

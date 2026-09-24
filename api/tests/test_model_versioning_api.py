@@ -373,10 +373,10 @@ ROLE_MATRIX_CASES = [
     ("GET", "/api/v1/models/versions/2/evaluations", None, 200, 200, 200),
     ("GET", "/api/v1/models/decisions", None, 200, 200, 200),
     ("GET", "/api/v1/models/automation/status", None, 403, 200, 200),
-    ("POST", "/api/v1/models/automation/freeze", {"reason": "Routine manual freeze check"}, 403, 403, 200),
-    ("POST", "/api/v1/models/automation/unfreeze", {"reason": "Routine manual unfreeze check"}, 403, 403, 200),
-    ("POST", "/api/v1/models/automation/force-last-known-good", {"reason": "Testing manual rollback action"}, 403, 403, 200),
-    ("POST", "/api/v1/models/candidates/3/disable", {"reason": "Manual rejection of candidate"}, 403, 403, 200),
+    ("POST", "/api/v1/models/automation/freeze", {"reason": "Routine manual freeze check"}, 403, 403, 403),
+    ("POST", "/api/v1/models/automation/unfreeze", {"reason": "Routine manual unfreeze check"}, 403, 403, 403),
+    ("POST", "/api/v1/models/automation/force-last-known-good", {"reason": "Testing manual rollback action"}, 403, 403, 403),
+    ("POST", "/api/v1/models/candidates/3/disable", {"reason": "Manual rejection of candidate"}, 403, 403, 403),
 ]
 
 
@@ -418,7 +418,7 @@ def test_complete_role_authorization_matrix(
 
 
 def test_anonymous_unauthenticated_role_matrix(client):
-    """Anonymous unauthenticated requests should access public endpoints but get 401 on protected."""
+    """Anonymous unauthenticated requests should access public endpoints but get 403 on protected and disabled endpoints."""
     # 4 Public endpoints succeed
     assert client.get("/api/v1/models/active").status_code == 200
     assert client.get("/api/v1/models/versions").status_code == 200
@@ -428,11 +428,11 @@ def test_anonymous_unauthenticated_role_matrix(client):
     # 1 Forecaster+ endpoint rejected with 403 for anonymous (public tier)
     assert client.get("/api/v1/models/automation/status").status_code == 403
 
-    # 4 Coordinator endpoints rejected with 401
-    assert client.post("/api/v1/models/automation/freeze", json={"reason": "Valid reason 10+"}).status_code == 401
-    assert client.post("/api/v1/models/automation/unfreeze", json={"reason": "Valid reason 10+"}).status_code == 401
-    assert client.post("/api/v1/models/automation/force-last-known-good", json={"reason": "Valid reason 10+"}).status_code == 401
-    assert client.post("/api/v1/models/candidates/3/disable", json={"reason": "Valid reason 10+"}).status_code == 401
+    # 4 Human mutation endpoints permanently hard-disabled (403 OPERATION_DISALLOWED)
+    assert client.post("/api/v1/models/automation/freeze", json={"reason": "Valid reason 10+"}).status_code == 403
+    assert client.post("/api/v1/models/automation/unfreeze", json={"reason": "Valid reason 10+"}).status_code == 403
+    assert client.post("/api/v1/models/automation/force-last-known-good", json={"reason": "Valid reason 10+"}).status_code == 403
+    assert client.post("/api/v1/models/candidates/3/disable", json={"reason": "Valid reason 10+"}).status_code == 403
 
 
 def test_automation_status_rbac_matrix(client):
@@ -527,253 +527,72 @@ def test_models_automation_status(client):
     assert data["current_candidate"]["id"] == 3
 
 
-def test_coordinator_freeze_writes_audit_decision(client, mock_db):
-    """POST /models/automation/freeze updates state and writes an audit decision with triggered_by."""
-    coordinator_uid = str(uuid.uuid4())
-    token = create_test_jwt(user_id=coordinator_uid, role="coordinator")
-
-    with patch("api.app.routers.model_versioning.write_decision", wraps=write_decision) as mock_wd:
-        resp = client.post(
-            "/api/v1/models/automation/freeze",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"reason": "Coordinator emergency pause for maintenance"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["frozen"] is True
-        assert data["frozen_reason"] == "Coordinator emergency pause for maintenance"
-
-        assert mock_wd.called
-        call_kwargs = mock_wd.call_args.kwargs
-        assert call_kwargs["decision"] == "FROZEN"
-        assert call_kwargs["triggered_by"] == coordinator_uid
-        assert call_kwargs["reason"] == "Coordinator emergency pause for maintenance"
-
-        # Verify audit record was inserted
-        latest_decision = mock_db.decisions[0]
-        assert latest_decision["decision"] == "FROZEN"
-        assert latest_decision["triggered_by"] == coordinator_uid
-        assert latest_decision["reason"] == "Coordinator emergency pause for maintenance"
-
-
-def test_coordinator_unfreeze_writes_audit_decision(client, mock_db):
-    """POST /models/automation/unfreeze clears freeze and writes an audit decision with decision='UNFROZEN'."""
-    mock_db.automation_state["frozen"] = True
-    mock_db.automation_state["frozen_reason"] = "Previously frozen"
-
-    coordinator_uid = str(uuid.uuid4())
-    token = create_test_jwt(user_id=coordinator_uid, role="coordinator")
-
-    with patch("api.app.routers.model_versioning.write_decision", wraps=write_decision) as mock_wd:
-        resp = client.post(
-            "/api/v1/models/automation/unfreeze",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"reason": "Resuming normal automated promotion cadence"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["frozen"] is False
-        assert data["frozen_reason"] is None
-
-        assert mock_wd.called
-        call_kwargs = mock_wd.call_args.kwargs
-        assert call_kwargs["decision"] == "UNFROZEN"
-        assert call_kwargs["triggered_by"] == coordinator_uid
-        assert call_kwargs["reason"] == "Resuming normal automated promotion cadence"
-
-        latest_decision = mock_db.decisions[0]
-        assert latest_decision["decision"] == "UNFROZEN"
-        assert latest_decision["triggered_by"] == coordinator_uid
-        assert latest_decision["reason"] == "Resuming normal automated promotion cadence"
-
-
-def test_freeze_and_unfreeze_are_distinguishable_in_audit_trail(client, mock_db):
-    """Verifies that freeze and unfreeze actions write distinct, distinguishable audit records ('FROZEN' vs 'UNFROZEN')."""
-    coordinator_uid = str(uuid.uuid4())
-    token = create_test_jwt(user_id=coordinator_uid, role="coordinator")
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # 1. Freeze
-    resp_freeze = client.post(
-        "/api/v1/models/automation/freeze",
-        headers=headers,
-        json={"reason": "Pre-maintenance freezing action"},
-    )
-    assert resp_freeze.status_code == 200
-
-    # 2. Unfreeze
-    resp_unfreeze = client.post(
-        "/api/v1/models/automation/unfreeze",
-        headers=headers,
-        json={"reason": "Post-maintenance unfreezing action"},
-    )
-    assert resp_unfreeze.status_code == 200
-
-    # 3. Query audit trail via GET /models/decisions
-    resp_decisions = client.get("/api/v1/models/decisions")
-    assert resp_decisions.status_code == 200
-    decisions = resp_decisions.json()
-
-    # Verify latest is UNFROZEN and preceding is FROZEN
-    assert decisions[0]["decision"] == "UNFROZEN"
-    assert decisions[0]["reason"] == "Post-maintenance unfreezing action"
-    assert decisions[1]["decision"] == "FROZEN"
-    assert decisions[1]["reason"] == "Pre-maintenance freezing action"
-
-
-def test_coordinator_disable_candidate_writes_audit(client, mock_db):
-    """POST /models/candidates/{id}/disable rejects candidate and writes audit decision."""
-    coordinator_uid = str(uuid.uuid4())
-    token = create_test_jwt(user_id=coordinator_uid, role="coordinator")
-
-    with patch("api.app.routers.model_versioning.write_decision", wraps=write_decision) as mock_wd:
-        resp = client.post(
-            "/api/v1/models/candidates/3/disable",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"reason": "Candidate performance degraded in shadow mode"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["id"] == 3
-        assert data["status"] == "rejected"
-
-        assert mock_wd.called
-        call_kwargs = mock_wd.call_args.kwargs
-        assert call_kwargs["decision"] == "REJECTED"
-        assert call_kwargs["candidate_version_id"] == 3
-        assert call_kwargs["triggered_by"] == coordinator_uid
-
-        latest_decision = mock_db.decisions[0]
-        assert latest_decision["decision"] == "REJECTED"
-        assert latest_decision["candidate_version_id"] == 3
-        assert latest_decision["triggered_by"] == coordinator_uid
-
-
-def test_coordinator_cannot_disable_active_model(client):
-    """POST /models/candidates/{id}/disable cannot disable currently active model."""
+def test_coordinator_cannot_freeze_model_automation(client):
+    """POST /models/automation/freeze is permanently hard-disabled (403 OPERATION_DISALLOWED)."""
     token = create_test_jwt(role="coordinator")
     resp = client.post(
-        "/api/v1/models/candidates/2/disable",
+        "/api/v1/models/automation/freeze",
         headers={"Authorization": f"Bearer {token}"},
-        json={"reason": "Attempting to disable active version"},
+        json={"reason": "Coordinator attempt to pause automated switching"},
     )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "CANNOT_DISABLE_ACTIVE_MODEL"
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
 
-def test_force_last_known_good_walks_past_rolled_back_version(client, mock_db):
-    """force-last-known-good safely walks past ancestors marked rolled_back to find clean version."""
-    now = datetime.now(timezone.utc)
-    # Setup chain: Version 4 (active) -> Version 3 (rolled_back) -> Version 1 (superseded / clean)
-    mock_db.model_versions[4] = {
-        "id": 4,
-        "status": "active",
-        "algorithm_type": "ridge_lgbm_v2",
-        "evaluation_policy": "staged_v2",
-        "is_active": True,
-        "parent_version_id": 3,
-        "created_at": now,
-        "activated_at": now,
-        "deactivated_at": None,
-        "created_by": "pipeline:scheduled",
-    }
-    mock_db.model_versions[3] = {
-        "id": 3,
-        "status": "rolled_back",
-        "algorithm_type": "ridge_lgbm_v2",
-        "evaluation_policy": "staged_v2",
-        "is_active": False,
-        "parent_version_id": 1,
-        "created_at": now,
-        "activated_at": now,
-        "deactivated_at": now,
-        "created_by": "pipeline:scheduled",
-    }
-    mock_db.model_versions[2]["is_active"] = False
-    mock_db.model_versions[2]["status"] = "rolled_back"
-    mock_db.model_versions[1]["status"] = "superseded"
-    mock_db.model_versions[1]["is_active"] = False
-
-    coordinator_uid = str(uuid.uuid4())
-    token = create_test_jwt(user_id=coordinator_uid, role="coordinator")
-
-    with patch("api.app.routers.model_versioning.write_decision", wraps=write_decision) as mock_wd:
-        resp = client.post(
-            "/api/v1/models/automation/force-last-known-good",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"reason": "Active version 4 showing regressions; rolling back to clean ancestor"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-
-        # Must have selected Version 1 (skipping Version 3 which was rolled_back)
-        assert data["id"] == 1
-        assert data["status"] == "active"
-        assert data["is_active"] is True
-
-        # Version 4 is now marked rolled_back
-        assert mock_db.model_versions[4]["status"] == "rolled_back"
-        assert mock_db.model_versions[4]["is_active"] is False
-
-        # write_decision was called
-        assert mock_wd.called
-        call_kwargs = mock_wd.call_args.kwargs
-        assert call_kwargs["decision"] == "ROLLED_BACK"
-        assert call_kwargs["previous_version_id"] == 4
-        assert call_kwargs["candidate_version_id"] == 1
-        assert call_kwargs["triggered_by"] == coordinator_uid
-
-        # Audit decision in db
-        latest_decision = mock_db.decisions[0]
-        assert latest_decision["decision"] == "ROLLED_BACK"
-        assert latest_decision["previous_version_id"] == 4
-        assert latest_decision["candidate_version_id"] == 1
-        assert latest_decision["triggered_by"] == coordinator_uid
+def test_coordinator_cannot_unfreeze_model_automation(client):
+    """POST /models/automation/unfreeze is permanently hard-disabled (403 OPERATION_DISALLOWED)."""
+    token = create_test_jwt(role="coordinator")
+    resp = client.post(
+        "/api/v1/models/automation/unfreeze",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"reason": "Coordinator attempt to resume automated switching"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
 
-def test_non_coordinator_cannot_invoke_coordinator_endpoints(client):
-    """Verifies that non-coordinator roles (public, forecaster) are strictly rejected with 403 on all coordinator actions."""
-    coordinator_endpoints = [
-        ("POST", "/api/v1/models/automation/freeze", {"reason": "Unauthorized freeze attempt"}),
-        ("POST", "/api/v1/models/automation/unfreeze", {"reason": "Unauthorized unfreeze attempt"}),
-        ("POST", "/api/v1/models/automation/force-last-known-good", {"reason": "Unauthorized rollback attempt"}),
-        ("POST", "/api/v1/models/candidates/3/disable", {"reason": "Unauthorized candidate rejection"}),
+def test_coordinator_cannot_force_last_known_good(client):
+    """POST /models/automation/force-last-known-good is permanently hard-disabled (403 OPERATION_DISALLOWED)."""
+    token = create_test_jwt(role="coordinator")
+    resp = client.post(
+        "/api/v1/models/automation/force-last-known-good",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"reason": "Coordinator attempt to force manual rollback"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "OPERATION_DISALLOWED"
+
+
+def test_coordinator_cannot_disable_candidate(client):
+    """POST /models/candidates/{id}/disable is permanently hard-disabled (403 OPERATION_DISALLOWED)."""
+    token = create_test_jwt(role="coordinator")
+    resp = client.post(
+        "/api/v1/models/candidates/3/disable",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"reason": "Coordinator attempt to disable candidate model"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "OPERATION_DISALLOWED"
+
+
+def test_all_roles_cannot_invoke_mutation_controls(client):
+    """Verifies that all roles (public, forecaster, coordinator) are rejected with 403 OPERATION_DISALLOWED on all mutation controls."""
+    mutation_endpoints = [
+        ("POST", "/api/v1/models/automation/freeze", {"reason": "Freeze attempt"}),
+        ("POST", "/api/v1/models/automation/unfreeze", {"reason": "Unfreeze attempt"}),
+        ("POST", "/api/v1/models/automation/force-last-known-good", {"reason": "Rollback attempt"}),
+        ("POST", "/api/v1/models/candidates/3/disable", {"reason": "Disable attempt"}),
     ]
 
-    for role in ("public", "forecaster"):
+    for role in ("public", "forecaster", "coordinator"):
         token = create_test_jwt(role=role)
         headers = {"Authorization": f"Bearer {token}"}
-        for method, path, body in coordinator_endpoints:
+        for method, path, body in mutation_endpoints:
             resp = client.post(path, headers=headers, json=body)
             assert resp.status_code == 403, (
                 f"Role {role} was not rejected with 403 on {path}. Got {resp.status_code}: {resp.text}"
             )
-            assert resp.json()["error"]["code"] == "FORBIDDEN"
-
-
-
-def test_reason_validation_rejects_short_strings(client):
-    """Reason field validation must reject values shorter than 10 characters or missing for all 4 coordinator endpoints."""
-    token = create_test_jwt(role="coordinator")
-    headers = {"Authorization": f"Bearer {token}"}
-
-    endpoints_and_bodies = [
-        ("/api/v1/models/automation/freeze", {"reason": "too short"}, {}),
-        ("/api/v1/models/automation/unfreeze", {"reason": "short"}, {}),
-        ("/api/v1/models/automation/force-last-known-good", {"reason": "abc"}, {}),
-        ("/api/v1/models/candidates/3/disable", {"reason": "bad"}, {}),
-    ]
-
-    for path, short_body, empty_body in endpoints_and_bodies:
-        # Negative test 1: short string (< 10 chars) returns 422
-        resp_short = client.post(path, headers=headers, json=short_body)
-        assert resp_short.status_code == 422, f"Endpoint {path} did not reject short reason: {resp_short.text}"
-        assert "VALIDATION_ERROR" in resp_short.json()["error"]["code"]
-
-        # Negative test 2: missing reason field returns 422
-        resp_empty = client.post(path, headers=headers, json=empty_body)
-        assert resp_empty.status_code == 422, f"Endpoint {path} did not reject missing reason: {resp_empty.text}"
-        assert "VALIDATION_ERROR" in resp_empty.json()["error"]["code"]
+            assert resp.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
 
 def test_existing_models_activate_remains_hard_disabled(client):

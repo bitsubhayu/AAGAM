@@ -145,9 +145,12 @@ def test_request_otp_production_configured_redirect(client, monkeypatch):
 
 
 def test_request_forecaster_otp_uses_configured_redirect(client, monkeypatch):
-    """Verify that forecaster OTP requests use settings.AUTH_REDIRECT_URL and include profile metadata."""
+    """Verify that forecaster OTP requests use settings.AUTH_REDIRECT_URL and include profile metadata for approved accounts."""
     custom_url = "https://custom.weather.gov.in"
     monkeypatch.setattr(settings, "AUTH_REDIRECT_URL", custom_url)
+    async def mock_approved(*args, **kwargs):
+        return True
+    monkeypatch.setattr("api.app.routers.auth._is_email_approved_forecaster", mock_approved)
 
     mock_supabase = MagicMock()
     mock_supabase.auth.sign_in_with_otp.return_value = {"status": "ok"}
@@ -174,6 +177,20 @@ def test_request_forecaster_otp_uses_configured_redirect(client, monkeypatch):
             "email_redirect_to": custom_url,
         },
     })
+
+
+def test_request_forecaster_otp_rejected_for_unapproved_email(client, monkeypatch):
+    """Verify that unapproved email cannot request forecaster OTP and receives 403 ACCESS_NOT_APPROVED."""
+    async def mock_unapproved(*args, **kwargs):
+        return False
+    monkeypatch.setattr("api.app.routers.auth._is_email_approved_forecaster", mock_unapproved)
+
+    resp = client.post(
+        "/api/v1/auth/forecaster/otp/request",
+        json={"email": "random_public@gmail.com"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "ACCESS_NOT_APPROVED"
 
 
 def test_no_hardcoded_localhost_in_auth_router():

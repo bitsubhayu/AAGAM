@@ -386,397 +386,70 @@ async def get_automation_status(
 
 
 # ==============================================================================
-# Coordinator Only Endpoints (require_role("coordinator"))
+# Model Automation Mutation Controls (Permanently Removed & Disallowed)
 # ==============================================================================
 
-@router.post("/models/automation/freeze", response_model=AutomationStateResponse)
+@router.post("/models/automation/freeze")
 async def freeze_automation(
-    payload: FreezeRequest,
-    current_user: CurrentUser = Depends(require_role("coordinator")),
-    conn: asyncpg.Connection = Depends(get_db_conn),
-) -> AutomationStateResponse:
-    """Freezes automatic model-version promotion.
-
-    Requires coordinator role, reason with minimum 10 characters.
-    Writes an immutable decision record with triggered_by=current_user.user_id.
-
-    Authoritative source: Design Doc §T, §S
-    """
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-
-    user_uuid = None
-    if current_user.user_id:
-        try:
-            user_uuid = uuid.UUID(str(current_user.user_id))
-        except (ValueError, AttributeError):
-            user_uuid = None
-
-    valid_user_uuid = None
-    if user_uuid:
-        try:
-            user_exists = await conn.fetchval(
-                "SELECT EXISTS(SELECT 1 FROM auth.users WHERE id = $1)",
-                user_uuid,
-            )
-            if user_exists:
-                valid_user_uuid = user_uuid
-        except Exception:
-            valid_user_uuid = None
-
-    async with conn.transaction():
-        # Update automation state
-        await conn.execute(
-            """
-            UPDATE model_switching_automation_state
-            SET frozen = true,
-                frozen_reason = $1,
-                frozen_by = $2,
-                frozen_at = NOW(),
-                updated_at = NOW()
-            WHERE id = 1
-            """,
-            payload.reason,
-            valid_user_uuid,
-        )
-
-        # Audit decision record (Design requirement)
-        write_decision(
-            decision="FROZEN",
-            reason=payload.reason,
-            triggered_by=str(current_user.user_id),
-            algorithm_version="staged_v2",
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO model_version_decisions (
-                decision, reason, triggered_by, algorithm_version, sample_counts
-            ) VALUES ($1, $2, $3, $4, $5::jsonb)
-            """,
-            "FROZEN",
-            payload.reason,
-            str(current_user.user_id),
-            "staged_v2",
-            json.dumps({}),
-        )
-
-    logger.info(f"Coordinator {current_user.user_id} froze model automation: {payload.reason}")
-    return await get_automation_status(current_user=current_user, conn=conn)
+    payload: Optional[FreezeRequest] = None,
+    current_user: CurrentUser = Depends(require_role("public")),
+) -> Dict[str, Any]:
+    """Model switching automation is permanently enabled. Human mutation controls are removed and permanently disabled."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "OPERATION_DISALLOWED",
+            "message": "Model switching automation is permanently enabled. Manual freeze mutation controls have been removed and are permanently disabled.",
+            "retry_after": None,
+        },
+    )
 
 
-@router.post("/models/automation/unfreeze", response_model=AutomationStateResponse)
+@router.post("/models/automation/unfreeze")
 async def unfreeze_automation(
-    payload: UnfreezeRequest,
-    current_user: CurrentUser = Depends(require_role("coordinator")),
-    conn: asyncpg.Connection = Depends(get_db_conn),
-) -> AutomationStateResponse:
-    """Unfreezes automatic model-version promotion.
-
-    Requires coordinator role, reason with minimum 10 characters.
-    Writes an immutable decision record with decision="UNFROZEN" and triggered_by=current_user.user_id.
-
-    Authoritative source: Design Doc §T, §S
-    """
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-
-    async with conn.transaction():
-        await conn.execute(
-            """
-            UPDATE model_switching_automation_state
-            SET frozen = false,
-                frozen_reason = NULL,
-                frozen_by = NULL,
-                frozen_at = NULL,
-                updated_at = NOW()
-            WHERE id = 1
-            """
-        )
-
-        # Audit decision record (Design requirement: distinct UNFROZEN semantic)
-        write_decision(
-            decision="UNFROZEN",
-            reason=payload.reason,
-            triggered_by=str(current_user.user_id),
-            algorithm_version="staged_v2",
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO model_version_decisions (
-                decision, reason, triggered_by, algorithm_version, sample_counts
-            ) VALUES ($1, $2, $3, $4, $5::jsonb)
-            """,
-            "UNFROZEN",
-            payload.reason,
-            str(current_user.user_id),
-            "staged_v2",
-            json.dumps({}),
-        )
-
-    logger.info(f"Coordinator {current_user.user_id} unfroze model automation: {payload.reason}")
-    return await get_automation_status(current_user=current_user, conn=conn)
+    payload: Optional[UnfreezeRequest] = None,
+    current_user: CurrentUser = Depends(require_role("public")),
+) -> Dict[str, Any]:
+    """Model switching automation is permanently enabled. Human mutation controls are removed and permanently disabled."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "OPERATION_DISALLOWED",
+            "message": "Model switching automation is permanently enabled. Manual unfreeze mutation controls have been removed and are permanently disabled.",
+            "retry_after": None,
+        },
+    )
 
 
-@router.post("/models/automation/force-last-known-good", response_model=ModelVersionSummary)
+@router.post("/models/automation/force-last-known-good")
 async def force_last_known_good(
-    payload: ForceLastKnownGoodRequest,
-    current_user: CurrentUser = Depends(require_role("coordinator")),
-    conn: asyncpg.Connection = Depends(get_db_conn),
-) -> ModelVersionSummary:
-    """Forces immediate activation of the nearest surviving non-rolled-back ancestor version.
-
-    Walks parent_version_id back from the active version, safely bypassing any versions
-    marked 'rolled_back'. Sets the target version to active, the active version to rolled_back,
-    and writes an audit decision row.
-
-    Authoritative source: Design Doc §T, §S
-    """
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-
-    active_row = await conn.fetchrow(
-        """
-        SELECT id, status, parent_version_id, algorithm_type, evaluation_policy, is_active,
-               created_at, activated_at, deactivated_at, created_by
-        FROM model_versions
-        WHERE is_active = true
-        ORDER BY id DESC
-        LIMIT 1
-        """
-    )
-    if not active_row:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "NO_ACTIVE_VERSION",
-                "message": "No active model version currently found.",
-                "retry_after": None,
-            },
-        )
-
-    # Walk parent_version_id chain to find nearest ancestor NOT marked rolled_back
-    curr_parent_id = active_row["parent_version_id"]
-    target_row = None
-    visited = set()
-
-    while curr_parent_id is not None:
-        if curr_parent_id in visited:
-            logger.warning(f"Cycle detected in parent_version_id chain at version {curr_parent_id}")
-            break
-        visited.add(curr_parent_id)
-
-        parent_row = await conn.fetchrow(
-            """
-            SELECT id, status, parent_version_id, algorithm_type, evaluation_policy, is_active,
-                   created_at, activated_at, deactivated_at, created_by
-            FROM model_versions
-            WHERE id = $1
-            """,
-            curr_parent_id,
-        )
-        if not parent_row:
-            logger.warning(f"Parent version {curr_parent_id} not found in database.")
-            break
-
-        if parent_row["status"] == "rolled_back":
-            logger.info(
-                f"Ancestor version {parent_row['id']} has status='rolled_back'; "
-                f"skipping and walking to parent {parent_row['parent_version_id']}"
-            )
-            curr_parent_id = parent_row["parent_version_id"]
-            continue
-
-        # Found the clean ancestor!
-        target_row = parent_row
-        break
-
-    if target_row is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "NO_CLEAN_ANCESTOR",
-                "message": (
-                    f"No clean last-known-good ancestor version found for active version {active_row['id']} "
-                    "(ancestor versions either do not exist or are already marked rolled_back)."
-                ),
-                "retry_after": None,
-            },
-        )
-
-    async with conn.transaction():
-        # Deactivate currently active version
-        await conn.execute(
-            """
-            UPDATE model_versions
-            SET is_active = false,
-                status = 'rolled_back',
-                deactivated_at = NOW()
-            WHERE id = $1
-            """,
-            active_row["id"],
-        )
-
-        # Activate target ancestor
-        await conn.execute(
-            """
-            UPDATE model_versions
-            SET is_active = true,
-                status = 'active',
-                activated_at = NOW()
-            WHERE id = $1
-            """,
-            target_row["id"],
-        )
-
-        # Write audit decision record
-        write_decision(
-            decision="ROLLED_BACK",
-            reason=payload.reason,
-            previous_version_id=active_row["id"],
-            candidate_version_id=target_row["id"],
-            triggered_by=str(current_user.user_id),
-            algorithm_version="staged_v2",
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO model_version_decisions (
-                decision, previous_version_id, candidate_version_id,
-                reason, triggered_by, algorithm_version, sample_counts
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-            """,
-            "ROLLED_BACK",
-            active_row["id"],
-            target_row["id"],
-            payload.reason,
-            str(current_user.user_id),
-            "staged_v2",
-            json.dumps({}),
-        )
-
-    logger.info(
-        f"Coordinator {current_user.user_id} forced last known good version {target_row['id']} "
-        f"(rolled back {active_row['id']}): {payload.reason}"
-    )
-
-    reinstated = await conn.fetchrow(
-        """
-        SELECT id, status, algorithm_type, evaluation_policy, is_active, parent_version_id,
-               created_at, activated_at, deactivated_at, created_by
-        FROM model_versions
-        WHERE id = $1
-        """,
-        target_row["id"],
-    )
-
-    return ModelVersionSummary(
-        id=reinstated["id"],
-        status=reinstated["status"],
-        algorithm_type=reinstated["algorithm_type"],
-        evaluation_policy=reinstated["evaluation_policy"],
-        is_active=reinstated["is_active"],
-        parent_version_id=reinstated["parent_version_id"],
-        created_at=_format_iso(reinstated["created_at"]) or "",
-        activated_at=_format_iso(reinstated["activated_at"]),
-        deactivated_at=_format_iso(reinstated["deactivated_at"]),
-        created_by=reinstated["created_by"],
-        recent_evaluation=None,
+    payload: Optional[ForceLastKnownGoodRequest] = None,
+    current_user: CurrentUser = Depends(require_role("public")),
+) -> Dict[str, Any]:
+    """Model switching automation is permanently enabled. Human mutation controls are removed and permanently disabled."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "OPERATION_DISALLOWED",
+            "message": "Model switching automation is permanently enabled. Manual force-last-known-good controls have been removed and are permanently disabled.",
+            "retry_after": None,
+        },
     )
 
 
-@router.post("/models/candidates/{id}/disable", response_model=ModelVersionSummary)
+@router.post("/models/candidates/{id}/disable")
 async def disable_candidate(
-    payload: DisableCandidateRequest,
-    id: int = Path(..., description="ID of the candidate model version to disable"),
-    current_user: CurrentUser = Depends(require_role("coordinator")),
-    conn: asyncpg.Connection = Depends(get_db_conn),
-) -> ModelVersionSummary:
-    """Sets a candidate model version to 'rejected' regardless of evaluation state.
-
-    Requires coordinator role, reason with minimum 10 characters.
-    Cannot disable a currently active model version.
-    Writes an immutable decision record with triggered_by=current_user.user_id.
-
-    Authoritative source: Design Doc §T, §S
-    """
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-
-    cand_row = await conn.fetchrow(
-        """
-        SELECT id, status, is_active, algorithm_type, evaluation_policy, parent_version_id,
-               created_at, activated_at, deactivated_at, created_by
-        FROM model_versions
-        WHERE id = $1
-        """,
-        id,
+    id: int = Path(..., description="ID of the candidate model version"),
+    payload: Optional[DisableCandidateRequest] = None,
+    current_user: CurrentUser = Depends(require_role("public")),
+) -> Dict[str, Any]:
+    """Model switching automation is permanently enabled. Human mutation controls are removed and permanently disabled."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "OPERATION_DISALLOWED",
+            "message": "Model switching automation is permanently enabled. Candidate disable mutation controls have been removed and are permanently disabled.",
+            "retry_after": None,
+        },
     )
-    if not cand_row:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "code": "MODEL_VERSION_NOT_FOUND",
-                "message": f"Candidate model version {id} does not exist.",
-                "retry_after": None,
-            },
-        )
 
-    if cand_row["is_active"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "CANNOT_DISABLE_ACTIVE_MODEL",
-                "message": f"Model version {id} is currently active and cannot be disabled. Use force-last-known-good instead.",
-                "retry_after": None,
-            },
-        )
-
-    async with conn.transaction():
-        updated_row = await conn.fetchrow(
-            """
-            UPDATE model_versions
-            SET status = 'rejected'
-            WHERE id = $1
-            RETURNING id, status, algorithm_type, evaluation_policy, is_active, parent_version_id,
-                      created_at, activated_at, deactivated_at, created_by
-            """,
-            id,
-        )
-
-        # Audit decision record (Design requirement)
-        write_decision(
-            decision="REJECTED",
-            reason=payload.reason,
-            candidate_version_id=id,
-            triggered_by=str(current_user.user_id),
-            algorithm_version="staged_v2",
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO model_version_decisions (
-                decision, candidate_version_id,
-                reason, triggered_by, algorithm_version, sample_counts
-            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-            """,
-            "REJECTED",
-            id,
-            payload.reason,
-            str(current_user.user_id),
-            "staged_v2",
-            json.dumps({}),
-        )
-
-    logger.info(f"Coordinator {current_user.user_id} disabled candidate model version {id}: {payload.reason}")
-
-    return ModelVersionSummary(
-        id=updated_row["id"],
-        status=updated_row["status"],
-        algorithm_type=updated_row["algorithm_type"],
-        evaluation_policy=updated_row["evaluation_policy"],
-        is_active=updated_row["is_active"],
-        parent_version_id=updated_row["parent_version_id"],
-        created_at=_format_iso(updated_row["created_at"]) or "",
-        activated_at=_format_iso(updated_row["activated_at"]),
-        deactivated_at=_format_iso(updated_row["deactivated_at"]),
-        created_by=updated_row["created_by"],
-        recent_evaluation=None,
-    )

@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Shield,
   Server,
+  UserCheck,
 } from "lucide-react";
 import { useUIStore } from "@/store/uiStore";
 import { useAuthStore } from "@/auth/authStore";
@@ -44,13 +45,22 @@ export const Sidebar: React.FC = () => {
       requiresRole: "forecaster",
     },
     { id: "export", label: "Data & Export", icon: Download },
+    {
+      id: "forecaster-requests",
+      label: "Forecaster Requests",
+      icon: UserCheck,
+      requiresRole: "coordinator",
+    },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
   // Part 14: Filter navigation items based on current authoritative role
   const navItems = allNavItems.filter((item) => {
-    if (item.requiresRole && !isForecasterOrCoordinator) {
-      return false;
+    if (item.requiresRole === "coordinator") {
+      return role === "coordinator";
+    }
+    if (item.requiresRole === "forecaster") {
+      return isForecasterOrCoordinator;
     }
     return true;
   });

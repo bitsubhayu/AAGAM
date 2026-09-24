@@ -184,6 +184,9 @@ export interface AlertItem {
   lifecycle_state?: "new" | "upgraded" | "downgraded" | "unchanged" | "cancelled" | string;
   previous_severity?: "advisory" | "watch" | "alert" | string | null;
   rarity_label?: string | null;
+  cancelled_by?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by_name?: string | null;
 }
 
 export interface AlertListResponse {
@@ -196,6 +199,16 @@ export interface AlertAckResponse {
   status: string;
   acknowledged_by: string;
   acknowledged_at: string;
+  message?: string;
+}
+
+export interface AlertCancelResponse {
+  id: number;
+  status: string;
+  lifecycle_state: string;
+  cancelled_by: string;
+  cancelled_at: string;
+  cancelled_by_name?: string | null;
   message?: string;
 }
 
@@ -215,6 +228,18 @@ export interface AlertEventItem {
   last_updated_at: string;
   outcome: "hit" | "false_alarm" | "pending" | "unverifiable" | string;
   verified_at?: string | null;
+  cancelled_by?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by_name?: string | null;
+}
+
+export interface AlertEventCancelResponse {
+  id: number;
+  status: string;
+  cancelled_by: string;
+  cancelled_at: string;
+  cancelled_by_name?: string | null;
+  message?: string;
 }
 
 export interface LifecycleEventNode {
@@ -439,5 +464,25 @@ export interface UnsubscribeResponse {
   status: string;
   active: boolean;
   message: string;
+}
+
+export interface CheckAccessResponse {
+  email: string;
+  approved: boolean;
+  status: "approved" | "pending" | "not_found";
+  role?: string | null;
+}
+
+export interface ForecasterAccessRequestItem {
+  id: string;
+  email: string;
+  name: string;
+  institution?: string | null;
+  reason?: string | null;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  reviewer_name?: string | null;
 }
 

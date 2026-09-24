@@ -92,6 +92,10 @@ import type {
   SubscriptionUpdate,
   OtpVerifyResponse,
   UnsubscribeResponse,
+  CheckAccessResponse,
+  ForecasterAccessRequestItem,
+  AlertCancelResponse,
+  AlertEventCancelResponse,
 } from "./types";
 
 export async function requestOtp(email: string): Promise<{ status: string; message: string }> {
@@ -191,4 +195,76 @@ export async function promoteCoordinator(
     }
   );
 }
+
+export async function checkForecasterAccess(email: string): Promise<CheckAccessResponse> {
+  return apiFetch<CheckAccessResponse>("/auth/forecaster/check-access", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+  });
+}
+
+export async function requestForecasterAccess(
+  name: string,
+  email: string,
+  institution?: string,
+  reason?: string
+): Promise<{ status: string; message: string; request_id: string }> {
+  return apiFetch<{ status: string; message: string; request_id: string }>(
+    "/auth/forecaster/request-access",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        institution: institution?.trim() || null,
+        reason: reason?.trim() || null,
+      }),
+    }
+  );
+}
+
+export async function fetchForecasterRequests(
+  status?: string
+): Promise<ForecasterAccessRequestItem[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const resp = await apiFetch<{ requests: ForecasterAccessRequestItem[] }>(
+    `/auth/forecaster/requests${qs}`
+  );
+  return resp.requests || [];
+}
+
+export async function approveForecasterRequest(
+  requestId: string
+): Promise<{ status: string; message: string; role: string; user_id?: string }> {
+  return apiFetch<{ status: string; message: string; role: string; user_id?: string }>(
+    `/auth/forecaster/requests/${requestId}/approve`,
+    {
+      method: "POST",
+    }
+  );
+}
+
+export async function rejectForecasterRequest(
+  requestId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/auth/forecaster/requests/${requestId}/reject`,
+    {
+      method: "POST",
+    }
+  );
+}
+
+export async function cancelAlert(alertId: number): Promise<AlertCancelResponse> {
+  return apiFetch<AlertCancelResponse>(`/alerts/${alertId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function cancelAlertEvent(eventId: number): Promise<AlertEventCancelResponse> {
+  return apiFetch<AlertEventCancelResponse>(`/alerts/events/${eventId}/cancel`, {
+    method: "POST",
+  });
+}
+
 

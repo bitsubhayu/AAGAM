@@ -12,6 +12,8 @@ import {
   Loader2,
   Sparkles,
   Award,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/auth/authStore";
 import { supabase } from "@/auth/supabase";
@@ -21,6 +23,8 @@ import { Button } from "@/components/ui/Button";
 import {
   requestForecasterOtp,
   verifyForecasterOtp,
+  checkForecasterAccess,
+  requestForecasterAccess,
   fetchForecasters,
   promoteCoordinator,
   type ForecasterItem,
@@ -30,13 +34,21 @@ import { toast } from "sonner";
 export const SettingsPage: React.FC = () => {
   const { role, user, profile, signOut, setSession } = useAuthStore();
 
-  // Forecaster registration form state
-  const [name, setName] = useState("");
-  const [institution, setInstitution] = useState("");
+  // Forecaster Access state
   const [email, setEmail] = useState("");
+  const [accessStage, setAccessStage] = useState<"enter_email" | "approved" | "unapproved" | "submitted">("enter_email");
+  const [checkingAccess, setCheckingAccess] = useState(false);
+  const [approvedRole, setApprovedRole] = useState<string | null>(null);
+
+  // OTP state (for approved Case A)
   const [otpToken, setOtpToken] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingOtp, setSubmittingOtp] = useState(false);
+
+  // Request Access state (for unapproved Case B)
+  const [reqName, setReqName] = useState("");
+  const [reqOrg, setReqOrg] = useState("");
+  const [reqReason, setReqReason] = useState("");
+  const [submittingReq, setSubmittingReq] = useState(false);
 
   // Coordinator promotion state
   const [forecasters, setForecasters] = useState<ForecasterItem[]>([]);
@@ -53,58 +65,96 @@ export const SettingsPage: React.FC = () => {
     }
   }, [role]);
 
-  const handleRequestOtp = async (e: React.FormEvent) => {
+  const handleCheckAccess = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !institution.trim() || !email.trim()) {
-      toast.error("Please fill in your name, institution, and email.");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      toast.error("Please enter a valid email address.");
       return;
     }
     try {
-      setSubmitting(true);
-      await requestForecasterOtp(name.trim(), institution.trim(), email.trim());
-      setOtpSent(true);
-      toast.success("Verification code sent to your email!");
+      setCheckingAccess(true);
+      const res = await checkForecasterAccess(cleanEmail);
+      if (res.approved) {
+        setAccessStage("approved");
+        setApprovedRole(res.role || "forecaster");
+        try {
+          await requestForecasterOtp("Forecaster", "AAGAM", cleanEmail);
+          toast.success("Verification code dispatched to your email!");
+        } catch (otpErr: any) {
+          toast.error(otpErr.message || "Failed to dispatch verification code");
+        }
+      } else {
+        setAccessStage("unapproved");
+      }
     } catch (err: any) {
-      toast.error(err.message || "Failed to request forecaster OTP");
+      toast.error(err.message || "Failed to verify access status");
     } finally {
-      setSubmitting(false);
+      setCheckingAccess(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    try {
+      setSubmittingOtp(true);
+      await requestForecasterOtp("Forecaster", "AAGAM", email.trim().toLowerCase());
+      toast.success("New verification code dispatched!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to resend code");
+    } finally {
+      setSubmittingOtp(false);
     }
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = otpToken.trim();
-    if (!token) {
-      toast.error("Please enter the 6-digit verification code.");
-      return;
-    }
-    if (!/^\d+$/.test(token)) {
-      toast.error("Verification code must contain digits only.");
-      return;
-    }
-    if (token.length !== 6) {
-      toast.error("Verification code must be exactly 6 digits.");
+    if (!token || token.length !== 6 || !/^\d+$/.test(token)) {
+      toast.error("Please enter the 6-digit numeric verification code.");
       return;
     }
     try {
-      setSubmitting(true);
-      const resp = await verifyForecasterOtp(email.trim(), token);
-      toast.success("Forecaster registration verified!");
+      setSubmittingOtp(true);
+      const resp = await verifyForecasterOtp(email.trim().toLowerCase(), token);
+      toast.success("Forecaster authentication verified!");
       if (resp.access_token && resp.refresh_token) {
         const { data } = await supabase.auth.setSession({
           access_token: resp.access_token,
           refresh_token: resp.refresh_token,
         });
         if (data?.session) {
-          setSession(data.session);
+          await setSession(data.session);
         }
       }
-      setOtpSent(false);
       setOtpToken("");
+      setAccessStage("enter_email");
     } catch (err: any) {
       toast.error(err.message || "Invalid or expired verification code");
     } finally {
-      setSubmitting(false);
+      setSubmittingOtp(false);
+    }
+  };
+
+  const handleSubmitAccessRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reqName.trim()) {
+      toast.error("Please enter your full name.");
+      return;
+    }
+    try {
+      setSubmittingReq(true);
+      await requestForecasterAccess(
+        reqName.trim(),
+        email.trim().toLowerCase(),
+        reqOrg.trim() || undefined,
+        reqReason.trim() || undefined
+      );
+      toast.success("Forecaster access request recorded!");
+      setAccessStage("submitted");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to submit forecaster access request");
+    } finally {
+      setSubmittingReq(false);
     }
   };
 
@@ -161,55 +211,30 @@ export const SettingsPage: React.FC = () => {
                 Public Anonymous Access
               </span>
               <p className="text-text-muted text-[11px] leading-relaxed">
-                You are currently browsing with the Public role. You have read access to all public forecasts,
-                risk maps, skill evaluations, and alerts. To perform operational duties (weight overrides,
-                alert acknowledgements, forecaster dashboard), register as an authorized Forecaster below.
+                You are currently browsing with the Public role with full read access to public forecasts, risk maps, skill evaluations, and alerts. To perform operational duties (weight overrides, alert acknowledgements, governance), use the Forecaster Access portal below.
               </p>
             </div>
 
-            {/* Forecaster Registration Form */}
-            <div className="p-4 bg-white border border-[rgba(26,23,18,0.12)] rounded-lg space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
-                <UserCheck className="w-4 h-4 text-accent" />
-                <span>Forecaster Registration & OTP Verification</span>
+            {/* Single Forecaster Access Entry Point */}
+            <div className="p-4 bg-white border border-[rgba(26,23,18,0.12)] rounded-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+                  <UserCheck className="w-4 h-4 text-accent" />
+                  <span>Forecaster Access</span>
+                </div>
+                {accessStage === "approved" && (
+                  <Badge variant="normal">Approved Account</Badge>
+                )}
+                {accessStage === "unapproved" && (
+                  <Badge variant="watch">Approval Required</Badge>
+                )}
               </div>
 
-              {!otpSent ? (
-                <form onSubmit={handleRequestOtp} className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="block text-[11px] font-medium text-text-secondary mb-1">
-                        Full Name
-                      </label>
-                      <div className="relative">
-                        <User className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-text-muted" />
-                        <input
-                          type="text"
-                          required
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          placeholder="Dr. S. K. Roy"
-                          className="w-full bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-medium text-text-secondary mb-1">
-                        Institution / Organization
-                      </label>
-                      <div className="relative">
-                        <Building className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-text-muted" />
-                        <input
-                          type="text"
-                          required
-                          value={institution}
-                          onChange={(e) => setInstitution(e.target.value)}
-                          placeholder="IMD / NCMRWF / SDMA"
-                          className="w-full bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
-                        />
-                      </div>
-                    </div>
-                  </div>
+              {accessStage === "enter_email" && (
+                <form onSubmit={handleCheckAccess} className="space-y-3">
+                  <p className="text-[11px] text-text-muted leading-relaxed">
+                    Enter your official email address. Authorized accounts will proceed directly to one-time password verification; unapproved applicants can submit an access request for Coordinator review.
+                  </p>
                   <div>
                     <label className="block text-[11px] font-medium text-text-secondary mb-1">
                       Official Email Address
@@ -221,29 +246,39 @@ export const SettingsPage: React.FC = () => {
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="forecaster@imd.gov.in"
+                        placeholder="forecaster@ncmrwf.gov.in"
                         className="w-full bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
                       />
                     </div>
                   </div>
                   <Button
                     type="submit"
-                    disabled={submitting}
+                    disabled={checkingAccess || !email.trim()}
                     className="w-full bg-accent text-surface-dark hover:bg-accent/90 text-xs font-medium"
                   >
-                    {submitting ? (
+                    {checkingAccess ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                     ) : (
                       <KeyRound className="w-3.5 h-3.5 mr-1.5" />
                     )}
-                    <span>Request Verification OTP</span>
+                    <span>Continue</span>
                   </Button>
                 </form>
-              ) : (
+              )}
+
+              {/* Case A: Approved Forecaster / Coordinator Email */}
+              {accessStage === "approved" && (
                 <form onSubmit={handleVerifyOtp} className="space-y-3">
-                  <div className="p-2.5 bg-[#F0EDE7] rounded border border-[rgba(26,23,18,0.10)] text-xs text-text-secondary">
-                    Verification code dispatched to <span className="font-semibold text-text-primary">{email}</span>.
+                  <div className="p-2.5 bg-emerald-50 rounded border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Approved Account Verified ({approvedRole})</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-800">
+                      Verification code dispatched to <span className="font-semibold font-mono">{email}</span>.
+                    </p>
                   </div>
+
                   <div>
                     <label className="block text-[11px] font-medium text-text-secondary mb-1">
                       Enter 6-Digit Code
@@ -257,45 +292,185 @@ export const SettingsPage: React.FC = () => {
                       value={otpToken}
                       onChange={(e) => {
                         const val = e.target.value.trim();
-                        if (val && !/^\d+$/.test(val)) {
-                          toast.error("Verification code must contain digits only.");
-                          return;
-                        }
-                        if (val.length > 6) {
-                          toast.error("Verification code must be exactly 6 digits.");
-                          return;
-                        }
+                        if (val && !/^\d+$/.test(val)) return;
+                        if (val.length > 6) return;
                         setOtpToken(val);
                       }}
                       placeholder="123456"
                       className="w-full text-center tracking-widest text-base font-mono bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md py-1.5 text-text-primary focus:outline-none focus:border-accent"
                     />
                   </div>
+
                   <div className="flex gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setOtpSent(false)}
+                      onClick={() => {
+                        setAccessStage("enter_email");
+                        setOtpToken("");
+                      }}
+                      className="w-1/3 text-xs"
+                    >
+                      Different Email
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={submittingOtp || otpToken.length !== 6}
+                      size="sm"
+                      className="flex-1 bg-accent text-surface-dark hover:bg-accent/90 text-xs font-medium"
+                    >
+                      {submittingOtp ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                      ) : (
+                        <Shield className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      <span>Verify OTP & Sign In</span>
+                    </Button>
+                  </div>
+
+                  <div className="text-center pt-1">
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={submittingOtp}
+                      className="text-[11px] text-brand-blue hover:underline"
+                    >
+                      Did not receive code? Resend OTP
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Case B: Unapproved Email -> Request Forecaster Access */}
+              {accessStage === "unapproved" && (
+                <form onSubmit={handleSubmitAccessRequest} className="space-y-3">
+                  <div className="p-3 bg-amber-50 rounded border border-amber-200 text-xs text-amber-900 space-y-1">
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Request Forecaster Access</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed">
+                      The address <strong className="font-mono">{email}</strong> is not an approved Forecaster or Coordinator. Normal login is disabled for unregistered accounts. Please submit your candidate details below to request operational access.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                        Full Name *
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-text-muted" />
+                        <input
+                          type="text"
+                          required
+                          value={reqName}
+                          onChange={(e) => setReqName(e.target.value)}
+                          placeholder="Dr. S. K. Roy"
+                          className="w-full bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                        Institution / Organization
+                      </label>
+                      <div className="relative">
+                        <Building className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-text-muted" />
+                        <input
+                          type="text"
+                          value={reqOrg}
+                          onChange={(e) => setReqOrg(e.target.value)}
+                          placeholder="IMD / NCMRWF / SDMA"
+                          className="w-full bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                      Applicant Email (Verified)
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-text-muted" />
+                      <input
+                        type="email"
+                        disabled
+                        value={email}
+                        className="w-full bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-md pl-8 pr-2.5 py-1.5 text-xs text-text-muted font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-text-secondary mb-1">
+                      Operational Justification / Role Details
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reqReason}
+                      onChange={(e) => setReqReason(e.target.value)}
+                      placeholder="Brief note on your operational forecasting responsibilities..."
+                      className="w-full bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md p-2 text-xs text-text-primary focus:outline-none focus:border-accent resize-none"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAccessStage("enter_email")}
                       className="w-1/3 text-xs"
                     >
                       Back
                     </Button>
                     <Button
                       type="submit"
-                      disabled={submitting}
+                      disabled={submittingReq || !reqName.trim()}
                       size="sm"
                       className="flex-1 bg-accent text-surface-dark hover:bg-accent/90 text-xs font-medium"
                     >
-                      {submitting ? (
+                      {submittingReq ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                       ) : (
-                        <Shield className="w-3.5 h-3.5 mr-1.5" />
+                        <UserCheck className="w-3.5 h-3.5 mr-1.5" />
                       )}
-                      <span>Verify & Claim Forecaster Role</span>
+                      <span>Submit Forecaster Request</span>
                     </Button>
                   </div>
                 </form>
+              )}
+
+              {/* Case B Confirmation: Request Submitted */}
+              {accessStage === "submitted" && (
+                <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-900 space-y-3 text-center">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                  <div>
+                    <h4 className="font-bold text-sm text-emerald-950">Access Request Submitted</h4>
+                    <p className="text-[11px] text-emerald-800 mt-1 max-w-md mx-auto leading-relaxed">
+                      Your request for <strong className="font-mono">{email}</strong> has been recorded and submitted to an AAGAM Forecaster Coordinator. You remain in public read-only access until an administrator reviews and approves your account.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setAccessStage("enter_email");
+                      setEmail("");
+                      setReqName("");
+                      setReqOrg("");
+                      setReqReason("");
+                    }}
+                    className="text-xs bg-white"
+                  >
+                    Check Another Email
+                  </Button>
+                </div>
               )}
             </div>
           </div>

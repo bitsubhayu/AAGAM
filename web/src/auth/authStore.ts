@@ -68,12 +68,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (session?.user) {
         localStorage.setItem("aagam_auth_token", session.access_token);
         const profile = await fetchAuthoritativeProfile(session.user.id);
-        const metaRole =
-          (session.user.app_metadata?.role as UserRole) ||
-          (session.user.user_metadata?.role as UserRole);
-        const resolvedRole: UserRole =
-          profile?.role ||
-          (metaRole === "coordinator" || metaRole === "forecaster" ? metaRole : "public");
+        if (profile && session.user.email) {
+          profile.email = session.user.email;
+        }
+        // Authoritative role from public.profiles only. Never trust JWT user_metadata or app_metadata.
+        const resolvedRole: UserRole = profile?.role || "public";
 
         set({
           session,

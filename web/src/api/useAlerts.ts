@@ -5,6 +5,8 @@ import type {
   AlertEventAckResponse,
   AlertEventDetailResponse,
   AlertListResponse,
+  AlertCancelResponse,
+  AlertEventCancelResponse,
 } from "./types";
 
 export interface UseAlertsParams {
@@ -78,3 +80,34 @@ export function useAcknowledgeAlertEvent() {
     },
   });
 }
+
+export function useCancelAlert() {
+  const queryClient = useQueryClient();
+
+  return useMutation<AlertCancelResponse, Error, number>({
+    mutationFn: (alertId: number) =>
+      apiFetch<AlertCancelResponse>(`/alerts/${alertId}/cancel`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["alert-event"] });
+    },
+  });
+}
+
+export function useCancelAlertEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation<AlertEventCancelResponse, Error, number>({
+    mutationFn: (eventId: number) =>
+      apiFetch<AlertEventCancelResponse>(`/alerts/events/${eventId}/cancel`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["alert-event"] });
+    },
+  });
+}
+

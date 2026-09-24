@@ -236,6 +236,9 @@ class AlertItem(BaseModel):
     status: str
     acknowledged_by: Optional[str] = None
     acknowledged_at: Optional[str] = None
+    cancelled_by: Optional[str] = None
+    cancelled_at: Optional[str] = None
+    cancelled_by_name: Optional[str] = None
     event_id: Optional[int] = None
     lifecycle_state: Optional[str] = None
     previous_severity: Optional[str] = None
@@ -254,6 +257,22 @@ class AlertAckResponse(BaseModel):
     acknowledged_at: str
 
 
+class AlertCancelResponse(BaseModel):
+    id: int
+    status: str
+    cancelled_by: str
+    cancelled_at: str
+    cancelled_by_name: Optional[str] = None
+
+
+class AlertEventCancelResponse(BaseModel):
+    id: int
+    status: str
+    cancelled_by: str
+    cancelled_at: str
+    cancelled_by_name: Optional[str] = None
+
+
 class AlertEventItem(BaseModel):
     id: int
     location_id: int
@@ -270,6 +289,9 @@ class AlertEventItem(BaseModel):
     last_updated_at: str
     outcome: str = "pending"
     verified_at: Optional[str] = None
+    cancelled_by: Optional[str] = None
+    cancelled_at: Optional[str] = None
+    cancelled_by_name: Optional[str] = None
 
 
 class LifecycleEventNode(BaseModel):
@@ -475,5 +497,49 @@ class ForceLastKnownGoodRequest(BaseModel):
 
 class DisableCandidateRequest(BaseModel):
     reason: str = Field(..., min_length=10, description="Mandatory reason for disabling candidate (min 10 chars)")
+
+
+# ==============================================================================
+# Forecaster Access & Governance Endpoints
+# ==============================================================================
+class CheckAccessRequest(BaseModel):
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=254,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        description="User email address to check access for",
+    )
+
+
+class CheckAccessResponse(BaseModel):
+    status: str = "ok"
+    email: str
+    is_approved: bool
+    role: Optional[str] = None
+
+
+class ForecasterAccessRequestCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100, description="Full name of requester")
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=254,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        description="Requester institutional email address",
+    )
+    institution: Optional[str] = Field(None, max_length=150, description="Meteorological or research institution")
+
+
+class ForecasterAccessRequestItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    institution: Optional[str] = None
+    status: str
+    created_at: str
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 

@@ -193,7 +193,7 @@ def test_staging_real_non_demo_coordinator_lifecycle(staging_db, monkeypatch):
     try:
         with TestClient(app) as client:
             # ==================================================================
-            # STEP A: Coordinator Freeze via real API on aagam_staging
+            # STEP A: Coordinator Freeze via real API on aagam_staging is permanently disabled
             # ==================================================================
             freeze_reason = "Operational freeze during high-impact monsoon cyclone window"
             resp_freeze = client.post(
@@ -201,36 +201,15 @@ def test_staging_real_non_demo_coordinator_lifecycle(staging_db, monkeypatch):
                 headers=auth_headers,
                 json={"reason": freeze_reason},
             )
-            assert resp_freeze.status_code == 200, f"Freeze failed: {resp_freeze.text}"
-            freeze_data = resp_freeze.json()
-            assert freeze_data["frozen"] is True
-            assert freeze_data["frozen_reason"] == freeze_reason
+            assert resp_freeze.status_code == 403
+            assert resp_freeze.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
-            # Verify in PostgreSQL staging DB
-            with staging_db.cursor() as cur:
-                cur.execute("SELECT frozen, frozen_reason FROM model_switching_automation_state WHERE id = 1;")
-                row = cur.fetchone()
-                assert row[0] is True
-                assert row[1] == freeze_reason
-
-                # Verify audit row in model_version_decisions contains triggered_by=<real_coordinator_uid>
-                cur.execute(
-                    """
-                    SELECT decision, reason, triggered_by
-                    FROM model_version_decisions
-                    WHERE decision = 'FROZEN' AND triggered_by = %s
-                    ORDER BY id DESC LIMIT 1;
-                    """,
-                    (real_coordinator_uid,),
-                )
-                audit_row = cur.fetchone()
-                assert audit_row is not None, "Audit row for FROZEN decision not found in staging DB"
-                assert audit_row[0] == "FROZEN"
-                assert audit_row[1] == freeze_reason
-                assert audit_row[2] == real_coordinator_uid
+            # Verify GET /api/v1/models/automation/status is 200 read-only for coordinator
+            resp_status = client.get("/api/v1/models/automation/status", headers=auth_headers)
+            assert resp_status.status_code == 200
 
             # ==================================================================
-            # STEP B: Pipeline State Machine halts advancement while frozen
+            # STEP B: Pipeline State Machine candidate evaluation
             # ==================================================================
             cand_state = CandidateState(id=3, status="candidate", is_active=False, parent_version_id=2)
             active_state = CandidateState(id=2, status="active", is_active=True, parent_version_id=None)
@@ -250,7 +229,7 @@ def test_staging_real_non_demo_coordinator_lifecycle(staging_db, monkeypatch):
                 floors_met=True,
             )
 
-            # Direct advance_candidate_state call observes automation.frozen=True
+            # Direct advance_candidate_state call observes automation state
             frozen_advance_res = advance_candidate_state(
                 candidate=cand_state,
                 active_version=active_state,
@@ -262,25 +241,8 @@ def test_staging_real_non_demo_coordinator_lifecycle(staging_db, monkeypatch):
             assert frozen_advance_res.transition_occurred is False
             assert frozen_advance_res.decision == "FROZEN"
 
-            # Real 6-hourly pipeline runner path reads DB automation state (frozen=true)
-            locations = [{"id": 1, "name": "Delhi"}]
-            pipe_res_frozen = run_versioning_pipeline_step(
-                conn=staging_db,
-                locations=locations,
-                config=active_config,
-            )
-            assert pipe_res_frozen["transition_occurred"] is False
-
-            # Verify candidate version in staging DB remained 'candidate' (halted)
-            with staging_db.cursor() as cur:
-                cur.execute("SELECT status FROM model_versions WHERE id = 3;")
-                cand_status = cur.fetchone()[0]
-                assert cand_status == "candidate", (
-                    f"Candidate advanced while automation was frozen! Expected 'candidate', got '{cand_status}'"
-                )
-
             # ==================================================================
-            # STEP C: Coordinator Unfreeze via real API on aagam_staging
+            # STEP C: Coordinator Unfreeze via real API on aagam_staging is permanently disabled
             # ==================================================================
             unfreeze_reason = "Monsoon cyclone window cleared; resuming automated promotion"
             resp_unfreeze = client.post(
@@ -288,31 +250,8 @@ def test_staging_real_non_demo_coordinator_lifecycle(staging_db, monkeypatch):
                 headers=auth_headers,
                 json={"reason": unfreeze_reason},
             )
-            assert resp_unfreeze.status_code == 200, f"Unfreeze failed: {resp_unfreeze.text}"
-            unfreeze_data = resp_unfreeze.json()
-            assert unfreeze_data["frozen"] is False
-            assert unfreeze_data["frozen_reason"] is None
-
-            # Verify in PostgreSQL staging DB
-            with staging_db.cursor() as cur:
-                cur.execute("SELECT frozen FROM model_switching_automation_state WHERE id = 1;")
-                assert cur.fetchone()[0] is False
-
-                # Verify audit row for UNFROZEN decision with triggered_by=<real_coordinator_uid>
-                cur.execute(
-                    """
-                    SELECT decision, reason, triggered_by
-                    FROM model_version_decisions
-                    WHERE decision = 'UNFROZEN' AND triggered_by = %s
-                    ORDER BY id DESC LIMIT 1;
-                    """,
-                    (real_coordinator_uid,),
-                )
-                unfreeze_audit = cur.fetchone()
-                assert unfreeze_audit is not None, "Audit row for UNFROZEN decision not found in staging DB"
-                assert unfreeze_audit[0] == "UNFROZEN"
-                assert unfreeze_audit[1] == unfreeze_reason
-                assert unfreeze_audit[2] == real_coordinator_uid
+            assert resp_unfreeze.status_code == 403
+            assert resp_unfreeze.json()["error"]["code"] == "OPERATION_DISALLOWED"
 
             # ==================================================================
             # STEP D: Pipeline State Machine progresses candidate now that un-frozen
@@ -329,7 +268,8 @@ def test_staging_real_non_demo_coordinator_lifecycle(staging_db, monkeypatch):
             assert unfrozen_advance_res.transition_occurred is True
             assert unfrozen_advance_res.to_state == "evaluating"
 
-            # Real 6-hourly pipeline runner path reads DB automation state (now frozen=false) and advances candidate
+            # Real 6-hourly pipeline runner path reads DB automation state and advances candidate
+            locations = [{"id": 1, "name": "Delhi"}]
             pipe_res_unfrozen = run_versioning_pipeline_step(
                 conn=staging_db,
                 locations=locations,
