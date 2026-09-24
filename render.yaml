@@ -34,3 +34,5 @@ services:
         value: openai/gpt-oss-120b
       - key: GROQ_FALLBACK_MODEL
         value: openai/gpt-oss-20b
+      - key: AUTH_REDIRECT_URL
+        sync: false

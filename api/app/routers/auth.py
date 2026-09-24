@@ -110,10 +110,10 @@ async def request_otp(payload: OtpRequest) -> Dict[str, str]:
         )
 
     try:
-        # Supabase passwordless OTP with redirect to http://localhost:3000
+        # Supabase passwordless OTP with redirect to configured auth redirect URL
         client.auth.sign_in_with_otp({
             "email": payload.email,
-            "options": {"email_redirect_to": "http://localhost:3000"},
+            "options": {"email_redirect_to": settings.AUTH_REDIRECT_URL},
         })
         logger.info(f"OTP requested for {payload.email}")
         return {
@@ -230,7 +230,7 @@ async def request_forecaster_otp(payload: ForecasterOtpRequest) -> Dict[str, str
                     "display_name": payload.name,
                     "institution": payload.institution,
                 },
-                "email_redirect_to": "http://localhost:3000",
+                "email_redirect_to": settings.AUTH_REDIRECT_URL,
             },
         })
         logger.info(f"Forecaster OTP requested for {payload.email} ({payload.name}, {payload.institution})")

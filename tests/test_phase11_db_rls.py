@@ -227,7 +227,7 @@ class TestPhase11AuthOtpEndpoints:
             assert "verification code" in data["message"]
             mock_supabase.auth.sign_in_with_otp.assert_called_once_with({
                 "email": "officer@sdma.gov.in",
-                "options": {"email_redirect_to": "http://localhost:3000"},
+                "options": {"email_redirect_to": settings.AUTH_REDIRECT_URL},
             })
 
     def test_verify_otp_invalid_token(self, monkeypatch):

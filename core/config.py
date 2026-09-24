@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     # enabled via ENABLE_LOCAL_DEMO_AUTH=true in the environment. Must never be
     # True in production deployments. (AUTH-001 fix)
     ENABLE_LOCAL_DEMO_AUTH: bool = Field(default=False)
+    AUTH_REDIRECT_URL: str = Field(default="http://localhost:3000")
 
     @property
     def cors_origins(self) -> List[str]:

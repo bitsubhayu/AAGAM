@@ -34,7 +34,7 @@ def test_request_otp_success(client, monkeypatch):
     assert data["status"] == "ok"
     mock_supabase.auth.sign_in_with_otp.assert_called_once_with({
         "email": "officer@example.gov.in",
-        "options": {"email_redirect_to": "http://localhost:3000"},
+        "options": {"email_redirect_to": settings.AUTH_REDIRECT_URL},
     })
 
 
@@ -122,3 +122,68 @@ def test_verify_otp_invalid_code(client, monkeypatch):
     assert resp.status_code == 401
     data = resp.json()
     assert data["error"]["code"] == "INVALID_OTP"
+
+
+def test_request_otp_production_configured_redirect(client, monkeypatch):
+    """Verify that when AUTH_REDIRECT_URL is set for production, OTP requests dispatch with that URL."""
+    prod_url = "https://aagam-mlb8.vercel.app"
+    monkeypatch.setattr(settings, "AUTH_REDIRECT_URL", prod_url)
+
+    mock_supabase = MagicMock()
+    mock_supabase.auth.sign_in_with_otp.return_value = {"status": "ok"}
+    monkeypatch.setattr("api.app.routers.auth.get_supabase_client", lambda: mock_supabase)
+
+    resp = client.post(
+        "/api/v1/auth/otp/request",
+        json={"email": "officer@example.gov.in"},
+    )
+    assert resp.status_code == 200, resp.text
+    mock_supabase.auth.sign_in_with_otp.assert_called_once_with({
+        "email": "officer@example.gov.in",
+        "options": {"email_redirect_to": prod_url},
+    })
+
+
+def test_request_forecaster_otp_uses_configured_redirect(client, monkeypatch):
+    """Verify that forecaster OTP requests use settings.AUTH_REDIRECT_URL and include profile metadata."""
+    custom_url = "https://custom.weather.gov.in"
+    monkeypatch.setattr(settings, "AUTH_REDIRECT_URL", custom_url)
+
+    mock_supabase = MagicMock()
+    mock_supabase.auth.sign_in_with_otp.return_value = {"status": "ok"}
+    monkeypatch.setattr("api.app.routers.auth.get_supabase_client", lambda: mock_supabase)
+
+    resp = client.post(
+        "/api/v1/auth/forecaster/otp/request",
+        json={
+            "email": "forecaster@imd.gov.in",
+            "name": "Dr. A. Sharma",
+            "institution": "IMD Pune",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["status"] == "ok"
+    mock_supabase.auth.sign_in_with_otp.assert_called_once_with({
+        "email": "forecaster@imd.gov.in",
+        "options": {
+            "data": {
+                "display_name": "Dr. A. Sharma",
+                "institution": "IMD Pune",
+            },
+            "email_redirect_to": custom_url,
+        },
+    })
+
+
+def test_no_hardcoded_localhost_in_auth_router():
+    """Verify that api/app/routers/auth.py contains zero hardcoded localhost auth redirect URLs."""
+    from pathlib import Path
+    import re
+
+    auth_file = Path(__file__).resolve().parent.parent / "app" / "routers" / "auth.py"
+    content = auth_file.read_text(encoding="utf-8")
+
+    # Ensure no email_redirect_to points to localhost
+    matches = re.findall(r'["\']email_redirect_to["\']\s*:\s*["\'][^"\']*localhost[^"\']*["\']', content)
+    assert matches == [], f"Found hardcoded localhost auth redirects in auth.py: {matches}"

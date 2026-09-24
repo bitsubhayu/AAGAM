@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { useUIStore } from "@/store/uiStore";
 import { useHealth } from "@/api/useHealth";
 import { TopHeader } from "@/components/layout/TopHeader";
@@ -50,6 +50,23 @@ function DashboardContent() {
   const [publicEventId, setPublicEventId] = useState<number | null>(parsePublicEventId);
 
   useEffect(() => {
+    // Detect and handle Supabase auth hash errors (e.g. #error=access_denied&error_code=otp_expired)
+    if (typeof window !== "undefined" && window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      if (hash.includes("error=")) {
+        const hashParams = new URLSearchParams(hash);
+        const errorDescription = hashParams.get("error_description");
+        const errorCode = hashParams.get("error_code") || hashParams.get("error");
+        if (errorCode || errorDescription) {
+          const msg = errorDescription
+            ? decodeURIComponent(errorDescription.replace(/\+/g, " "))
+            : "Sign-in link is invalid or has expired. Please enter the 6-digit OTP code.";
+          toast.error(msg);
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
+      }
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         useAuthStore.getState().setSession(session);
@@ -61,6 +78,9 @@ function DashboardContent() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         useAuthStore.getState().setSession(session);
+        if (typeof window !== "undefined" && window.location.hash.includes("access_token=")) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        }
       }
     });
 

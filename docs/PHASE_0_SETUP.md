@@ -120,6 +120,7 @@ cp .env.example .env
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `DATABASE_URL`
    - `APP_TZ_DISPLAY=Asia/Kolkata`
+   - `AUTH_REDIRECT_URL=https://<your-vercel-domain>.vercel.app` (e.g. `https://aagam-mlb8.vercel.app`)
 
 ---
 
