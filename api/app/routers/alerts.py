@@ -97,8 +97,8 @@ async def list_alerts(
         params.append(status_filter.lower())
         idx += 1
     elif not status_filter and selected_window.startswith("upcoming"):
-        where_clauses.append(f"a.status != ${idx}")
-        params.append("expired")
+        where_clauses.append(f"a.status = ${idx}")
+        params.append("active")
         idx += 1
 
     if hazard:

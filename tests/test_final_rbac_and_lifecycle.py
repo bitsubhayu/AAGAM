@@ -17,8 +17,6 @@ from __future__ import annotations
 import datetime
 import time
 import uuid
-from typing import Generator
-from unittest.mock import MagicMock
 
 import jwt
 import psycopg2

@@ -195,8 +195,8 @@ def test_request_forecaster_otp_rejected_for_unapproved_email(client, monkeypatc
 
 def test_no_hardcoded_localhost_in_auth_router():
     """Verify that api/app/routers/auth.py contains zero hardcoded localhost auth redirect URLs."""
-    from pathlib import Path
     import re
+    from pathlib import Path
 
     auth_file = Path(__file__).resolve().parent.parent / "app" / "routers" / "auth.py"
     content = auth_file.read_text(encoding="utf-8")

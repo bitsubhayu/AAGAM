@@ -11,7 +11,6 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, List, Optional
-from unittest.mock import patch
 
 import jwt
 import pytest
@@ -20,7 +19,6 @@ from fastapi.testclient import TestClient
 from api.app.db.pool import get_db_conn
 from api.app.main import app
 from core.config import settings
-from pipeline.versioning.decisions import write_decision
 
 TEST_JWT_SECRET = "test-phase-4-secret-key-very-secure-32-chars-long"
 

@@ -697,11 +697,10 @@ async def approve_forecaster_request(
 
     logger.info(f"Coordinator {current_user.user_id} approved forecaster access for {req['email']} (request {id})")
     return {
-        "status": "ok",
+        "status": "approved",
         "message": f"Forecaster access for {req['name']} ({req['email']}) has been approved.",
         "request_id": id,
         "email": req["email"],
-        "status": "approved",
     }
 
 
@@ -739,10 +738,9 @@ async def reject_forecaster_request(
     )
     logger.info(f"Coordinator {current_user.user_id} rejected forecaster access for {req['email']} (request {id})")
     return {
-        "status": "ok",
+        "status": "rejected",
         "message": f"Forecaster access for {req['email']} has been rejected.",
         "request_id": id,
         "email": req["email"],
-        "status": "rejected",
     }
 

@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from typing import Any, Dict, List, Optional
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from api.app.auth.dependencies import CurrentUser, require_role
-from api.app.db.pool import get_db_conn, set_rls_claims
+from api.app.db.pool import get_db_conn
 from core.config import settings
 from core.schemas import (
     AutomationStateResponse,
@@ -28,7 +27,6 @@ from core.schemas import (
     ModelVersionSummary,
     UnfreezeRequest,
 )
-from pipeline.versioning.decisions import write_decision
 
 logger = logging.getLogger("aagam.api.model_versioning")
 router = APIRouter(prefix=settings.API_V1_STR, tags=["Model Versioning"])

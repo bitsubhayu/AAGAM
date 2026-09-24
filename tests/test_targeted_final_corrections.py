@@ -471,3 +471,51 @@ class TestAlertsFilteringAndCounts:
         # Both must report the EXACT SAME authoritative count and severity counts
         assert ov_data["count"] == ex_data["count"]
         assert ov_data["severity_counts"] == ex_data["severity_counts"]
+
+    def test_default_upcoming_alerts_mean_active_only(self, client):
+        # Default query (omitted status on upcoming window) must return ACTIVE only
+        resp = client.get("/api/v1/alerts?window=upcoming_7d")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Must exclude acknowledged and cancelled
+        for a in data["alerts"]:
+            assert a["status"] == "active"
+            assert a["status"] != "acknowledged"
+            assert a["status"] != "cancelled"
+
+        # Compare with explicit status=active
+        resp_active = client.get("/api/v1/alerts?window=upcoming_7d&status=active")
+        assert resp_active.status_code == 200
+        data_active = resp_active.json()
+
+        assert data["count"] == data_active["count"]
+        assert data["severity_counts"] == data_active["severity_counts"]
+
+        # Ensure severity counts sum to the active count
+        sc = data["severity_counts"]
+        assert sc["advisory"] + sc["watch"] + sc["alert"] == data["count"]
+
+    def test_explicit_status_filters_enforced(self, client):
+        # Explicit status=acknowledged
+        resp_ack = client.get("/api/v1/alerts?status=acknowledged")
+        assert resp_ack.status_code == 200
+        data_ack = resp_ack.json()
+        assert data_ack["count"] >= 1
+        for a in data_ack["alerts"]:
+            assert a["status"] == "acknowledged"
+
+        # Explicit status=active
+        resp_act = client.get("/api/v1/alerts?status=active")
+        assert resp_act.status_code == 200
+        data_act = resp_act.json()
+        assert data_act["count"] >= 1
+        for a in data_act["alerts"]:
+            assert a["status"] == "active"
+
+        # Explicit status=all includes cancelled and acknowledged
+        resp_all = client.get("/api/v1/alerts?status=all")
+        assert resp_all.status_code == 200
+        data_all = resp_all.json()
+        statuses = {a["status"] for a in data_all["alerts"]}
+        assert "cancelled" in statuses or any(a["status"] == "cancelled" for a in data_all["alerts"])
