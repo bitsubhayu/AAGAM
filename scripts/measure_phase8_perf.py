@@ -53,7 +53,7 @@ async def evaluate_single_turn(
     user = CurrentUser(
         user_id=user_id or str(uuid.uuid4()),
         email="benchmark@aagam.gov.in",
-        role="viewer",
+        role="public",
     )
 
     t0 = time.perf_counter()

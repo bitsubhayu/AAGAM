@@ -35,8 +35,8 @@ def create_token() -> str:
         "sub": str(uuid.uuid4()),
         "email": "benchmark@aagam.gov.in",
         "role": "authenticated",
-        "app_metadata": {"role": "viewer"},
-        "user_metadata": {"role": "viewer"},
+        "app_metadata": {"role": "public"},
+        "user_metadata": {"role": "public"},
         "exp": int(time.time()) + 3600,
     }
     return jwt.encode(payload, TEST_JWT_SECRET, algorithm="HS256")

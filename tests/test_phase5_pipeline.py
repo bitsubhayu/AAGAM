@@ -126,7 +126,7 @@ def test_rls_enabled_on_all_tables():
 
 
 def test_auth_helper_functions_exist():
-    """Verify that security helper functions is_admin() and is_forecaster_or_admin() exist."""
+    """Verify that security helper functions is_coordinator() and is_forecaster_or_coordinator() exist."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -135,13 +135,13 @@ def test_auth_helper_functions_exist():
                 FROM pg_proc
                 JOIN pg_namespace ON pg_namespace.oid = pg_proc.pronamespace
                 WHERE nspname = 'public'
-                  AND proname IN ('is_admin', 'is_forecaster_or_admin');
+                  AND proname IN ('is_coordinator', 'is_forecaster_or_coordinator', 'is_admin', 'is_forecaster_or_admin');
             """)
             funcs = {row[0]: row[1] for row in cur.fetchall()}
-            assert "is_admin" in funcs, "Function is_admin() missing"
-            assert "is_forecaster_or_admin" in funcs, "Function is_forecaster_or_admin() missing"
-            assert funcs["is_admin"] is True, "is_admin() must be SECURITY DEFINER"
-            assert funcs["is_forecaster_or_admin"] is True, "is_forecaster_or_admin() must be SECURITY DEFINER"
+            assert "is_coordinator" in funcs, "Function is_coordinator() missing"
+            assert "is_forecaster_or_coordinator" in funcs, "Function is_forecaster_or_coordinator() missing"
+            assert funcs["is_coordinator"] is True, "is_coordinator() must be SECURITY DEFINER"
+            assert funcs["is_forecaster_or_coordinator"] is True, "is_forecaster_or_coordinator() must be SECURITY DEFINER"
     finally:
         conn.close()
 
@@ -229,7 +229,7 @@ def test_prevent_self_role_escalation():
     conn = get_db_connection()
     conn.autocommit = True
     test_user_id = str(uuid.uuid4())
-    admin_user_id = str(uuid.uuid4())
+    coord_user_id = str(uuid.uuid4())
 
     try:
         with conn.cursor() as cur:
@@ -270,12 +270,12 @@ def test_prevent_self_role_escalation():
             cur.execute("""
                 INSERT INTO auth.users (id, email, role)
                 VALUES (%s, 'coordinator_user@aagam.local', 'authenticated');
-            """, (admin_user_id,))
-            cur.execute("UPDATE profiles SET role = 'coordinator' WHERE user_id = %s;", (admin_user_id,))
+            """, (coord_user_id,))
+            cur.execute("UPDATE profiles SET role = 'coordinator' WHERE user_id = %s;", (coord_user_id,))
 
             cur.execute("BEGIN;")
             cur.execute("SET LOCAL ROLE authenticated;")
-            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (admin_user_id,))
+            cur.execute("SELECT set_config('request.jwt.claim.sub', %s, true);", (coord_user_id,))
 
             cur.execute("UPDATE profiles SET display_name = 'Verified Public' WHERE user_id = %s;", (test_user_id,))
             assert cur.rowcount == 1, "Coordinator user must be allowed to manage profiles"
@@ -283,8 +283,8 @@ def test_prevent_self_role_escalation():
 
     finally:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM profiles WHERE user_id IN (%s, %s);", (test_user_id, admin_user_id))
-            cur.execute("DELETE FROM auth.users WHERE id IN (%s, %s);", (test_user_id, admin_user_id))
+            cur.execute("DELETE FROM profiles WHERE user_id IN (%s, %s);", (test_user_id, coord_user_id))
+            cur.execute("DELETE FROM auth.users WHERE id IN (%s, %s);", (test_user_id, coord_user_id))
         conn.close()
 
 

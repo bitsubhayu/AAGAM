@@ -19,7 +19,7 @@ TEST_JWT_SECRET = "test-phase-11-secret-key-very-secure-32-chars-long"
 def create_test_jwt(
     user_id: str | None = None,
     email: str = "subscriber@aagam.gov.in",
-    role: str = "viewer",
+    role: str = "public",
     secret: str = TEST_JWT_SECRET,
     expires_in: int = 3600,
 ) -> str:

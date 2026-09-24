@@ -415,7 +415,7 @@ async def list_forecasters(
     current_user: CurrentUser = Depends(require_role("coordinator")),
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> List[ForecasterProfileSummary]:
-    """Returns list of all verified Forecaster and Coordinator profiles for promotion and administrative view."""
+    """Returns list of all verified Forecaster and Coordinator profiles for coordinator management view."""
     rows = await conn.fetch(
         """
         SELECT p.user_id, COALESCE(u.email, '') as email, p.display_name, p.org, p.role, p.updated_at as created_at

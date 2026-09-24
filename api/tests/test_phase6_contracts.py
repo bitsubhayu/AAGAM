@@ -3,7 +3,7 @@
 Validates PRD §12 specifications:
 1. /health endpoint (public, unauthenticated)
 2. Authentication failures on protected endpoints (missing, malformed, expired)
-3. Role-based access control matrix (viewer, forecaster, admin)
+3. Role-based access control matrix (public, forecaster, coordinator)
 4. Strict PRD §12 error envelope conformity
 5. Response schemas and JSON shapes (forecast, map, weights, alerts, history, pipeline, export, chat)
 6. Query parameter validation and PRD boundary enforcement (e.g. total pagination <= 5000)
@@ -287,7 +287,7 @@ def test_coordinator_permissions(client):
 # ==============================================================================
 def test_forecast_response_shape(client):
     """Verifies GET /forecast response shape strictly matches PRD §12 example."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/forecast?location=bhubaneswar&variable=rain_mm", headers=headers)
     assert resp.status_code == 200
@@ -320,7 +320,7 @@ def test_forecast_response_shape(client):
 
 def test_map_response_shape(client):
     """Verifies GET /map response shape strictly matches PRD §12."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/map?variable=rain_mm&lead_days=1", headers=headers)
     assert resp.status_code == 200
@@ -346,7 +346,7 @@ def test_map_response_shape(client):
 
 def test_weights_response_shape(client):
     """Verifies GET /weights returns active model weights and matrix."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/weights?variable=rain_mm", headers=headers)
     assert resp.status_code == 200
@@ -370,7 +370,7 @@ def test_weights_response_shape(client):
 
 def test_weights_map_shape(client):
     """Verifies GET /weights/map returns dominant model and all weights for 40 locations."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/weights/map?variable=rain_mm&lead_days=1", headers=headers)
     assert resp.status_code == 200
@@ -387,7 +387,7 @@ def test_weights_map_shape(client):
 
 def test_alerts_response_shape(client):
     """Verifies GET /alerts response contains list and count."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/alerts?limit=10", headers=headers)
     assert resp.status_code == 200
@@ -409,7 +409,7 @@ def test_alerts_response_shape(client):
 # ==============================================================================
 def test_invalid_weather_variable_returns_422(client):
     """Invalid weather variable must return 422 with standard error envelope."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/forecast?location=bhubaneswar&variable=invalid_var", headers=headers)
     assert resp.status_code == 422
@@ -419,7 +419,7 @@ def test_invalid_weather_variable_returns_422(client):
 
 def test_invalid_location_returns_404(client):
     """Nonexistent location must return 404 with LOCATION_NOT_FOUND error code."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/forecast?location=nonexistent_city_xyz&variable=rain_mm", headers=headers)
     assert resp.status_code == 404
@@ -429,7 +429,7 @@ def test_invalid_location_returns_404(client):
 
 def test_history_pagination_boundary_exceeded(client):
     """History pagination exceeding total <= 5,000 must return 422."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get(
         "/api/v1/history?location=bhubaneswar&variable=rain_mm&offset=4500&limit=1000",
@@ -488,7 +488,7 @@ def test_weight_override_validation_weights_must_sum_to_one(client):
 # ==============================================================================
 def test_export_endpoint_csv(client):
     """GET /export with CSV format returns text/csv stream."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/export?dataset=forecasts&format=csv", headers=headers)
     assert resp.status_code == 200
@@ -498,7 +498,7 @@ def test_export_endpoint_csv(client):
 
 def test_export_endpoint_invalid_dataset(client):
     """Invalid dataset returns 422."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.get("/api/v1/export?dataset=unknown_ds", headers=headers)
     assert resp.status_code == 422
@@ -507,7 +507,7 @@ def test_export_endpoint_invalid_dataset(client):
 
 def test_chat_endpoint_contract_scaffold(client):
     """POST /chat returns valid text/event-stream preserving Phase 8 contract."""
-    token = create_test_jwt(role="viewer")
+    token = create_test_jwt(role="public")
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.post("/api/v1/chat", headers=headers, json={"message": "What is the forecast for Pune?"})
     assert resp.status_code == 200
@@ -518,10 +518,10 @@ def test_chat_endpoint_contract_scaffold(client):
 
 
 # ==============================================================================
-# 8. Artifacts Endpoint Tests (Owner & Admin Access)
+# 8. Artifacts Endpoint Tests (Owner & Coordinator Access)
 # ==============================================================================
 def test_artifacts_access_control(client):
-    """Artifact retrieval requires ownership or admin privileges."""
+    """Artifact retrieval requires ownership or coordinator privileges."""
     from api.app.routers.artifacts import register_artifact
 
     owner_id = str(uuid.uuid4())

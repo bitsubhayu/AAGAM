@@ -38,7 +38,7 @@ async def run_model_rollback_drill() -> Dict[str, Any]:
     logger.info("Initializing asyncpg connection pool...")
     await db_pool.init_pool()
 
-    admin_user = CurrentUser(user_id="00000000-0000-0000-0000-000000000000", email="admin@aagam.gov.in", role="admin")
+    coord_user = CurrentUser(user_id="00000000-0000-0000-0000-000000000003", email="coordinator@aagam.gov.in", role="coordinator")
 
     try:
         assert db_pool.pool is not None, "Failed to initialize db pool"
@@ -59,7 +59,7 @@ async def run_model_rollback_drill() -> Dict[str, Any]:
             # 2. Execute Rollback to target_rollback_id
             logger.info(f"Executing rollback: Activating model version ID={target_rollback_id}...")
             rollback_start = time.perf_counter()
-            rollback_resp = await activate_model_version(id=target_rollback_id, current_user=admin_user, conn=conn)
+            rollback_resp = await activate_model_version(id=target_rollback_id, current_user=coord_user, conn=conn)
             rollback_duration_ms = (time.perf_counter() - rollback_start) * 1000
             logger.info(f"Rollback executed in {rollback_duration_ms:.2f}ms. Response: ID={rollback_resp.id}, is_active={rollback_resp.is_active}")
 
@@ -77,7 +77,7 @@ async def run_model_rollback_drill() -> Dict[str, Any]:
             # 5. Restore original active version
             logger.info(f"Restoring original active version ID={initial_id}...")
             restore_start = time.perf_counter()
-            restore_resp = await activate_model_version(id=initial_id, current_user=admin_user, conn=conn)
+            restore_resp = await activate_model_version(id=initial_id, current_user=coord_user, conn=conn)
             restore_duration_ms = (time.perf_counter() - restore_start) * 1000
             logger.info(f"Restoration executed in {restore_duration_ms:.2f}ms. Response: ID={restore_resp.id}, is_active={restore_resp.is_active}")
 
