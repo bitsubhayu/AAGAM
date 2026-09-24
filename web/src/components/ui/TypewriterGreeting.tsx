@@ -1,27 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
+import { useAuthStore } from "@/auth/authStore";
+import { extractFirstName, getGreeting } from "@/utils/greeting";
 
 interface TypewriterGreetingProps {
   className?: string;
-}
-
-function getGreeting(name: string | null): string {
-  const hour = new Date().getHours();
-  const period =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  if (name) {
-    return `${period}, ${name} 👋`;
-  }
-  return `${period} — here's what's active right now`;
-}
-
-function getUserName(): string | null {
-  try {
-    const email = localStorage.getItem("aagam_user_email");
-    if (!email) return null;
-    return email.split("@")[0];
-  } catch {
-    return null;
-  }
 }
 
 const isReducedMotion = (): boolean =>
@@ -32,23 +14,36 @@ const isReducedMotion = (): boolean =>
 export const TypewriterGreeting: React.FC<TypewriterGreetingProps> = ({
   className = "",
 }) => {
-  const name = getUserName();
-  const fullText = getGreeting(name);
+  const { profile, user } = useAuthStore();
 
-  // Track display text — once per mount (never re-triggers on re-renders)
+  const rawName =
+    profile?.display_name ||
+    user?.user_metadata?.display_name ||
+    user?.user_metadata?.full_name ||
+    null;
+
+  const firstName = extractFirstName(rawName);
+  const fullText = getGreeting(firstName);
+
   const [displayText, setDisplayText] = useState(() =>
     isReducedMotion() ? fullText : ""
   );
   const [showCursor, setShowCursor] = useState(() => !isReducedMotion());
   const [done, setDone] = useState(() => isReducedMotion());
-  const hasStarted = useRef(false);
 
   useEffect(() => {
-    if (isReducedMotion() || hasStarted.current) return;
-    hasStarted.current = true;
+    if (isReducedMotion()) {
+      setDisplayText(fullText);
+      setShowCursor(false);
+      setDone(true);
+      return;
+    }
+
+    setDisplayText("");
+    setShowCursor(true);
+    setDone(false);
 
     let i = 0;
-    // Small initial delay so the page renders before typing starts
     const delay = setTimeout(() => {
       const interval = setInterval(() => {
         i++;
@@ -56,15 +51,14 @@ export const TypewriterGreeting: React.FC<TypewriterGreetingProps> = ({
         if (i >= fullText.length) {
           clearInterval(interval);
           setDone(true);
-          // Keep blinking cursor for a moment, then hide it
           setTimeout(() => setShowCursor(false), 2000);
         }
-      }, 45);
+      }, 35);
       return () => clearInterval(interval);
-    }, 300);
+    }, 150);
 
     return () => clearTimeout(delay);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fullText]);
 
   return (
     <div className={`${className}`} aria-label={fullText} aria-live="polite">

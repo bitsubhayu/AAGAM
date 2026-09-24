@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from api.app.auth.dependencies import CurrentUser, require_role
-from api.app.db.pool import get_db_conn
+from api.app.db.pool import get_db_conn, set_rls_claims
 from core.config import settings
 
 logger = logging.getLogger("aagam.api.subscriptions")
@@ -71,6 +71,7 @@ async def get_my_subscription(
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> SubscriptionResponse:
     """Retrieves the authenticated subscriber's current alert preferences."""
+    await set_rls_claims(conn, current_user.user_id, role="authenticated")
     row = await conn.fetchrow(
         """
         SELECT user_id, email, location_ids, hazards, min_severity,
@@ -141,6 +142,7 @@ async def update_my_subscription(
             detail={"code": "INVALID_SEVERITY", "message": f"Unsupported severity '{payload.min_severity}'. Allowed: {sorted(VALID_SEVERITIES)}"},
         )
 
+    await set_rls_claims(conn, current_user.user_id, role="authenticated")
     email = current_user.email or "user@example.com"
 
     row = await conn.fetchrow(
@@ -198,6 +200,7 @@ async def unsubscribe_my_subscription(
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> UnsubscribeResponse:
     """Soft unsubscribes the current user (sets active=false, preserves history per PRD §12)."""
+    await set_rls_claims(conn, current_user.user_id, role="authenticated")
     row = await conn.fetchrow(
         """
         UPDATE subscriptions

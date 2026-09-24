@@ -22,11 +22,14 @@ import { AlertCard } from "@/components/alerts/AlertCard";
 import { AlertEventDetailDrawer } from "@/components/alerts/AlertEventDetailDrawer";
 import { GetAlertsDialog } from "@/components/alerts/GetAlertsDialog";
 import { TypewriterGreeting } from "@/components/ui/TypewriterGreeting";
+import { extractFirstName } from "@/utils/greeting";
 import { fetchMySubscription } from "@/api/client";
 import type { Subscription } from "@/api/types";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useAuthStore } from "@/auth/authStore";
 
 export const OverviewPage: React.FC = () => {
+  const { profile, user } = useAuthStore();
   const {
     selectedVariable,
     selectedLeadDays,
@@ -54,14 +57,14 @@ export const OverviewPage: React.FC = () => {
   const [userEmail, setUserEmail] = useState<string | null>(() => localStorage.getItem("aagam_user_email"));
 
   useEffect(() => {
-    const email = localStorage.getItem("aagam_user_email");
+    const email = localStorage.getItem("aagam_user_email") || user?.email;
     const token = localStorage.getItem("aagam_auth_token");
     if (token && email) {
       fetchMySubscription()
         .then((sub) => setMySubscription(sub))
         .catch(() => {});
     }
-  }, [isGetAlertsOpen]);
+  }, [isGetAlertsOpen, user?.email]);
 
   useEffect(() => {
     try {
@@ -87,10 +90,10 @@ export const OverviewPage: React.FC = () => {
   const activeAlertsCount = alertsData?.count ?? 0;
   const rawAlerts = alertsData?.alerts || [];
 
-  // Severity counts
-  const advisoryCount = rawAlerts.filter((a) => a.severity === "advisory").length;
-  const watchCount = rawAlerts.filter((a) => a.severity === "watch").length;
-  const alertCount = rawAlerts.filter((a) => a.severity === "alert").length;
+  // Authoritative severity counts computed over complete dataset before LIMIT (Task 5)
+  const advisoryCount = alertsData?.severity_counts?.advisory ?? 0;
+  const watchCount = alertsData?.severity_counts?.watch ?? 0;
+  const alertCount = alertsData?.severity_counts?.alert ?? 0;
 
   // Calculate skill gain vs equal-mean from latest scores
   const blendScore = skillData?.scores?.find(
@@ -369,7 +372,7 @@ export const OverviewPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Bell className="w-3.5 h-3.5 text-hazard-normal" />
                   <span>
-                    Hi, <strong className="font-semibold text-hazard-normal">{userEmail.split("@")[0]}</strong>{" "}
+                    Hi, <strong className="font-semibold text-hazard-normal">{extractFirstName(profile?.display_name || user?.user_metadata?.display_name) || "Subscriber"}</strong>{" "}
                     — alerts for your {mySubscription.location_ids.length} saved location(s).
                   </span>
                 </div>
@@ -477,6 +480,17 @@ export const OverviewPage: React.FC = () => {
 
             {/* Alerts List / Empty State */}
             <div className="space-y-2 mt-3 max-h-[500px] overflow-y-auto pr-0.5">
+              {!alertsLoading && rawAlerts.length > 0 && activeAlertsCount > rawAlerts.length && (
+                <div className="text-[11px] text-text-muted px-1 flex items-center justify-between">
+                  <span>Showing {rawAlerts.length} of {activeAlertsCount} alerts</span>
+                  <button
+                    onClick={() => setActiveTab("alerts")}
+                    className="text-accent hover:underline text-[11px] font-medium"
+                  >
+                    View all in Center →
+                  </button>
+                </div>
+              )}
               {alertsLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-16 w-full" />

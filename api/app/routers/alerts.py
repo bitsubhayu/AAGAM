@@ -24,6 +24,7 @@ from core.schemas import (
     AlertItem,
     AlertListResponse,
     LifecycleEventNode,
+    SeverityCounts,
 )
 
 logger = logging.getLogger("aagam.api.alerts")
@@ -74,116 +75,158 @@ async def list_alerts(
             },
         )
 
-    query = """
-        SELECT a.id, a.created_at, a.issue_time, a.location_id, l.name as location_name,
-               l.slug as location_slug, l.region, a.hazard, a.severity, a.valid_date,
-               a.lead_days, a.value, a.models_over, a.spread, a.rule, a.status,
-               a.acknowledged_by, a.acknowledged_at, a.cancelled_by, a.cancelled_at,
-               cp.display_name as cancelled_by_name,
-               a.event_id, a.lifecycle_state,
-               a.previous_severity, a.rarity_label
-        FROM alerts a
-        JOIN locations l ON a.location_id = l.id
-        LEFT JOIN profiles cp ON a.cancelled_by = cp.user_id
-        WHERE true
-    """
+    where_clauses = ["true"]
     params: List[Any] = []
     idx = 1
 
     # Apply window filtering
     if selected_window == "upcoming_2d":
-        query += " AND a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '2 days'"
+        where_clauses.append("a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '2 days'")
     elif selected_window == "upcoming_3d":
-        query += " AND a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '3 days'"
+        where_clauses.append("a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '3 days'")
     elif selected_window == "upcoming_7d":
-        query += " AND a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '7 days'"
+        where_clauses.append("a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '7 days'")
     elif selected_window == "past_24h":
-        query += " AND a.valid_date < CURRENT_DATE AND a.valid_date >= CURRENT_DATE - INTERVAL '1 day'"
+        where_clauses.append("a.valid_date < CURRENT_DATE AND a.valid_date >= CURRENT_DATE - INTERVAL '1 day'")
     elif selected_window == "past_7d":
-        query += " AND a.valid_date < CURRENT_DATE AND a.valid_date >= CURRENT_DATE - INTERVAL '7 days'"
+        where_clauses.append("a.valid_date < CURRENT_DATE AND a.valid_date >= CURRENT_DATE - INTERVAL '7 days'")
 
     # Status filter
     if status_filter and status_filter.lower() != "all":
-        query += f" AND a.status = ${idx}"
+        where_clauses.append(f"a.status = ${idx}")
         params.append(status_filter.lower())
         idx += 1
     elif not status_filter and selected_window.startswith("upcoming"):
-        query += f" AND a.status != ${idx}"
+        where_clauses.append(f"a.status != ${idx}")
         params.append("expired")
         idx += 1
 
     if hazard:
-        query += f" AND a.hazard = ${idx}"
+        where_clauses.append(f"a.hazard = ${idx}")
         params.append(hazard.lower())
         idx += 1
 
     if region:
-        query += f" AND l.region = ${idx}"
+        where_clauses.append(f"l.region = ${idx}")
         params.append(region.upper())
         idx += 1
 
     if min_severity and min_severity.lower() in SEVERITY_LEVELS:
         allowed_severities = SEVERITY_LEVELS[min_severity.lower()]
-        query += f" AND a.severity = ANY(${idx}::text[])"
+        where_clauses.append(f"a.severity = ANY(${idx}::text[])")
         params.append(allowed_severities)
         idx += 1
 
-    if max_lead_days:
-        query += f" AND a.lead_days <= ${idx}"
+    # Edge case: max_lead_days can be 0, do not use truthiness
+    if max_lead_days is not None:
+        where_clauses.append(f"a.lead_days <= ${idx}")
         params.append(max_lead_days)
         idx += 1
 
-    query += f" ORDER BY a.issue_time DESC, a.valid_date ASC, a.severity DESC LIMIT ${idx} OFFSET ${idx + 1}"
+    where_sql = " AND ".join(where_clauses)
+
+    query = f"""
+        WITH filtered AS (
+            SELECT a.id, a.created_at, a.issue_time, a.location_id, l.name as location_name,
+                   l.slug as location_slug, l.region, a.hazard, a.severity, a.valid_date,
+                   a.lead_days, a.value, a.models_over, a.spread, a.rule, a.status,
+                   a.acknowledged_by, a.acknowledged_at, a.cancelled_by, a.cancelled_at,
+                   cp.display_name as cancelled_by_name,
+                   a.event_id, a.lifecycle_state,
+                   a.previous_severity, a.rarity_label
+            FROM alerts a
+            JOIN locations l ON a.location_id = l.id
+            LEFT JOIN profiles cp ON a.cancelled_by = cp.user_id
+            WHERE {where_sql}
+        ),
+        counts AS (
+            SELECT
+                COUNT(*)::int as total_count,
+                COUNT(*) FILTER (WHERE severity = 'advisory')::int as advisory_count,
+                COUNT(*) FILTER (WHERE severity = 'watch')::int as watch_count,
+                COUNT(*) FILTER (WHERE severity = 'alert')::int as alert_count
+            FROM filtered
+        )
+        SELECT f.*, c.total_count, c.advisory_count, c.watch_count, c.alert_count
+        FROM counts c
+        LEFT JOIN LATERAL (
+            SELECT *
+            FROM filtered
+            ORDER BY issue_time DESC, valid_date ASC, severity DESC
+            LIMIT ${idx} OFFSET ${idx + 1}
+        ) f ON true;
+    """
     params.extend([limit, offset])
 
     rows = await conn.fetch(query, *params)
 
     items: List[AlertItem] = []
-    for r in rows:
-        rule_dict = r["rule"]
-        if isinstance(rule_dict, str):
-            try:
-                rule_dict = json.loads(rule_dict)
-            except Exception:
-                rule_dict = {"raw": rule_dict}
+    total_count = 0
+    advisory_count = 0
+    watch_count = 0
+    alert_count = 0
 
-        # For past windows, ensure past active rows display as expired
-        alert_status = r["status"]
-        if selected_window.startswith("past") and alert_status == "active":
-            alert_status = "expired"
+    if rows:
+        first = rows[0]
+        total_count = first["total_count"] or 0
+        advisory_count = first["advisory_count"] or 0
+        watch_count = first["watch_count"] or 0
+        alert_count = first["alert_count"] or 0
 
-        items.append(
-            AlertItem(
-                id=r["id"],
-                created_at=r["created_at"].isoformat() if r["created_at"] else "",
-                issue_time=r["issue_time"].isoformat() if r["issue_time"] else "",
-                location_id=r["location_id"],
-                location_name=r["location_name"],
-                location_slug=r["location_slug"],
-                region=r["region"],
-                hazard=r["hazard"],
-                severity=r["severity"],
-                valid_date=r["valid_date"].isoformat() if r["valid_date"] else "",
-                lead_days=r["lead_days"],
-                value=round(float(r["value"]), 2) if r["value"] is not None else None,
-                models_over=r["models_over"],
-                spread=round(float(r["spread"]), 2) if r["spread"] is not None else None,
-                rule=rule_dict,
-                status=alert_status,
-                acknowledged_by=str(r["acknowledged_by"]) if r["acknowledged_by"] else None,
-                acknowledged_at=r["acknowledged_at"].isoformat() if r["acknowledged_at"] else None,
-                cancelled_by=str(r.get("cancelled_by")) if r.get("cancelled_by") else None,
-                cancelled_at=r.get("cancelled_at").isoformat() if r.get("cancelled_at") else None,
-                cancelled_by_name=r.get("cancelled_by_name"),
-                event_id=r["event_id"],
-                lifecycle_state=r["lifecycle_state"],
-                previous_severity=r["previous_severity"],
-                rarity_label=r["rarity_label"],
+        for r in rows:
+            # If 0 matching items, LEFT JOIN LATERAL produced a null row
+            if r["id"] is None:
+                continue
+
+            rule_dict = r["rule"]
+            if isinstance(rule_dict, str):
+                try:
+                    rule_dict = json.loads(rule_dict)
+                except Exception:
+                    rule_dict = {"raw": rule_dict}
+
+            # For past windows, ensure past active rows display as expired
+            alert_status = r["status"]
+            if selected_window.startswith("past") and alert_status == "active":
+                alert_status = "expired"
+
+            items.append(
+                AlertItem(
+                    id=r["id"],
+                    created_at=r["created_at"].isoformat() if r["created_at"] else "",
+                    issue_time=r["issue_time"].isoformat() if r["issue_time"] else "",
+                    location_id=r["location_id"],
+                    location_name=r["location_name"],
+                    location_slug=r["location_slug"],
+                    region=r["region"],
+                    hazard=r["hazard"],
+                    severity=r["severity"],
+                    valid_date=r["valid_date"].isoformat() if r["valid_date"] else "",
+                    lead_days=r["lead_days"],
+                    value=round(float(r["value"]), 2) if r["value"] is not None else None,
+                    models_over=r["models_over"],
+                    spread=round(float(r["spread"]), 2) if r["spread"] is not None else None,
+                    rule=rule_dict,
+                    status=alert_status,
+                    acknowledged_by=str(r["acknowledged_by"]) if r["acknowledged_by"] else None,
+                    acknowledged_at=r["acknowledged_at"].isoformat() if r["acknowledged_at"] else None,
+                    cancelled_by=str(r.get("cancelled_by")) if r.get("cancelled_by") else None,
+                    cancelled_at=r.get("cancelled_at").isoformat() if r.get("cancelled_at") else None,
+                    cancelled_by_name=r.get("cancelled_by_name"),
+                    event_id=r["event_id"],
+                    lifecycle_state=r["lifecycle_state"],
+                    previous_severity=r["previous_severity"],
+                    rarity_label=r["rarity_label"],
+                )
             )
-        )
 
     return AlertListResponse(
-        count=len(items),
+        count=total_count,
+        severity_counts=SeverityCounts(
+            advisory=advisory_count,
+            watch=watch_count,
+            alert=alert_count,
+        ),
         alerts=items,
     )
 

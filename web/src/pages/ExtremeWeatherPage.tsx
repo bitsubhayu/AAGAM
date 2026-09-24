@@ -97,6 +97,7 @@ export const ExtremeWeatherPage: React.FC = () => {
             <option value="heavy_rain_3day">3-Day Heavy Rain (≥ p90)</option>
             <option value="heatwave">Heatwave Criteria</option>
             <option value="high_wind">High Wind / Gale</option>
+            <option value="high_uncertainty">High Uncertainty / Spread</option>
           </select>
 
           {/* Severity Filter */}
@@ -106,9 +107,9 @@ export const ExtremeWeatherPage: React.FC = () => {
             className="w-full px-3 py-2 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-full text-text-primary outline-none cursor-pointer focus:ring-2 focus:ring-accent/30"
           >
             <option value="ALL">All Severity Levels</option>
-            <option value="alert">Alert (Severe)</option>
-            <option value="watch">Watch (High)</option>
-            <option value="advisory">Advisory (Moderate)</option>
+            <option value="alert">Alert Only (Severe)</option>
+            <option value="watch">Watch+ (High, Severe)</option>
+            <option value="advisory">Advisory+ (Moderate, High, Severe)</option>
           </select>
 
           {/* Lead Window */}
@@ -153,7 +154,13 @@ export const ExtremeWeatherPage: React.FC = () => {
         ) : (
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs text-text-muted px-1">
-              <span>Showing {filteredAlerts.length} hazard alerts</span>
+              <span>
+                Showing {filteredAlerts.length}
+                {alertsData?.count !== undefined && alertsData.count > filteredAlerts.length
+                  ? ` of ${alertsData.count}`
+                  : ""}{" "}
+                hazard alerts
+              </span>
               <span className="font-mono text-[11px]">IMD Threshold Grounded</span>
             </div>
             {filteredAlerts.map((alert) => (

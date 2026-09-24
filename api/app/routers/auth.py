@@ -109,6 +109,7 @@ class ForecasterProfileSummary(BaseModel):
     id: str
     email: str
     display_name: Optional[str] = None
+    name: Optional[str] = None
     org: Optional[str] = None
     role: str
     created_at: Optional[str] = None
@@ -593,6 +594,7 @@ async def list_forecasters(
             id=str(r["user_id"]),
             email=r["email"],
             display_name=r["display_name"],
+            name=r["display_name"],
             org=r["org"],
             role=r["role"],
             created_at=r["created_at"].isoformat() if r["created_at"] else None,

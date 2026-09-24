@@ -189,8 +189,15 @@ export interface AlertItem {
   cancelled_by_name?: string | null;
 }
 
+export interface SeverityCounts {
+  advisory: number;
+  watch: number;
+  alert: number;
+}
+
 export interface AlertListResponse {
   count: number;
+  severity_counts?: SeverityCounts;
   alerts: AlertItem[];
 }
 

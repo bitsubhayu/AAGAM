@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Shield,
   Clock,
@@ -14,6 +14,9 @@ import {
   Award,
   CheckCircle2,
   AlertCircle,
+  Search,
+  XCircle,
+  RefreshCw,
 } from "lucide-react";
 import { useAuthStore } from "@/auth/authStore";
 import { supabase } from "@/auth/supabase";
@@ -27,9 +30,38 @@ import {
   requestForecasterAccess,
   fetchForecasters,
   promoteCoordinator,
+  fetchForecasterRequests,
+  approveForecasterRequest,
+  rejectForecasterRequest,
   type ForecasterItem,
 } from "@/api/client";
+import type { ForecasterAccessRequestItem } from "@/api/types";
 import { toast } from "sonner";
+
+function formatIST(isoString?: string | null): string {
+  if (!isoString) return "—";
+  try {
+    const d = new Date(isoString);
+    return (
+      d.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        timeZone: "Asia/Kolkata",
+      }) +
+      " " +
+      d.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Kolkata",
+      }) +
+      " IST"
+    );
+  } catch {
+    return isoString;
+  }
+}
 
 export const SettingsPage: React.FC = () => {
   const { role, user, profile, signOut, setSession } = useAuthStore();
@@ -50,20 +82,50 @@ export const SettingsPage: React.FC = () => {
   const [reqReason, setReqReason] = useState("");
   const [submittingReq, setSubmittingReq] = useState(false);
 
-  // Coordinator promotion state
+  // Coordinator Governance state
+  const [requests, setRequests] = useState<ForecasterAccessRequestItem[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
+  const [requestStatusFilter, setRequestStatusFilter] = useState<string>("pending");
+
+  // Forecaster directory & Coordinator promotion state
   const [forecasters, setForecasters] = useState<ForecasterItem[]>([]);
   const [loadingForecasters, setLoadingForecasters] = useState(false);
   const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [directorySearch, setDirectorySearch] = useState("");
+
+  const loadRequests = useCallback(async () => {
+    try {
+      setLoadingRequests(true);
+      const data = await fetchForecasterRequests(
+        requestStatusFilter === "all" ? undefined : requestStatusFilter
+      );
+      setRequests(data);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load forecaster access requests");
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, [requestStatusFilter]);
+
+  const loadForecasters = useCallback(async () => {
+    try {
+      setLoadingForecasters(true);
+      const data = await fetchForecasters();
+      setForecasters(data);
+    } catch (err: any) {
+      toast.error(err.message || "Could not load forecasters list");
+    } finally {
+      setLoadingForecasters(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (role === "coordinator") {
-      setLoadingForecasters(true);
-      fetchForecasters()
-        .then((list) => setForecasters(list))
-        .catch(() => toast.error("Could not load forecasters list"))
-        .finally(() => setLoadingForecasters(false));
+      loadRequests();
+      loadForecasters();
     }
-  }, [role]);
+  }, [role, loadRequests, loadForecasters]);
 
   const handleCheckAccess = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,6 +217,36 @@ export const SettingsPage: React.FC = () => {
       toast.error(err.message || "Failed to submit forecaster access request");
     } finally {
       setSubmittingReq(false);
+    }
+  };
+
+  const handleApproveRequest = async (req: ForecasterAccessRequestItem) => {
+    try {
+      setProcessingRequestId(req.id);
+      const resp = await approveForecasterRequest(req.id);
+      toast.success(resp.message || `Approved forecaster access for ${req.name}`);
+      await loadRequests();
+      await loadForecasters();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to approve access request");
+    } finally {
+      setProcessingRequestId(null);
+    }
+  };
+
+  const handleRejectRequest = async (req: ForecasterAccessRequestItem) => {
+    if (!confirm(`Are you sure you want to decline the forecaster request from ${req.name}?`)) {
+      return;
+    }
+    try {
+      setProcessingRequestId(req.id);
+      const resp = await rejectForecasterRequest(req.id);
+      toast.success(resp.message || `Declined request for ${req.name}`);
+      await loadRequests();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to reject access request");
+    } finally {
+      setProcessingRequestId(null);
     }
   };
 
@@ -514,91 +606,293 @@ export const SettingsPage: React.FC = () => {
         )}
       </Card>
 
-      {/* Coordinator Promotion Panel (Part 16) */}
+      {/* Complete Coordinator Governance Panel (Task 1: Section A + Section B) */}
       {role === "coordinator" && (
-        <Card className="p-4">
-          <CardHeader className="pb-2 mb-2">
+        <Card className="p-4 space-y-6">
+          <CardHeader className="pb-3 border-b border-[rgba(26,23,18,0.06)]">
             <div>
               <CardTitle>
                 <Award className="w-4 h-4 text-brand-orange" />
-                <span>Forecaster Coordinator Promotion Panel</span>
+                <span>Forecaster Coordinator Governance Panel</span>
               </CardTitle>
               <CardDescription>
-                Designate existing verified Forecasters to act as Forecaster Coordinators (Coordinator privilege)
+                Authoritative governance: review forecaster access requests and promote verified forecasters to coordinators
               </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  loadRequests();
+                  loadForecasters();
+                }}
+                disabled={loadingRequests || loadingForecasters}
+                className="text-xs flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingRequests || loadingForecasters ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </Button>
             </div>
           </CardHeader>
 
-          {loadingForecasters ? (
-            <div className="py-6 text-center text-xs text-text-muted">
-              <Loader2 className="w-4 h-4 animate-spin mx-auto mb-1.5" />
-              Loading verified forecasters…
-            </div>
-          ) : forecasters.length === 0 ? (
-            <div className="py-6 text-center text-xs text-text-muted">
-              No registered forecasters found in directory.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="text-xs text-text-muted px-1">
-                Verified Directory ({forecasters.length} accounts):
+          {/* SECTION A — FORECASTER ACCESS REQUESTS */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-accent" />
+                <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">
+                  Section A — Forecaster Access Requests ({requests.length})
+                </h3>
               </div>
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-text-muted text-[11px] mr-1">Status:</span>
+                {(["pending", "approved", "all"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setRequestStatusFilter(s)}
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-all ${
+                      requestStatusFilter === s
+                        ? "bg-accent text-white shadow-pill font-semibold"
+                        : "bg-[#F0EDE7] text-text-secondary hover:text-text-primary"
+                    }`}
+                  >
+                    {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loadingRequests ? (
+              <div className="py-6 text-center text-xs text-text-muted bg-[#FAF9F5] rounded-lg border border-[rgba(26,23,18,0.06)]">
+                <Loader2 className="w-4 h-4 animate-spin mx-auto mb-1.5 text-accent" />
+                Loading access requests…
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="py-6 text-center text-xs text-text-muted bg-[#FAF9F5] rounded-lg border border-[rgba(26,23,18,0.06)]">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 mx-auto mb-1 opacity-70" />
+                <p className="font-medium text-text-primary">No {requestStatusFilter} access requests found</p>
+                <p className="text-[11px] text-text-muted mt-0.5">
+                  New forecaster applicants will appear here when they submit access requests.
+                </p>
+              </div>
+            ) : (
               <div className="divide-y divide-[rgba(26,23,18,0.06)] border border-[rgba(26,23,18,0.08)] rounded-lg overflow-hidden bg-white">
-                {forecasters.map((f) => {
-                  const isCurrentCoordinator = f.role === "coordinator";
-                  const isSelf = f.id === user?.id;
+                {requests.map((req) => {
+                  const isPending = req.status === "pending";
+                  const isApproved = req.status === "approved";
+                  const isBusy = processingRequestId === req.id;
+
                   return (
                     <div
-                      key={f.id}
-                      className="p-3 flex items-center justify-between gap-3 text-xs"
+                      key={req.id}
+                      className="p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs hover:bg-[#FAF9F5] transition-colors"
                     >
-                      <div>
-                        <div className="font-semibold text-text-primary flex items-center gap-1.5">
-                          <span>{f.name || f.email || f.id.slice(0, 8)}</span>
-                          {isCurrentCoordinator && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
-                              Coordinator
-                            </span>
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-text-primary">{req.name}</span>
+                          <Badge
+                            variant={
+                              isPending ? "watch" : isApproved ? "normal" : "alert"
+                            }
+                          >
+                            {req.status.toUpperCase()}
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-text-muted">
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                            <span className="font-mono text-text-primary">{req.email}</span>
+                          </div>
+                          {req.institution && (
+                            <div className="flex items-center gap-1.5">
+                              <Building className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                              <span>{req.institution}</span>
+                            </div>
                           )}
-                          {isSelf && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
-                              You
-                            </span>
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                            <span>Submitted: {formatIST(req.created_at)}</span>
+                          </div>
+                          {req.reviewed_at && (
+                            <div className="flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                              <span>
+                                Reviewed by {req.reviewer_name || "Coordinator"} on {formatIST(req.reviewed_at)}
+                              </span>
+                            </div>
                           )}
                         </div>
-                        <div className="text-[11px] text-text-muted">
-                          {f.email} · {f.org || "No org"}
-                        </div>
+
+                        {req.reason && (
+                          <p className="text-[11px] text-text-secondary bg-[#F0EDE7]/60 p-2 rounded mt-1 border border-[rgba(26,23,18,0.06)]">
+                            <span className="font-semibold text-text-primary">Justification: </span>
+                            {req.reason}
+                          </p>
+                        )}
                       </div>
 
-                      <div>
-                        {isCurrentCoordinator ? (
-                          <span className="text-[11px] text-text-muted italic">Coordinator</span>
-                        ) : isSelf ? (
-                          <span className="text-[11px] text-text-muted">Self</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isPending ? (
+                          <>
+                            <Button
+                              size="sm"
+                              disabled={isBusy}
+                              onClick={() => handleApproveRequest(req)}
+                              className="bg-accent text-white hover:bg-accent/90 text-xs font-medium flex items-center gap-1"
+                            >
+                              {isBusy ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                              ) : (
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              )}
+                              <span>Approve Forecaster Access</span>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isBusy}
+                              onClick={() => handleRejectRequest(req)}
+                              className="text-xs text-hazard-alert hover:bg-red-50 border-red-200"
+                            >
+                              <XCircle className="w-3.5 h-3.5 mr-1 text-hazard-alert" />
+                              <span>Decline</span>
+                            </Button>
+                          </>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={promotingId === f.id}
-                            onClick={() => handlePromote(f.id, f.name || f.email || "Forecaster")}
-                            className="text-xs"
-                          >
-                            {promotingId === f.id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
-                            ) : (
-                              <Sparkles className="w-3.5 h-3.5 mr-1 text-accent" />
-                            )}
-                            <span>Promote to Coordinator</span>
-                          </Button>
+                          <span className="text-[11px] text-text-muted italic px-2 py-1 bg-[#F0EDE7] rounded">
+                            {isApproved ? "Approved as Forecaster" : "Declined"}
+                          </span>
                         )}
                       </div>
                     </div>
                   );
                 })}
               </div>
+            )}
+          </div>
+
+          {/* SECTION B — VERIFIED FORECASTER / COORDINATOR DIRECTORY */}
+          <div className="space-y-3 pt-4 border-t border-[rgba(26,23,18,0.08)]">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Award className="w-4 h-4 text-brand-orange" />
+                <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">
+                  Section B — Verified Forecaster / Coordinator Directory ({forecasters.length})
+                </h3>
+              </div>
+
+              {/* Case-insensitive display-name search bar */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-text-muted absolute left-2.5 top-2" />
+                <input
+                  type="text"
+                  value={directorySearch}
+                  onChange={(e) => setDirectorySearch(e.target.value)}
+                  placeholder="Search directory by name..."
+                  className="w-full pl-8 pr-3 py-1.5 bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                />
+              </div>
             </div>
-          )}
+
+            {loadingForecasters ? (
+              <div className="py-6 text-center text-xs text-text-muted bg-[#FAF9F5] rounded-lg border border-[rgba(26,23,18,0.06)]">
+                <Loader2 className="w-4 h-4 animate-spin mx-auto mb-1.5 text-brand-orange" />
+                Loading verified directory…
+              </div>
+            ) : forecasters.length === 0 ? (
+              <div className="py-6 text-center text-xs text-text-muted bg-[#FAF9F5] rounded-lg border border-[rgba(26,23,18,0.06)]">
+                No registered forecasters found in directory.
+              </div>
+            ) : (
+              (() => {
+                const q = directorySearch.trim().toLowerCase();
+                const filtered = forecasters.filter((f) => {
+                  if (!q) return true;
+                  const nameMatch = (f.name || "").toLowerCase().includes(q);
+                  const emailMatch = (f.email || "").toLowerCase().includes(q);
+                  const orgMatch = (f.org || "").toLowerCase().includes(q);
+                  return nameMatch || emailMatch || orgMatch;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-6 text-center text-xs text-text-muted bg-[#FAF9F5] rounded-lg border border-[rgba(26,23,18,0.06)]">
+                      No directory entries matching "{directorySearch}".
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="divide-y divide-[rgba(26,23,18,0.06)] border border-[rgba(26,23,18,0.08)] rounded-lg overflow-hidden bg-white">
+                    {filtered.map((f) => {
+                      const isCurrentCoordinator = f.role === "coordinator";
+                      const isSelf = f.id === user?.id;
+                      const personName = f.name || f.email || "Forecaster";
+
+                      return (
+                        <div
+                          key={f.id}
+                          className="p-3 flex items-center justify-between gap-3 text-xs hover:bg-[#FAF9F5] transition-colors"
+                        >
+                          <div>
+                            <div className="font-semibold text-text-primary flex items-center gap-1.5">
+                              <span>{personName}</span>
+                              {isCurrentCoordinator ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
+                                  Forecaster Coordinator
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
+                                  Forecaster
+                                </span>
+                              )}
+                              {isSelf && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">
+                                  You
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-text-muted">
+                              <span className="font-mono">{f.email}</span> · {f.org || "No org"}
+                            </div>
+                          </div>
+
+                          <div>
+                            {isCurrentCoordinator ? (
+                              <span className="text-[11px] text-text-muted italic px-2 py-1 bg-[#F0EDE7] rounded">
+                                Forecaster Coordinator
+                              </span>
+                            ) : isSelf ? (
+                              <span className="text-[11px] text-text-muted italic px-2 py-1 bg-[#F0EDE7] rounded">
+                                Self
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={promotingId === f.id}
+                                onClick={() => handlePromote(f.id, personName)}
+                                className="text-xs flex items-center gap-1"
+                              >
+                                {promotingId === f.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                                ) : (
+                                  <Sparkles className="w-3.5 h-3.5 mr-1 text-accent" />
+                                )}
+                                <span>Promote {personName} to Forecaster Coordinator</span>
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()
+            )}
+          </div>
         </Card>
       )}
 

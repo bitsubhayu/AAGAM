@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Shield,
   Server,
-  UserCheck,
 } from "lucide-react";
 import { useUIStore } from "@/store/uiStore";
 import { useAuthStore } from "@/auth/authStore";
@@ -45,12 +44,6 @@ export const Sidebar: React.FC = () => {
       requiresRole: "forecaster",
     },
     { id: "export", label: "Data & Export", icon: Download },
-    {
-      id: "forecaster-requests",
-      label: "Forecaster Requests",
-      icon: UserCheck,
-      requiresRole: "coordinator",
-    },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 

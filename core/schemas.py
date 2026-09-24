@@ -245,8 +245,15 @@ class AlertItem(BaseModel):
     rarity_label: Optional[str] = None
 
 
+class SeverityCounts(BaseModel):
+    advisory: int = 0
+    watch: int = 0
+    alert: int = 0
+
+
 class AlertListResponse(BaseModel):
     count: int
+    severity_counts: SeverityCounts = Field(default_factory=SeverityCounts)
     alerts: List[AlertItem]
 
 

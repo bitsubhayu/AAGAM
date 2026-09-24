@@ -26,12 +26,27 @@ export const HEALTH_URL = import.meta.env.VITE_API_URL
  * Retrieves the currently active JWT token (either from Supabase session or demo role switcher).
  */
 export function getAuthToken(): string | null {
-  return localStorage.getItem("aagam_auth_token");
+  const local = localStorage.getItem("aagam_auth_token");
+  if (local) return local;
+
+  // Fallback: check Supabase session stored in localStorage
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes("supabase.auth.token") || (key.startsWith("sb-") && key.endsWith("-auth-token")))) {
+        const item = JSON.parse(localStorage.getItem(key) || "{}");
+        if (item?.access_token) return item.access_token;
+      }
+    }
+  } catch {
+    // Ignore storage parse errors
+  }
+  return null;
 }
 
 export async function apiFetch<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit & { timeoutMs?: number } = {}
 ): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers(options.headers || {});
@@ -48,43 +63,70 @@ export async function apiFetch<T>(
     ? endpoint
     : `${API_BASE}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  const timeoutMs = options.timeoutMs ?? 20000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new Error("Request timed out"));
+  }, timeoutMs);
 
-  if (!response.ok) {
-    let errorCode = "UNKNOWN_ERROR";
-    let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-    let retryAfter: number | null = null;
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => controller.abort(options.signal?.reason));
+  }
 
-    const retryHeader = response.headers.get("Retry-After");
-    if (retryHeader) {
-      retryAfter = parseInt(retryHeader, 10) || null;
-    }
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
 
-    try {
-      const errorJson: ErrorEnvelope = await response.json();
-      if (errorJson?.error) {
-        errorCode = errorJson.error.code || errorCode;
-        errorMessage = errorJson.error.message || errorMessage;
-        if (errorJson.error.retry_after !== undefined) {
-          retryAfter = errorJson.error.retry_after;
-        }
+    if (!response.ok) {
+      let errorCode = "UNKNOWN_ERROR";
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      let retryAfter: number | null = null;
+
+      const retryHeader = response.headers.get("Retry-After");
+      if (retryHeader) {
+        retryAfter = parseInt(retryHeader, 10) || null;
       }
-    } catch {
-      // Non-JSON response
+
+      try {
+        const errorJson: ErrorEnvelope = await response.json();
+        if (errorJson?.error) {
+          errorCode = errorJson.error.code || errorCode;
+          errorMessage = errorJson.error.message || errorMessage;
+          if (errorJson.error.retry_after !== undefined) {
+            retryAfter = errorJson.error.retry_after;
+          }
+        }
+      } catch {
+        // Non-JSON response
+      }
+
+      throw new ApiError(response.status, errorCode, errorMessage, retryAfter);
     }
 
-    throw new ApiError(response.status, errorCode, errorMessage, retryAfter);
-  }
+    // If response has no content
+    if (response.status === 204) {
+      return {} as T;
+    }
 
-  // If response has no content
-  if (response.status === 204) {
-    return {} as T;
+    return (await response.json()) as T;
+  } catch (err: any) {
+    if (err instanceof ApiError) {
+      throw err;
+    }
+    if (controller.signal.aborted || err?.name === "AbortError" || err?.name === "TimeoutError") {
+      throw new ApiError(
+        408,
+        "REQUEST_TIMEOUT",
+        `Request to ${endpoint} timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return (await response.json()) as T;
 }
 
 import type {
@@ -176,13 +218,22 @@ export interface ForecasterItem {
   id: string;
   email?: string;
   name?: string;
+  display_name?: string;
   org?: string;
   role: string;
 }
 
 export async function fetchForecasters(): Promise<ForecasterItem[]> {
-  const resp = await apiFetch<{ forecasters: ForecasterItem[] }>("/auth/forecasters");
-  return resp.forecasters || [];
+  const resp = await apiFetch<any>("/auth/forecasters");
+  const list = Array.isArray(resp) ? resp : resp?.forecasters || [];
+  return list.map((item: any) => ({
+    id: item.id,
+    email: item.email,
+    name: item.name || item.display_name || item.email || "Forecaster",
+    display_name: item.display_name,
+    org: item.org,
+    role: item.role,
+  }));
 }
 
 export async function promoteCoordinator(

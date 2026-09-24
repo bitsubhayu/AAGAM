@@ -16,6 +16,7 @@ import {
   fetchMySubscription,
   updateMySubscription,
   unsubscribeMySubscription,
+  getAuthToken,
 } from "@/api/client";
 import type { Subscription } from "@/api/types";
 import { useMeta } from "@/api/useMeta";
@@ -66,6 +67,10 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
       setLoading(true);
       const sub = await fetchMySubscription();
       setSubscription(sub);
+      if (sub.email) {
+        setEmail(sub.email);
+        localStorage.setItem("aagam_user_email", sub.email);
+      }
       setSelectedLocations(sub.location_ids || []);
       setSelectedHazards(sub.hazards || []);
       setMinSeverity(sub.min_severity || "watch");
@@ -97,14 +102,21 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     };
   }, [isOpen, onClose]);
 
-  // Check if token exists in localStorage on open
+  // Check if token exists on open and load authoritative subscription from backend
   useEffect(() => {
     if (!isOpen) return;
 
-    const savedEmail = localStorage.getItem("aagam_user_email");
-    const token = localStorage.getItem("aagam_auth_token");
-    if (token && savedEmail) {
+    const token = getAuthToken();
+    const storeUser = useAuthStore.getState().user;
+    const savedEmail = localStorage.getItem("aagam_user_email") || storeUser?.email;
+
+    if (token) {
+      if (savedEmail) {
+        setEmail(savedEmail);
+      }
       loadSubscription();
+    } else {
+      setStep("email");
     }
   }, [isOpen, loadSubscription]);
 
@@ -157,7 +169,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               refresh_token: resp.refresh_token,
             });
             if (data?.session) {
-              useAuthStore.getState().setSession(data.session);
+              await useAuthStore.getState().setSession(data.session);
             }
           } catch {
             // non-fatal fallback
@@ -188,7 +200,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
       onSubscriptionUpdated?.(updated);
       onClose();
     } catch (err: any) {
-      toast.error(err.message || "Failed to update preferences.");
+      toast.error(err.message || "Failed to update alert preferences. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -492,9 +504,16 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 size="sm"
                 onClick={handleSavePreferences}
                 disabled={loading}
-                className="bg-accent text-surface-dark hover:bg-accent/90 font-medium"
+                className="bg-accent text-surface-dark hover:bg-accent/90 font-medium min-w-[140px] flex items-center justify-center gap-1.5"
               >
-                {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save Preferences"}
+                {loading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Preferences</span>
+                )}
               </Button>
             </div>
           </div>
