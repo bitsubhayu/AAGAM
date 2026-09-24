@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 import asyncpg
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 
 from api.app.auth.jwt import verify_supabase_jwt
 from api.app.db.pool import get_db_conn, set_rls_claims
@@ -154,7 +154,33 @@ def require_role(min_role: str, allow_anonymous: bool = False) -> Callable[..., 
             return current_user
         return public_role_checker
 
-    def role_checker(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    async def role_checker(
+        request: Request,
+        authorization: Optional[str] = Header(None, alias="Authorization"),
+        conn: asyncpg.Connection = Depends(get_db_conn),
+    ) -> CurrentUser:
+        if not authorization:
+            # On GET requests for forecaster+ (e.g. GET /models/automation/status), anonymous users get 403 Forbidden
+            if min_role == "forecaster+" and request.method == "GET":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "code": "FORBIDDEN",
+                        "message": "Action requires forecaster or forecaster coordinator privileges (current role: anon).",
+                        "retry_after": None,
+                    },
+                )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing Authorization bearer token.",
+                    "retry_after": None,
+                },
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        current_user = await get_current_user(authorization=authorization, conn=conn)
         user_role = current_user.role
 
         if min_role == "any":

@@ -425,14 +425,44 @@ def test_anonymous_unauthenticated_role_matrix(client):
     assert client.get("/api/v1/models/versions/2/evaluations").status_code == 200
     assert client.get("/api/v1/models/decisions").status_code == 200
 
-    # 1 Forecaster+ endpoint rejected with 401
-    assert client.get("/api/v1/models/automation/status").status_code == 401
+    # 1 Forecaster+ endpoint rejected with 403 for anonymous (public tier)
+    assert client.get("/api/v1/models/automation/status").status_code == 403
 
     # 4 Coordinator endpoints rejected with 401
     assert client.post("/api/v1/models/automation/freeze", json={"reason": "Valid reason 10+"}).status_code == 401
     assert client.post("/api/v1/models/automation/unfreeze", json={"reason": "Valid reason 10+"}).status_code == 401
     assert client.post("/api/v1/models/automation/force-last-known-good", json={"reason": "Valid reason 10+"}).status_code == 401
     assert client.post("/api/v1/models/candidates/3/disable", json={"reason": "Valid reason 10+"}).status_code == 401
+
+
+def test_automation_status_rbac_matrix(client):
+    """GET /models/automation/status authoritative requirement:
+    - public/anonymous: 403
+    - forecaster: 200
+    - coordinator: 200
+    """
+    # 1. Anonymous (unauthenticated): 403
+    resp_anon = client.get("/api/v1/models/automation/status")
+    assert resp_anon.status_code == 403
+    assert resp_anon.json()["error"]["code"] == "FORBIDDEN"
+
+    # 2. Public role: 403
+    pub_token = create_test_jwt(role="public")
+    resp_pub = client.get("/api/v1/models/automation/status", headers={"Authorization": f"Bearer {pub_token}"})
+    assert resp_pub.status_code == 403
+    assert resp_pub.json()["error"]["code"] == "FORBIDDEN"
+
+    # 3. Forecaster role: 200
+    forecaster_token = create_test_jwt(role="forecaster")
+    resp_forecaster = client.get("/api/v1/models/automation/status", headers={"Authorization": f"Bearer {forecaster_token}"})
+    assert resp_forecaster.status_code == 200
+    assert "frozen" in resp_forecaster.json()
+
+    # 4. Coordinator role: 200
+    coord_token = create_test_jwt(role="coordinator")
+    resp_coord = client.get("/api/v1/models/automation/status", headers={"Authorization": f"Bearer {coord_token}"})
+    assert resp_coord.status_code == 200
+    assert "frozen" in resp_coord.json()
 
 
 # ==============================================================================
