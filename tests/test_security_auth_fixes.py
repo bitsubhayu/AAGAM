@@ -11,6 +11,7 @@ RBAC-001: Signup trigger always assigns 'public' role
 from __future__ import annotations
 
 import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import jwt as pyjwt
@@ -196,8 +197,10 @@ class TestRbac001SignupTrigger:
         """The corrective migration must replace the COALESCE(...->>'role', 'public')
         pattern with a hardcoded 'public'."""
         migration_path = (
-            "c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/"
-            "supabase/migrations/20260923000008_rbac_signup_hardcoded_public.sql"
+            Path(__file__).resolve().parent.parent
+            / "supabase"
+            / "migrations"
+            / "20260923000008_rbac_signup_hardcoded_public.sql"
         )
         with open(migration_path, "r", encoding="utf-8") as f:
             sql = f.read()
@@ -225,8 +228,10 @@ class TestRbac001SignupTrigger:
         """The migration must still use raw_user_meta_data for display_name and org,
         just not for role."""
         migration_path = (
-            "c:/Users/subha/OneDrive/Documents/Antigravity_Workspace/AAGAM/"
-            "supabase/migrations/20260923000008_rbac_signup_hardcoded_public.sql"
+            Path(__file__).resolve().parent.parent
+            / "supabase"
+            / "migrations"
+            / "20260923000008_rbac_signup_hardcoded_public.sql"
         )
         with open(migration_path, "r", encoding="utf-8") as f:
             sql = f.read()
