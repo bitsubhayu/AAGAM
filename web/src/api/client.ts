@@ -102,9 +102,13 @@ export async function requestOtp(email: string): Promise<{ status: string; messa
 }
 
 export async function verifyOtp(email: string, token: string): Promise<OtpVerifyResponse> {
+  const cleanToken = token.trim();
+  if (!/^\d{6}$/.test(cleanToken)) {
+    throw new ApiError(400, "INVALID_OTP_FORMAT", "Verification code must be exactly 6 numeric digits.");
+  }
   const resp = await apiFetch<OtpVerifyResponse>("/auth/otp/verify", {
     method: "POST",
-    body: JSON.stringify({ email, token }),
+    body: JSON.stringify({ email: email.trim(), token: cleanToken }),
   });
   if (resp.access_token) {
     localStorage.setItem("aagam_auth_token", resp.access_token);
@@ -147,9 +151,13 @@ export async function verifyForecasterOtp(
   email: string,
   token: string
 ): Promise<OtpVerifyResponse> {
+  const cleanToken = token.trim();
+  if (!/^\d{6}$/.test(cleanToken)) {
+    throw new ApiError(400, "INVALID_OTP_FORMAT", "Verification code must be exactly 6 numeric digits.");
+  }
   const resp = await apiFetch<OtpVerifyResponse>("/auth/forecaster/otp/verify", {
     method: "POST",
-    body: JSON.stringify({ email, token }),
+    body: JSON.stringify({ email: email.trim(), token: cleanToken }),
   });
   if (resp.access_token) {
     localStorage.setItem("aagam_auth_token", resp.access_token);

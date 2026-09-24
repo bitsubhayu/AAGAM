@@ -129,14 +129,23 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpToken || otpToken.length < 6) {
+    const token = otpToken.trim();
+    if (!token) {
       toast.error("Please enter the 6-digit verification code.");
+      return;
+    }
+    if (!/^\d+$/.test(token)) {
+      toast.error("Verification code must contain digits only.");
+      return;
+    }
+    if (token.length !== 6) {
+      toast.error("Verification code must be exactly 6 digits.");
       return;
     }
 
     try {
       setLoading(true);
-      const resp = await verifyOtp(email, otpToken);
+      const resp = await verifyOtp(email.trim(), token);
       toast.success("Authentication successful!");
       localStorage.setItem("aagam_user_email", email);
       if (resp.access_token) {
@@ -294,10 +303,23 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
                   required
-                  maxLength={6}
                   value={otpToken}
-                  onChange={(e) => setOtpToken(e.target.value.trim())}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    if (val && !/^\d+$/.test(val)) {
+                      toast.error("Verification code must contain digits only.");
+                      return;
+                    }
+                    if (val.length > 6) {
+                      toast.error("Verification code must be exactly 6 digits.");
+                      return;
+                    }
+                    setOtpToken(val);
+                  }}
                   placeholder="123456"
                   className="w-full text-center tracking-widest text-lg font-mono bg-white border border-[rgba(26,23,18,0.15)] rounded-lg px-3 py-2 text-text-primary focus:outline-none focus:border-accent"
                 />

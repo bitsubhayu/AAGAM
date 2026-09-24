@@ -41,7 +41,13 @@ class OtpVerify(BaseModel):
         pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
         description="User email address",
     )
-    token: str = Field(..., min_length=6, max_length=10, description="Six-digit OTP code received via email")
+    token: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        description="Exactly six-digit numeric OTP code received via email",
+    )
 
 
 class ForecasterOtpRequest(BaseModel):
@@ -64,7 +70,13 @@ class ForecasterOtpVerify(BaseModel):
         pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
         description="Forecaster email address",
     )
-    token: str = Field(..., min_length=6, max_length=10, description="Six-digit OTP code received via email")
+    token: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        description="Exactly six-digit numeric OTP code received via email",
+    )
     name: Optional[str] = Field(None, max_length=100, description="Optional forecaster name")
     institution: Optional[str] = Field(None, max_length=150, description="Optional forecaster institution")
 

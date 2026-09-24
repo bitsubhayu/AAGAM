@@ -73,13 +73,22 @@ export const SettingsPage: React.FC = () => {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpToken.trim() || otpToken.trim().length < 6) {
+    const token = otpToken.trim();
+    if (!token) {
       toast.error("Please enter the 6-digit verification code.");
+      return;
+    }
+    if (!/^\d+$/.test(token)) {
+      toast.error("Verification code must contain digits only.");
+      return;
+    }
+    if (token.length !== 6) {
+      toast.error("Verification code must be exactly 6 digits.");
       return;
     }
     try {
       setSubmitting(true);
-      const resp = await verifyForecasterOtp(email.trim(), otpToken.trim());
+      const resp = await verifyForecasterOtp(email.trim(), token);
       toast.success("Forecaster registration verified!");
       if (resp.access_token && resp.refresh_token) {
         const { data } = await supabase.auth.setSession({
@@ -241,10 +250,23 @@ export const SettingsPage: React.FC = () => {
                     </label>
                     <input
                       type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="one-time-code"
                       required
-                      maxLength={6}
                       value={otpToken}
-                      onChange={(e) => setOtpToken(e.target.value.trim())}
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        if (val && !/^\d+$/.test(val)) {
+                          toast.error("Verification code must contain digits only.");
+                          return;
+                        }
+                        if (val.length > 6) {
+                          toast.error("Verification code must be exactly 6 digits.");
+                          return;
+                        }
+                        setOtpToken(val);
+                      }}
                       placeholder="123456"
                       className="w-full text-center tracking-widest text-base font-mono bg-[#FAF9F5] border border-[rgba(26,23,18,0.15)] rounded-md py-1.5 text-text-primary focus:outline-none focus:border-accent"
                     />
