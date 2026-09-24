@@ -48,10 +48,12 @@ VALID_WINDOWS = {
 @router.get("/alerts", response_model=AlertListResponse)
 async def list_alerts(
     window: Optional[str] = Query("upcoming_7d", description="Alert window: upcoming_2d, upcoming_3d, upcoming_7d, past_24h, past_7d"),
-    status_filter: Optional[str] = Query(None, alias="status", description="Alert status: active, acknowledged, expired, all"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Alert status: active, acknowledged, cancelled, expired, all"),
     hazard: Optional[str] = Query(None, description="Hazard type: heavy_rain, heatwave, high_wind, high_uncertainty, heavy_rain_3day"),
     region: Optional[str] = Query(None, description="Region filter"),
+    severity: Optional[str] = Query(None, description="Exact severity filter: advisory, watch, alert"),
     min_severity: Optional[str] = Query(None, description="Minimum severity filter: advisory, watch, alert"),
+    search: Optional[str] = Query(None, description="Search term for station name, region, or slug"),
     max_lead_days: Optional[int] = Query(None, ge=0, le=7, description="Maximum lead days filter (0-7)"),
     limit: int = Query(50, ge=1, le=200, description="Max alerts to return (1-200)"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
@@ -75,68 +77,196 @@ async def list_alerts(
             },
         )
 
+    # Validate exact severity if provided (Task 1)
+    if severity and severity.lower() not in {"advisory", "watch", "alert"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_SEVERITY",
+                "message": f"Invalid severity '{severity}'. Must be one of: ['advisory', 'watch', 'alert']",
+                "retry_after": None,
+            },
+        )
+
+    # Validate min_severity if provided
+    if min_severity and min_severity.lower() not in SEVERITY_LEVELS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_SEVERITY",
+                "message": f"Invalid min_severity '{min_severity}'. Must be one of: {sorted(list(SEVERITY_LEVELS.keys()))}",
+                "retry_after": None,
+            },
+        )
+
     where_clauses = ["true"]
     params: List[Any] = []
     idx = 1
 
-    # Apply window filtering
+    # Apply window filtering on event date range
     if selected_window == "upcoming_2d":
-        where_clauses.append("a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '2 days'")
+        where_clauses.append("cand.end_date >= CURRENT_DATE AND cand.start_date <= CURRENT_DATE + INTERVAL '2 days'")
     elif selected_window == "upcoming_3d":
-        where_clauses.append("a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '3 days'")
+        where_clauses.append("cand.end_date >= CURRENT_DATE AND cand.start_date <= CURRENT_DATE + INTERVAL '3 days'")
     elif selected_window == "upcoming_7d":
-        where_clauses.append("a.valid_date >= CURRENT_DATE AND a.valid_date <= CURRENT_DATE + INTERVAL '7 days'")
+        where_clauses.append("cand.end_date >= CURRENT_DATE AND cand.start_date <= CURRENT_DATE + INTERVAL '7 days'")
     elif selected_window == "past_24h":
-        where_clauses.append("a.valid_date < CURRENT_DATE AND a.valid_date >= CURRENT_DATE - INTERVAL '1 day'")
+        where_clauses.append("cand.start_date < CURRENT_DATE AND cand.end_date >= CURRENT_DATE - INTERVAL '1 day'")
     elif selected_window == "past_7d":
-        where_clauses.append("a.valid_date < CURRENT_DATE AND a.valid_date >= CURRENT_DATE - INTERVAL '7 days'")
+        where_clauses.append("cand.start_date < CURRENT_DATE AND cand.end_date >= CURRENT_DATE - INTERVAL '7 days'")
 
-    # Status filter
-    if status_filter and status_filter.lower() != "all":
-        where_clauses.append(f"a.status = ${idx}")
-        params.append(status_filter.lower())
-        idx += 1
-    elif not status_filter and selected_window.startswith("upcoming"):
-        where_clauses.append(f"a.status = ${idx}")
-        params.append("active")
+    # Status filter (Task 5: Operational active excludes cancelled records)
+    st = status_filter.lower().strip() if status_filter else None
+    if st == "active" or (not st and selected_window.startswith("upcoming")):
+        where_clauses.append("cand.status = 'active' AND (cand.lifecycle_state IS DISTINCT FROM 'cancelled' AND cand.status != 'cancelled')")
+    elif st == "acknowledged":
+        where_clauses.append("cand.status = 'acknowledged'")
+    elif st == "cancelled":
+        where_clauses.append("(cand.status = 'cancelled' OR cand.lifecycle_state = 'cancelled')")
+    elif st == "expired":
+        where_clauses.append("(cand.status = 'expired' OR (cand.valid_date < CURRENT_DATE AND cand.status = 'active'))")
+    elif st == "all":
+        pass  # All retained lifecycle states
+    elif st:
+        where_clauses.append(f"cand.status = ${idx}")
+        params.append(st)
         idx += 1
 
     if hazard:
-        where_clauses.append(f"a.hazard = ${idx}")
+        where_clauses.append(f"cand.hazard = ${idx}")
         params.append(hazard.lower())
         idx += 1
 
     if region:
-        where_clauses.append(f"l.region = ${idx}")
+        where_clauses.append(f"cand.region = ${idx}")
         params.append(region.upper())
         idx += 1
 
-    if min_severity and min_severity.lower() in SEVERITY_LEVELS:
+    # Severity filtering: exact severity takes precedence over min_severity (Task 1)
+    if severity and severity.lower() in ("advisory", "watch", "alert"):
+        where_clauses.append(f"cand.severity = ${idx}")
+        params.append(severity.lower())
+        idx += 1
+    elif min_severity and min_severity.lower() in SEVERITY_LEVELS:
         allowed_severities = SEVERITY_LEVELS[min_severity.lower()]
-        where_clauses.append(f"a.severity = ANY(${idx}::text[])")
+        where_clauses.append(f"cand.severity = ANY(${idx}::text[])")
         params.append(allowed_severities)
+        idx += 1
+
+    # Search filtering (Task 7): location name, region, slug
+    if search and search.strip():
+        where_clauses.append(f"(cand.location_name ILIKE ${idx} OR cand.region ILIKE ${idx} OR cand.location_slug ILIKE ${idx})")
+        params.append(f"%{search.strip()}%")
         idx += 1
 
     # Edge case: max_lead_days can be 0, do not use truthiness
     if max_lead_days is not None:
-        where_clauses.append(f"a.lead_days <= ${idx}")
+        where_clauses.append(f"cand.lead_days <= ${idx}")
         params.append(max_lead_days)
         idx += 1
 
     where_sql = " AND ".join(where_clauses)
 
     query = f"""
-        WITH filtered AS (
-            SELECT a.id, a.created_at, a.issue_time, a.location_id, l.name as location_name,
-                   l.slug as location_slug, l.region, a.hazard, a.severity, a.valid_date,
-                   a.lead_days, a.value, a.models_over, a.spread, a.rule, a.status,
-                   a.acknowledged_by, a.acknowledged_at, a.cancelled_by, a.cancelled_at,
-                   cp.display_name as cancelled_by_name,
-                   a.event_id, a.lifecycle_state,
-                   a.previous_severity, a.rarity_label
-            FROM alerts a
-            JOIN locations l ON a.location_id = l.id
-            LEFT JOIN profiles cp ON a.cancelled_by = cp.user_id
+        WITH event_candidates AS (
+            -- Stream 1: Distinct alert_events with representative child alert
+            SELECT
+                e.id as event_id,
+                COALESCE(a.id, e.id) as id,
+                COALESCE(a.created_at, e.first_detected_at) as created_at,
+                COALESCE(a.issue_time, e.last_updated_at) as issue_time,
+                e.location_id,
+                l.name as location_name,
+                l.slug as location_slug,
+                l.region,
+                e.hazard,
+                e.severity_peak as severity,
+                COALESCE(a.valid_date, e.start_date) as valid_date,
+                COALESCE(a.lead_days, GREATEST(0, (e.start_date - CURRENT_DATE))) as lead_days,
+                COALESCE(e.value_peak, a.value) as value,
+                COALESCE(a.models_over, 4) as models_over,
+                COALESCE(a.spread, 0.0) as spread,
+                COALESCE(a.rule, json_build_object('name', e.hazard, 'severity', e.severity_peak)::jsonb) as rule,
+                CASE
+                    WHEN e.status = 'cancelled' OR a.lifecycle_state = 'cancelled' OR a.status = 'cancelled' THEN 'cancelled'
+                    WHEN a.status = 'acknowledged' THEN 'acknowledged'
+                    WHEN e.status = 'expired' OR a.status = 'expired' THEN 'expired'
+                    ELSE e.status
+                END as status,
+                a.acknowledged_by,
+                a.acknowledged_at,
+                COALESCE(a.cancelled_by, e.cancelled_by) as cancelled_by,
+                COALESCE(a.cancelled_at, e.cancelled_at) as cancelled_at,
+                COALESCE(cp_a.display_name, cp_e.display_name) as cancelled_by_name,
+                COALESCE(a.lifecycle_state, CASE WHEN e.status = 'cancelled' THEN 'cancelled' ELSE 'new' END) as lifecycle_state,
+                a.previous_severity,
+                a.rarity_label,
+                e.start_date as start_date,
+                e.end_date as end_date
+            FROM alert_events e
+            JOIN locations l ON e.location_id = l.id
+            LEFT JOIN profiles cp_e ON e.cancelled_by = cp_e.user_id
+            LEFT JOIN LATERAL (
+                SELECT a_sub.*
+                FROM alerts a_sub
+                WHERE a_sub.event_id = e.id
+                ORDER BY
+                    a_sub.issue_time DESC,
+                    CASE a_sub.severity WHEN 'alert' THEN 3 WHEN 'watch' THEN 2 WHEN 'advisory' THEN 1 ELSE 0 END DESC,
+                    a_sub.valid_date ASC,
+                    a_sub.lead_days ASC
+                LIMIT 1
+            ) a ON true
+            LEFT JOIN profiles cp_a ON a.cancelled_by = cp_a.user_id
+
+            UNION ALL
+
+            -- Stream 2: Standalone alerts where event_id IS NULL (e.g. ad-hoc test alerts)
+            SELECT
+                NULL as event_id,
+                a_stand.id,
+                a_stand.created_at,
+                a_stand.issue_time,
+                a_stand.location_id,
+                l.name as location_name,
+                l.slug as location_slug,
+                l.region,
+                a_stand.hazard,
+                a_stand.severity,
+                a_stand.valid_date,
+                a_stand.lead_days,
+                a_stand.value,
+                COALESCE(a_stand.models_over, 4) as models_over,
+                COALESCE(a_stand.spread, 0.0) as spread,
+                COALESCE(a_stand.rule, json_build_object('name', a_stand.hazard, 'severity', a_stand.severity)::jsonb) as rule,
+                CASE
+                    WHEN a_stand.lifecycle_state = 'cancelled' OR a_stand.status = 'cancelled' THEN 'cancelled'
+                    WHEN a_stand.status = 'acknowledged' THEN 'acknowledged'
+                    WHEN a_stand.status = 'expired' THEN 'expired'
+                    ELSE a_stand.status
+                END as status,
+                a_stand.acknowledged_by,
+                a_stand.acknowledged_at,
+                a_stand.cancelled_by,
+                a_stand.cancelled_at,
+                cp.display_name as cancelled_by_name,
+                COALESCE(a_stand.lifecycle_state, 'new') as lifecycle_state,
+                a_stand.previous_severity,
+                a_stand.rarity_label,
+                a_stand.valid_date as start_date,
+                a_stand.valid_date as end_date
+            FROM (
+                SELECT DISTINCT ON (location_id, hazard, valid_date) a.*
+                FROM alerts a
+                WHERE a.event_id IS NULL
+                ORDER BY location_id, hazard, valid_date, issue_time DESC, id DESC
+            ) a_stand
+            JOIN locations l ON a_stand.location_id = l.id
+            LEFT JOIN profiles cp ON a_stand.cancelled_by = cp.user_id
+        ),
+        filtered AS (
+            SELECT *
+            FROM event_candidates cand
             WHERE {where_sql}
         ),
         counts AS (
@@ -152,7 +282,11 @@ async def list_alerts(
         LEFT JOIN LATERAL (
             SELECT *
             FROM filtered
-            ORDER BY issue_time DESC, valid_date ASC, severity DESC
+            ORDER BY
+                valid_date ASC,
+                lead_days ASC,
+                issue_time DESC,
+                CASE severity WHEN 'alert' THEN 3 WHEN 'watch' THEN 2 WHEN 'advisory' THEN 1 ELSE 0 END DESC
             LIMIT ${idx} OFFSET ${idx + 1}
         ) f ON true;
     """
@@ -640,6 +774,7 @@ async def cancel_alert_event(
     return AlertEventCancelResponse(
         id=updated_evt["id"],
         status=updated_evt["status"],
+        lifecycle_state="cancelled",
         cancelled_by=str(updated_evt["cancelled_by"]),
         cancelled_at=updated_evt["cancelled_at"].isoformat(),
         cancelled_by_name=disp_name,

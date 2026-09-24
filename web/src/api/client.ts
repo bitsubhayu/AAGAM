@@ -117,10 +117,14 @@ export async function apiFetch<T>(
       throw err;
     }
     if (controller.signal.aborted || err?.name === "AbortError" || err?.name === "TimeoutError") {
+      const isSub = endpoint.includes("/subscriptions");
+      const msg = isSub
+        ? "Saving preferences timed out. Please try again."
+        : `Request to ${endpoint} timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`;
       throw new ApiError(
         408,
         "REQUEST_TIMEOUT",
-        `Request to ${endpoint} timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`
+        msg
       );
     }
     throw err;
@@ -166,13 +170,14 @@ export async function verifyOtp(email: string, token: string): Promise<OtpVerify
 }
 
 export async function fetchMySubscription(): Promise<Subscription> {
-  return apiFetch<Subscription>("/subscriptions/me");
+  return apiFetch<Subscription>("/subscriptions/me", { timeoutMs: 10000 });
 }
 
 export async function updateMySubscription(payload: SubscriptionUpdate): Promise<Subscription> {
   return apiFetch<Subscription>("/subscriptions/me", {
     method: "PUT",
     body: JSON.stringify(payload),
+    timeoutMs: 10000,
   });
 }
 

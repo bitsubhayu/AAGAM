@@ -243,6 +243,7 @@ export interface AlertEventItem {
 export interface AlertEventCancelResponse {
   id: number;
   status: string;
+  lifecycle_state?: string;
   cancelled_by: string;
   cancelled_at: string;
   cancelled_by_name?: string | null;

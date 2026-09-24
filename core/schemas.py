@@ -278,6 +278,7 @@ class AlertEventCancelResponse(BaseModel):
     cancelled_by: str
     cancelled_at: str
     cancelled_by_name: Optional[str] = None
+    lifecycle_state: Optional[str] = "cancelled"
 
 
 class AlertEventItem(BaseModel):

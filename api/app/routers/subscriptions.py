@@ -60,6 +60,13 @@ class UnsubscribeResponse(BaseModel):
     message: str = "You have been unsubscribed from all alert notifications."
 
 
+DEMO_UIDS = {
+    "00000000-0000-0000-0000-000000000001",
+    "00000000-0000-0000-0000-000000000002",
+    "00000000-0000-0000-0000-000000000003",
+}
+
+
 @router.get(
     "/me",
     status_code=status.HTTP_200_OK,
@@ -71,35 +78,36 @@ async def get_my_subscription(
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> SubscriptionResponse:
     """Retrieves the authenticated subscriber's current alert preferences."""
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-    row = await conn.fetchrow(
-        """
-        SELECT user_id, email, location_ids, hazards, min_severity,
-               daily_summary, lifecycle_emails, active, created_at, updated_at
-        FROM subscriptions
-        WHERE user_id = $1::uuid;
-        """,
-        current_user.user_id,
-    )
-
-    if not row:
-        # If no subscription exists yet, create default row for authenticated user
-        email = current_user.email or "user@example.com"
+    email = current_user.email or "user@example.com"
+    async with conn.transaction():
+        await set_rls_claims(conn, current_user.user_id, role="authenticated")
         row = await conn.fetchrow(
             """
-            INSERT INTO subscriptions (
-                user_id, email, location_ids, hazards, min_severity,
-                daily_summary, lifecycle_emails, active
-            ) VALUES (
-                $1::uuid, $2, '{}', '{heavy_rain,heatwave,high_wind,heavy_rain_3day}',
-                'watch', true, true, true
-            )
-            RETURNING user_id, email, location_ids, hazards, min_severity,
-                      daily_summary, lifecycle_emails, active, created_at, updated_at;
+            SELECT user_id, email, location_ids, hazards, min_severity,
+                   daily_summary, lifecycle_emails, active, created_at, updated_at
+            FROM subscriptions
+            WHERE user_id = $1::uuid;
             """,
             current_user.user_id,
-            email,
         )
+
+        if not row:
+            # If no subscription exists yet, create default row for authenticated user
+            row = await conn.fetchrow(
+                """
+                INSERT INTO subscriptions (
+                    user_id, email, location_ids, hazards, min_severity,
+                    daily_summary, lifecycle_emails, active
+                ) VALUES (
+                    $1::uuid, $2, '{}', '{heavy_rain,heatwave,high_wind,heavy_rain_3day}',
+                    'watch', true, true, true
+                )
+                RETURNING user_id, email, location_ids, hazards, min_severity,
+                          daily_summary, lifecycle_emails, active, created_at, updated_at;
+                """,
+                current_user.user_id,
+                email,
+            )
 
     return SubscriptionResponse(
         user_id=str(row["user_id"]),
@@ -142,38 +150,38 @@ async def update_my_subscription(
             detail={"code": "INVALID_SEVERITY", "message": f"Unsupported severity '{payload.min_severity}'. Allowed: {sorted(VALID_SEVERITIES)}"},
         )
 
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
     email = current_user.email or "user@example.com"
-
-    row = await conn.fetchrow(
-        """
-        INSERT INTO subscriptions (
-            user_id, email, location_ids, hazards, min_severity,
-            daily_summary, lifecycle_emails, active, updated_at
-        ) VALUES (
-            $1::uuid, $2, $3, $4, $5, $6, $7, $8, NOW()
+    async with conn.transaction():
+        await set_rls_claims(conn, current_user.user_id, role="authenticated")
+        row = await conn.fetchrow(
+            """
+            INSERT INTO subscriptions (
+                user_id, email, location_ids, hazards, min_severity,
+                daily_summary, lifecycle_emails, active, updated_at
+            ) VALUES (
+                $1::uuid, $2, $3, $4, $5, $6, $7, $8, NOW()
+            )
+            ON CONFLICT (user_id) DO UPDATE
+            SET email = EXCLUDED.email,
+                location_ids = EXCLUDED.location_ids,
+                hazards = EXCLUDED.hazards,
+                min_severity = EXCLUDED.min_severity,
+                daily_summary = EXCLUDED.daily_summary,
+                lifecycle_emails = EXCLUDED.lifecycle_emails,
+                active = EXCLUDED.active,
+                updated_at = NOW()
+            RETURNING user_id, email, location_ids, hazards, min_severity,
+                      daily_summary, lifecycle_emails, active, created_at, updated_at;
+            """,
+            current_user.user_id,
+            email,
+            payload.location_ids,
+            payload.hazards,
+            payload.min_severity,
+            payload.daily_summary,
+            payload.lifecycle_emails,
+            payload.active,
         )
-        ON CONFLICT (user_id) DO UPDATE
-        SET email = EXCLUDED.email,
-            location_ids = EXCLUDED.location_ids,
-            hazards = EXCLUDED.hazards,
-            min_severity = EXCLUDED.min_severity,
-            daily_summary = EXCLUDED.daily_summary,
-            lifecycle_emails = EXCLUDED.lifecycle_emails,
-            active = EXCLUDED.active,
-            updated_at = NOW()
-        RETURNING user_id, email, location_ids, hazards, min_severity,
-                  daily_summary, lifecycle_emails, active, created_at, updated_at;
-        """,
-        current_user.user_id,
-        email,
-        payload.location_ids,
-        payload.hazards,
-        payload.min_severity,
-        payload.daily_summary,
-        payload.lifecycle_emails,
-        payload.active,
-    )
 
     return SubscriptionResponse(
         user_id=str(row["user_id"]),
@@ -200,17 +208,18 @@ async def unsubscribe_my_subscription(
     conn: asyncpg.Connection = Depends(get_db_conn),
 ) -> UnsubscribeResponse:
     """Soft unsubscribes the current user (sets active=false, preserves history per PRD §12)."""
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-    row = await conn.fetchrow(
-        """
-        UPDATE subscriptions
-        SET active = false,
-            updated_at = NOW()
-        WHERE user_id = $1::uuid
-        RETURNING user_id, active;
-        """,
-        current_user.user_id,
-    )
+    async with conn.transaction():
+        await set_rls_claims(conn, current_user.user_id, role="authenticated")
+        row = await conn.fetchrow(
+            """
+            UPDATE subscriptions
+            SET active = false,
+                updated_at = NOW()
+            WHERE user_id = $1::uuid
+            RETURNING user_id, active;
+            """,
+            current_user.user_id,
+        )
 
     if not row:
         raise HTTPException(

@@ -150,14 +150,12 @@ def group_alerts_into_events(
             matched_event.last_updated_at = now
 
             # Attach event reference to alert
-            if hasattr(alert, "event_id"):
-                alert.event_id = matched_event.id
-            elif isinstance(alert, dict):
+            if isinstance(alert, dict):
                 alert["event_id"] = matched_event.id
-            if hasattr(alert, "_event_ref"):
-                alert._event_ref = matched_event
-            elif isinstance(alert, dict):
                 alert["_event_ref"] = matched_event
+            else:
+                setattr(alert, "event_id", matched_event.id)
+                setattr(alert, "_event_ref", matched_event)
 
         else:
             # Create a new alert_event
@@ -179,13 +177,11 @@ def group_alerts_into_events(
             events_pool.append(new_evt)
 
             # Attach event reference to alert
-            if hasattr(alert, "event_id"):
-                alert.event_id = new_evt.id
-            elif isinstance(alert, dict):
+            if isinstance(alert, dict):
                 alert["event_id"] = new_evt.id
-            if hasattr(alert, "_event_ref"):
-                alert._event_ref = new_evt
-            elif isinstance(alert, dict):
                 alert["_event_ref"] = new_evt
+            else:
+                setattr(alert, "event_id", new_evt.id)
+                setattr(alert, "_event_ref", new_evt)
 
     return sorted_alerts, events_pool

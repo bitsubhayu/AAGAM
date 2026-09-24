@@ -66,15 +66,12 @@ def compute_lifecycle_states(
             l_state = "new"
             p_sev = None
 
-        if hasattr(alert, "lifecycle_state"):
-            alert.lifecycle_state = l_state
-        elif isinstance(alert, dict):
+        if isinstance(alert, dict):
             alert["lifecycle_state"] = l_state
-
-        if hasattr(alert, "previous_severity"):
-            alert.previous_severity = p_sev
-        elif isinstance(alert, dict):
             alert["previous_severity"] = p_sev
+        else:
+            setattr(alert, "lifecycle_state", l_state)
+            setattr(alert, "previous_severity", p_sev)
 
     return current_alerts
 

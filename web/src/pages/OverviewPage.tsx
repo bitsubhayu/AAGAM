@@ -47,7 +47,7 @@ export const OverviewPage: React.FC = () => {
 
   const [hazardFilter, setHazardFilter] = useState<string>("ALL");
   const [regionFilter, setRegionFilter] = useState<string>("ALL");
-  const [minSeverityFilter, setMinSeverityFilter] = useState<string>("ALL");
+  const [severityFilter, setSeverityFilter] = useState<string>("ALL");
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
 
@@ -76,7 +76,7 @@ export const OverviewPage: React.FC = () => {
     window: selectedWindow,
     hazard: hazardFilter !== "ALL" ? hazardFilter : undefined,
     region: regionFilter !== "ALL" ? regionFilter : undefined,
-    minSeverity: minSeverityFilter !== "ALL" ? minSeverityFilter : undefined,
+    severity: severityFilter !== "ALL" ? severityFilter : undefined,
     limit: 20,
   });
 
@@ -220,13 +220,13 @@ export const OverviewPage: React.FC = () => {
           <div className="mt-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#FDF3DC] text-[#7A5C00] font-mono font-semibold">
-                {advisoryCount}A
+                {advisoryCount} Moderate
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#FEE9D6] text-[#7A3300] font-mono font-semibold">
-                {watchCount}W
+                {watchCount} High
               </span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent-soft text-accent font-mono font-bold">
-                {alertCount}!
+                {alertCount} Severe
               </span>
             </div>
             <button
@@ -362,7 +362,7 @@ export const OverviewPage: React.FC = () => {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <Badge variant="alert">{activeAlertsCount} TOTAL</Badge>
+                <Badge variant="alert">{activeAlertsCount} ACTIVE</Badge>
               </div>
             </CardHeader>
 
@@ -394,13 +394,13 @@ export const OverviewPage: React.FC = () => {
                 </span>
                 <div className="flex items-center gap-1">
                   <span className="px-1.5 py-0.5 rounded-full bg-[#FDF3DC] text-[#7A5C00] text-[10px] font-mono font-semibold">
-                    {advisoryCount} Adv
+                    {advisoryCount} Moderate
                   </span>
                   <span className="px-1.5 py-0.5 rounded-full bg-[#FEE9D6] text-[#7A3300] text-[10px] font-mono font-semibold">
-                    {watchCount} Wat
+                    {watchCount} High
                   </span>
                   <span className="px-1.5 py-0.5 rounded-full bg-accent-soft text-accent text-[10px] font-mono font-bold">
-                    {alertCount} Alt
+                    {alertCount} Severe
                   </span>
                 </div>
               </div>
@@ -466,14 +466,14 @@ export const OverviewPage: React.FC = () => {
                 </select>
 
                 <select
-                  value={minSeverityFilter}
-                  onChange={(e) => setMinSeverityFilter(e.target.value)}
+                  value={severityFilter}
+                  onChange={(e) => setSeverityFilter(e.target.value)}
                   className={selectClass}
                 >
                   <option value="ALL">All Levels</option>
-                  <option value="advisory">Advisory+</option>
-                  <option value="watch">Watch+</option>
-                  <option value="alert">Alert Only</option>
+                  <option value="advisory">Moderate</option>
+                  <option value="watch">High</option>
+                  <option value="alert">Severe</option>
                 </select>
               </div>
             </div>
@@ -506,7 +506,7 @@ export const OverviewPage: React.FC = () => {
               ) : (
                 rawAlerts.map((alert) => (
                   <AlertCard
-                    key={alert.id}
+                    key={alert.event_id ? `event-${alert.event_id}-${alert.id}` : `alert-${alert.id}`}
                     alert={alert}
                     onSelectEvent={handleOpenEvent}
                   />

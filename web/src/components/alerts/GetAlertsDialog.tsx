@@ -46,7 +46,8 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
   });
   const [otpToken, setOtpToken] = useState("");
-  const [loading, setLoading] = useState(false);
+  type ActionLoading = "load" | "sendOtp" | "verifyOtp" | "save" | "unsubscribe" | null;
+  const [actionLoading, setActionLoading] = useState<ActionLoading>(null);
 
   // Subscription state
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -64,7 +65,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
 
   const loadSubscription = useCallback(async () => {
     try {
-      setLoading(true);
+      setActionLoading("load");
       const sub = await fetchMySubscription();
       setSubscription(sub);
       if (sub.email) {
@@ -83,7 +84,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
       // If fetching fails, user might need to re-auth
       setStep("email");
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   }, [onSubscriptionUpdated]);
 
@@ -128,14 +129,14 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
 
     try {
-      setLoading(true);
+      setActionLoading("sendOtp");
       await requestOtp(email);
       toast.success("Verification code sent! Check your inbox.");
       setStep("otp");
     } catch (err: any) {
       toast.error(err.message || "Failed to send OTP code.");
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
@@ -156,7 +157,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
 
     try {
-      setLoading(true);
+      setActionLoading("verifyOtp");
       const resp = await verifyOtp(email.trim(), token);
       toast.success("Authentication successful!");
       localStorage.setItem("aagam_user_email", email);
@@ -180,13 +181,13 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     } catch (err: any) {
       toast.error(err.message || "Invalid or expired verification code.");
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
   const handleSavePreferences = async () => {
     try {
-      setLoading(true);
+      setActionLoading("save");
       const updated = await updateMySubscription({
         location_ids: selectedLocations,
         hazards: selectedHazards,
@@ -202,14 +203,14 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     } catch (err: any) {
       toast.error(err.message || "Failed to update alert preferences. Please try again.");
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
   const handleUnsubscribe = async () => {
     if (!confirm("Are you sure you want to pause all email notifications?")) return;
     try {
-      setLoading(true);
+      setActionLoading("unsubscribe");
       await unsubscribeMySubscription();
       setIsActive(false);
       toast.success("Unsubscribed from alert emails.");
@@ -220,7 +221,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     } catch (err: any) {
       toast.error(err.message || "Failed to unsubscribe.");
     } finally {
-      setLoading(false);
+      setActionLoading(null);
     }
   };
 
@@ -297,8 +298,8 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 </div>
               </div>
 
-              <Button type="submit" disabled={loading} className="w-full bg-accent text-surface-dark hover:bg-accent/90 font-medium">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send 6-Digit Code"}
+              <Button type="submit" disabled={actionLoading === "sendOtp"} className="w-full bg-accent text-surface-dark hover:bg-accent/90 font-medium">
+                {actionLoading === "sendOtp" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send 6-Digit Code"}
               </Button>
             </form>
           )}
@@ -346,8 +347,8 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 >
                   Back
                 </Button>
-                <Button type="submit" disabled={loading} className="flex-1 bg-accent text-surface-dark hover:bg-accent/90">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
+                <Button type="submit" disabled={actionLoading === "verifyOtp"} className="flex-1 bg-accent text-surface-dark hover:bg-accent/90">
+                  {actionLoading === "verifyOtp" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
                 </Button>
               </div>
             </form>
@@ -490,11 +491,20 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               variant="outline"
               size="sm"
               onClick={handleUnsubscribe}
-              disabled={loading}
+              disabled={actionLoading === "unsubscribe" || actionLoading === "save"}
               className="text-red-500 border-red-500/30 hover:bg-red-500/10 text-xs"
             >
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
-              Unsubscribe
+              {actionLoading === "unsubscribe" ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                  <span>Unsubscribing...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  <span>Unsubscribe</span>
+                </>
+              )}
             </Button>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={onClose}>
@@ -503,10 +513,10 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               <Button
                 size="sm"
                 onClick={handleSavePreferences}
-                disabled={loading}
+                disabled={actionLoading === "save" || actionLoading === "unsubscribe"}
                 className="bg-accent text-surface-dark hover:bg-accent/90 font-medium min-w-[140px] flex items-center justify-center gap-1.5"
               >
-                {loading ? (
+                {actionLoading === "save" ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Saving...</span>

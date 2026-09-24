@@ -708,7 +708,7 @@ class LivePipelineRunner:
             if cancelled_evt_ids:
                 cur.execute("UPDATE alert_events SET status = 'cancelled', last_updated_at = %s WHERE id = ANY(%s::bigint[]);", (started_at, cancelled_evt_ids))
             if cancelled_alert_ids:
-                cur.execute("UPDATE alerts SET lifecycle_state = 'cancelled' WHERE id = ANY(%s::bigint[]);", (cancelled_alert_ids,))
+                cur.execute("UPDATE alerts SET status = 'cancelled', lifecycle_state = 'cancelled' WHERE id = ANY(%s::bigint[]);", (cancelled_alert_ids,))
 
             # Upsert enriched alerts into database
             if grouped_alerts:

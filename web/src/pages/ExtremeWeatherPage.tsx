@@ -20,18 +20,13 @@ export const ExtremeWeatherPage: React.FC = () => {
   const { data: alertsData, isLoading, error } = useAlerts({
     status: statusFilter,
     hazard: hazardFilter,
-    minSeverity: severityFilter,
+    severity: severityFilter,
+    search: searchQuery.trim() || undefined,
     maxLeadDays: maxLead,
     limit: 100,
   });
 
   const alerts = alertsData?.alerts || [];
-
-  const filteredAlerts = alerts.filter(
-    (a) =>
-      a.location_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.region.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <div className="space-y-4 font-sans animate-fade-in">
@@ -107,9 +102,9 @@ export const ExtremeWeatherPage: React.FC = () => {
             className="w-full px-3 py-2 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-full text-text-primary outline-none cursor-pointer focus:ring-2 focus:ring-accent/30"
           >
             <option value="ALL">All Severity Levels</option>
-            <option value="alert">Alert Only (Severe)</option>
-            <option value="watch">Watch+ (High, Severe)</option>
-            <option value="advisory">Advisory+ (Moderate, High, Severe)</option>
+            <option value="advisory">Moderate (Advisory) — Only</option>
+            <option value="watch">High (Watch) — Only</option>
+            <option value="alert">Severe (Alert) — Only</option>
           </select>
 
           {/* Lead Window */}
@@ -140,11 +135,11 @@ export const ExtremeWeatherPage: React.FC = () => {
             <AlertTriangle className="w-8 h-8 text-hazard-advisory mx-auto mb-2" />
             Failed to retrieve extreme weather alerts.
           </div>
-        ) : filteredAlerts.length === 0 ? (
+        ) : alerts.length === 0 ? (
           <div className="p-12 bg-surface rounded-card shadow-card border border-[rgba(26,23,18,0.07)] text-center text-xs text-text-muted space-y-2">
             <CheckCircle2 className="w-10 h-10 text-hazard-normal mx-auto" />
             <p className="text-sm font-semibold text-text-primary">
-              No extreme weather flags matching current filter criteria.
+              No extreme weather alert events matching current filter criteria.
             </p>
             <p className="max-w-md mx-auto text-[11px]">
               Multi-model ensemble consensus indicates normal meteorological parameters across the
@@ -155,17 +150,17 @@ export const ExtremeWeatherPage: React.FC = () => {
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs text-text-muted px-1">
               <span>
-                Showing {filteredAlerts.length}
-                {alertsData?.count !== undefined && alertsData.count > filteredAlerts.length
+                Showing {alerts.length}
+                {alertsData?.count !== undefined && alertsData.count > alerts.length
                   ? ` of ${alertsData.count}`
                   : ""}{" "}
-                hazard alerts
+                active alert events
               </span>
               <span className="font-mono text-[11px]">IMD Threshold Grounded</span>
             </div>
-            {filteredAlerts.map((alert) => (
+            {alerts.map((alert) => (
               <AlertCard
-                key={alert.id}
+                key={alert.event_id ? `event-${alert.event_id}-${alert.id}` : `alert-${alert.id}`}
                 alert={alert}
                 onSelectEvent={(eventId) => setSelectedEventId(eventId)}
               />

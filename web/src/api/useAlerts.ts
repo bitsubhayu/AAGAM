@@ -14,7 +14,9 @@ export interface UseAlertsParams {
   status?: string;
   hazard?: string;
   region?: string;
+  severity?: string;
   minSeverity?: string;
+  search?: string;
   maxLeadDays?: number;
   limit?: number;
   offset?: number;
@@ -26,7 +28,9 @@ export function useAlerts(params: UseAlertsParams = {}) {
   if (params.status) queryParams.set("status", params.status);
   if (params.hazard && params.hazard !== "ALL") queryParams.set("hazard", params.hazard);
   if (params.region && params.region !== "ALL") queryParams.set("region", params.region);
+  if (params.severity && params.severity !== "ALL") queryParams.set("severity", params.severity);
   if (params.minSeverity && params.minSeverity !== "ALL") queryParams.set("min_severity", params.minSeverity);
+  if (params.search && params.search.trim()) queryParams.set("search", params.search.trim());
   if (params.maxLeadDays !== undefined) queryParams.set("max_lead_days", params.maxLeadDays.toString());
   if (params.limit !== undefined) queryParams.set("limit", params.limit.toString());
   if (params.offset !== undefined) queryParams.set("offset", params.offset.toString());

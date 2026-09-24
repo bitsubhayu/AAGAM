@@ -71,6 +71,9 @@ class Alert:
     status: str  # 'active' | 'expired'
     expires_at: str
     rarity_label: Optional[str] = None
+    event_id: Optional[int] = None
+    lifecycle_state: Optional[str] = "new"
+    previous_severity: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
