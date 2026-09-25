@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -88,6 +89,29 @@ async def get_dominant_weights_cached(
         )
         for w in weight_rows:
             dominant_by_region[w["region"]] = w["model"]
+
+        # Check active unexpired overrides for this variable and lead_days
+        override_rows = await conn.fetch(
+            """
+            SELECT region, weights
+            FROM weight_overrides
+            WHERE active = true
+              AND variable = $1
+              AND lead_days = $2
+              AND (expires_at IS NULL OR expires_at > NOW())
+            ORDER BY created_at ASC
+            """,
+            variable,
+            lead_days,
+        )
+        for ov in override_rows:
+            ov_weights = ov["weights"]
+            if isinstance(ov_weights, str):
+                ov_weights = json.loads(ov_weights)
+            if ov_weights:
+                dom_m = max(ov_weights, key=ov_weights.get)
+                dominant_by_region[ov["region"]] = dom_m
+
         _DOMINANT_WEIGHTS_CACHE[cache_key] = (now, dominant_by_region)
     except Exception as e:
         logger.warning(f"Error querying dominant weights: {e}")
@@ -126,6 +150,32 @@ async def get_region_weights_cached(
             if lead not in weight_map:
                 weight_map[lead] = {}
             weight_map[lead][w["model"]] = float(w["weight"])
+
+        # Overlay active forecaster weight overrides for operational blending
+        override_rows = await conn.fetch(
+            """
+            SELECT lead_days, weights
+            FROM weight_overrides
+            WHERE active = true
+              AND variable = $1
+              AND region = $2
+              AND (expires_at IS NULL OR expires_at > NOW())
+            ORDER BY created_at ASC
+            """,
+            variable,
+            region,
+        )
+        for ov in override_rows:
+            lead = ov["lead_days"]
+            ov_weights = ov["weights"]
+            if isinstance(ov_weights, str):
+                ov_weights = json.loads(ov_weights)
+            if ov_weights:
+                if lead not in weight_map:
+                    weight_map[lead] = {}
+                for m, w in ov_weights.items():
+                    weight_map[lead][m] = float(w)
+
         _REGION_WEIGHTS_CACHE[cache_key] = (now, weight_map)
     except Exception as e:
         logger.warning(f"Error querying regional weights: {e}")
@@ -194,6 +244,14 @@ async def get_weights_matrix_cached(
     ]
     _WEIGHTS_ITEMS_CACHE[cache_key] = (now, serialized)
     return serialized
+
+
+def invalidate_weights_cache() -> None:
+    """Invalidates the in-memory weights matrix, dominant weights, and regional weights caches."""
+    global _DOMINANT_WEIGHTS_CACHE, _REGION_WEIGHTS_CACHE, _WEIGHTS_ITEMS_CACHE
+    _DOMINANT_WEIGHTS_CACHE.clear()
+    _REGION_WEIGHTS_CACHE.clear()
+    _WEIGHTS_ITEMS_CACHE.clear()
 
 
 def invalidate_model_version_cache() -> None:

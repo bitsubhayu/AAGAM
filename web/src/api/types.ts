@@ -148,17 +148,16 @@ export interface WeightOverrideCreate {
 
 export interface WeightOverrideResponse {
   id: number;
-  user_id: string;
+  created_by: string;
+  created_at: string;
   variable: string;
   region: string;
   season: string;
   lead_days: number;
-  original_weights: Record<string, number>;
-  overridden_weights: Record<string, number>;
+  weights: Record<string, number>;
   reason: string;
-  created_at: string;
-  expires_at: string;
-  status: string;
+  expires_at: string | null;
+  active: boolean;
 }
 
 export interface AlertItem {

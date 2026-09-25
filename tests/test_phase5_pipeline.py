@@ -153,7 +153,6 @@ def test_anonymous_reads_blocked_on_operational_tables():
         "model_forecasts",
         "model_versions",
         "profiles",
-        "weight_overrides",
         "pipeline_runs",
         "chat_audit",
     ]
@@ -163,6 +162,7 @@ def test_anonymous_reads_blocked_on_operational_tables():
         "weights",
         "skill_scores",
         "alerts",
+        "weight_overrides",
     ]
     try:
         with conn.cursor() as cur:

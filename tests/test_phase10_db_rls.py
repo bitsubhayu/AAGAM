@@ -101,6 +101,7 @@ class TestPhase10RLSPolicies:
             "skill_scores",
             "alerts",
             "alert_events",
+            "weight_overrides",
         ]
         try:
             with conn.cursor() as cur:
@@ -120,7 +121,6 @@ class TestPhase10RLSPolicies:
             "model_forecasts",
             "model_versions",
             "profiles",
-            "weight_overrides",
             "pipeline_runs",
             "chat_audit",
         ]

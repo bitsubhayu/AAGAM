@@ -65,10 +65,17 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (createMutation.isPending) return;
+
     if (reason.trim().length < 10) {
       toast.error("Audit reason must be at least 10 characters long.");
       return;
     }
+
+    const timeoutId = setTimeout(() => {
+      createMutation.reset();
+      toast.error("Override submission timed out after 15 seconds. Please try again.");
+    }, 15000);
 
     try {
       await createMutation.mutateAsync({
@@ -81,10 +88,14 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
         expires_hours: expiresHours,
       });
 
+      clearTimeout(timeoutId);
       toast.success("Audited weight override created successfully.");
       onClose();
     } catch (err: any) {
-      toast.error(`Failed to submit override: ${err.message}`);
+      clearTimeout(timeoutId);
+      createMutation.reset();
+      const msg = err?.response?.data?.detail?.message || err?.message || "An error occurred.";
+      toast.error(`Failed to submit override: ${msg}`);
     }
   };
 
@@ -174,7 +185,13 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[rgba(26,23,18,0.09)]">
-          <Button variant="ghost" size="sm" type="button" onClick={onClose}>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={onClose}
+            disabled={createMutation.isPending}
+          >
             Cancel
           </Button>
           <Button
@@ -182,10 +199,10 @@ export const OverrideFormModal: React.FC<OverrideFormModalProps> = ({
             size="sm"
             type="submit"
             isLoading={createMutation.isPending}
-            disabled={reason.trim().length < 10}
+            disabled={reason.trim().length < 10 || createMutation.isPending}
           >
             <Shield className="w-3.5 h-3.5 mr-1" />
-            <span>Submit Audited Override</span>
+            <span>{createMutation.isPending ? "Submitting..." : "Submit Audited Override"}</span>
           </Button>
         </div>
       </form>

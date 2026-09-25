@@ -51,7 +51,7 @@ def enable_test_fallback(monkeypatch):
 async def test_production_mode_blocks_silent_parquet_fallback(monkeypatch):
     """Part 30 & Part 15: Proves that in production (fallback disabled), tools return structured unavailable, NOT test parquet."""
     monkeypatch.delenv("AAGAM_ALLOW_TEST_FALLBACK", raising=False)
-    
+
     # 1. Forecast Tool
     f_tool = GetForecastTool()
     f_res = await f_tool.execute({"location": "Bhubaneswar", "variable": "rain_mm"}, ToolContext())

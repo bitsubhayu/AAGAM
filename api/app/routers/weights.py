@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import asyncpg
@@ -15,6 +16,7 @@ from api.app.db.locations import get_locations_with_coords
 from api.app.db.model_versions import (
     get_active_model_version_cached,
     get_weights_matrix_cached,
+    invalidate_weights_cache,
 )
 from api.app.db.pool import get_db_conn, set_rls_claims
 from core.config import settings
@@ -34,6 +36,7 @@ VALID_REGIONS = {"NW", "CENTRAL", "EAST_NE", "SOUTH", "HIMALAYAN"}
 VALID_SEASONS = {"winter", "premonsoon", "pre_monsoon", "monsoon", "postmonsoon", "post_monsoon", "all"}
 VALID_VARIABLES = {"rain_mm", "tmax_c", "wind_max_kmh"}
 EXPECTED_MODELS = {"gfs", "ecmwf_ifs", "icon", "aifs"}
+ALLOWED_EXPIRES_HOURS = {12, 24, 48, 72}
 
 
 @router.get("/weights", response_model=WeightsResponse)
@@ -169,15 +172,64 @@ async def create_weight_override(
                 "retry_after": None,
             },
         )
+    if override.season not in VALID_SEASONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_SEASON",
+                "message": f"Season must be one of {list(VALID_SEASONS)}",
+                "retry_after": None,
+            },
+        )
+    if override.lead_days < 0 or override.lead_days > 7:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_LEAD_DAYS",
+                "message": "Lead days must be between 0 and 7.",
+                "retry_after": None,
+            },
+        )
     if len(override.reason.strip()) < 10:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "INVALID_REASON", "message": "Reason must be at least 10 characters.", "retry_after": None},
         )
+    if override.expires_hours not in ALLOWED_EXPIRES_HOURS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "INVALID_EXPIRES_HOURS",
+                "message": f"expires_hours must be one of {sorted(list(ALLOWED_EXPIRES_HOURS))}",
+                "retry_after": None,
+            },
+        )
 
-    # 2. Validate weights dictionary
+    # 2. Validate model keys in weights dictionary
+    missing_models = EXPECTED_MODELS - set(override.weights.keys())
+    if missing_models:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "MISSING_MODEL_KEYS",
+                "message": f"Weights must contain all 4 models: {sorted(list(EXPECTED_MODELS))}. Missing: {sorted(list(missing_models))}",
+                "retry_after": None,
+            },
+        )
+    extra_models = set(override.weights.keys()) - EXPECTED_MODELS
+    if extra_models:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "EXTRA_MODEL_KEYS",
+                "message": f"Weights can only contain models: {sorted(list(EXPECTED_MODELS))}. Unknown: {sorted(list(extra_models))}",
+                "retry_after": None,
+            },
+        )
+
+    # 3. Validate weight values and normalization
     weight_vals = list(override.weights.values())
-    if any(w < 0 or w > 1 for w in weight_vals):
+    if any(w < 0.0 or w > 1.0 for w in weight_vals):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "INVALID_WEIGHTS", "message": "Each weight must be between 0 and 1.", "retry_after": None},
@@ -193,26 +245,33 @@ async def create_weight_override(
             },
         )
 
-    # 3. Insert with RLS claims set
-    await set_rls_claims(conn, current_user.user_id, role="authenticated")
-    row = await conn.fetchrow(
-        """
-        INSERT INTO weight_overrides (
-            created_by, variable, region, season, lead_days, weights, reason, expires_at, active
-        ) VALUES (
-            $1::uuid, $2, $3, $4, $5, $6::jsonb, $7, $8, true
+    now_utc = datetime.now(timezone.utc)
+    computed_expires_at = override.expires_at or (now_utc + timedelta(hours=override.expires_hours))
+
+    # 4. Insert with RLS claims set inside explicit transaction
+    async with conn.transaction():
+        await set_rls_claims(conn, current_user.user_id, role="authenticated")
+        row = await conn.fetchrow(
+            """
+            INSERT INTO weight_overrides (
+                created_by, variable, region, season, lead_days, weights, reason, expires_at, active
+            ) VALUES (
+                $1::uuid, $2, $3, $4, $5, $6::jsonb, $7, $8, true
+            )
+            RETURNING id, created_by, created_at, variable, region, season, lead_days, weights, reason, expires_at, active
+            """,
+            current_user.user_id,
+            override.variable,
+            override.region,
+            override.season,
+            override.lead_days,
+            json.dumps(override.weights),
+            override.reason.strip(),
+            computed_expires_at,
         )
-        RETURNING id, created_by, created_at, variable, region, season, lead_days, weights, reason, expires_at, active
-        """,
-        current_user.user_id,
-        override.variable,
-        override.region,
-        override.season,
-        override.lead_days,
-        json.dumps(override.weights),
-        override.reason,
-        override.expires_at,
-    )
+
+    # 5. Invalidate backend weights cache so subsequent requests immediately reflect the override
+    invalidate_weights_cache()
 
     weights_res = row["weights"]
     if isinstance(weights_res, str):

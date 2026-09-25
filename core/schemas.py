@@ -169,6 +169,7 @@ class WeightOverrideCreate(BaseModel):
     lead_days: int
     weights: Dict[str, float]
     reason: str
+    expires_hours: int = 24
     expires_at: Optional[datetime] = None
 
 
