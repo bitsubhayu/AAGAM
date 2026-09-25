@@ -15,21 +15,16 @@ from __future__ import annotations
 
 import math
 from datetime import date, timedelta
-from typing import Dict, List
 
 import numpy as np
 import pandas as pd
-import pytest
 from fastapi.testclient import TestClient
 
 from api.app.main import app
 from pipeline.live.verification_runner import (
     calculate_live_window,
     determine_truth_source,
-    VerificationRunner,
 )
-
-
 
 # ==============================================================================
 # SECTION 1-8: LIVE WINDOW CALCULATION & OPERATIONAL ANCHORING
@@ -292,7 +287,7 @@ class TestContingencyMetricMath:
         hits = 0
         misses = 0
         false_alarms = 0
-        correct_negatives = 40
+        _correct_negatives = 40
 
         pod = hits / (hits + misses) if (hits + misses) > 0 else None
         csi = hits / (hits + false_alarms + misses) if (hits + false_alarms + misses) > 0 else None
@@ -313,7 +308,7 @@ class TestContingencyMetricMath:
         hits = 5
         false_alarms = 2
         misses = 3
-        correct_negatives = 30
+        _correct_negatives = 30
 
         expected_csi = hits / (hits + false_alarms + misses)  # 5 / (5 + 2 + 3) = 5 / 10 = 0.500
         expected_pod = hits / (hits + misses)  # 5 / 8 = 0.625

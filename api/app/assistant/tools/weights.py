@@ -81,8 +81,10 @@ class GetWeightsTool(BaseTool):
                     meta={"region": target_region, "error": str(e)},
                 )
 
-        # Fallback to authoritative live_weights_60d.parquet dataset if DB is offline or empty
-        if not raw_weights:
+        # Fallback to test dataset ONLY in explicit test mode (AAGAM_ALLOW_TEST_FALLBACK=1)
+        import os
+        allow_test_fallback = os.environ.get("AAGAM_ALLOW_TEST_FALLBACK", "0") == "1"
+        if not raw_weights and allow_test_fallback:
             from pathlib import Path
 
             import pandas as pd

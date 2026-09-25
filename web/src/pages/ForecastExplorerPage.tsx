@@ -64,12 +64,12 @@ export const ForecastExplorerPage: React.FC = () => {
     const rows = forecast.series.map((s) => [
       s.valid_date,
       s.lead_days,
-      s.blended.toFixed(1),
-      s.models?.gfs ?? "",
-      s.models?.ecmwf_ifs ?? "",
-      s.models?.icon ?? "",
-      s.models?.aifs ?? "",
-      s.spread.toFixed(1),
+      s.blended != null ? s.blended.toFixed(1) : "",
+      s.models?.gfs != null ? s.models.gfs.toFixed(1) : "",
+      s.models?.ecmwf_ifs != null ? s.models.ecmwf_ifs.toFixed(1) : "",
+      s.models?.icon != null ? s.models.icon.toFixed(1) : "",
+      s.models?.aifs != null ? s.models.aifs.toFixed(1) : "",
+      s.spread != null ? s.spread.toFixed(1) : "",
     ]);
 
     const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -246,31 +246,31 @@ export const ForecastExplorerPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-border/60 font-mono text-[11px]">
                 {forecast.series.map((s) => (
-                  <tr key={s.valid_date} className="hover:bg-[#F0EDE7]/50 transition-colors">
+                  <tr key={`${s.valid_date}-${s.lead_days}`} className="hover:bg-[#F0EDE7]/50 transition-colors">
                     <td className="p-2.5 font-sans font-medium text-text-primary">
                       {s.valid_date}
                     </td>
                     <td className="p-2.5 text-text-secondary">+{s.lead_days}d</td>
                     <td className="p-2.5 text-brand-blue font-bold text-xs">
-                      {s.blended.toFixed(1)} {varMeta.shortUnit}
+                      {s.blended != null ? s.blended.toFixed(1) : "—"} {varMeta.shortUnit}
                     </td>
                     <td className="p-2.5 text-text-secondary">
-                      {s.models?.gfs !== undefined ? s.models.gfs.toFixed(1) : "—"}
+                      {s.models?.gfs !== undefined && s.models?.gfs !== null ? s.models.gfs.toFixed(1) : "—"}
                     </td>
                     <td className="p-2.5 text-text-secondary">
-                      {s.models?.ecmwf_ifs !== undefined ? s.models.ecmwf_ifs.toFixed(1) : "—"}
+                      {s.models?.ecmwf_ifs !== undefined && s.models?.ecmwf_ifs !== null ? s.models.ecmwf_ifs.toFixed(1) : "—"}
                     </td>
                     <td className="p-2.5 text-text-secondary">
-                      {s.models?.icon !== undefined ? s.models.icon.toFixed(1) : "—"}
+                      {s.models?.icon !== undefined && s.models?.icon !== null ? s.models.icon.toFixed(1) : "—"}
                     </td>
                     <td className="p-2.5 text-text-secondary">
-                      {s.models?.aifs !== undefined ? s.models.aifs.toFixed(1) : "—"}
+                      {s.models?.aifs !== undefined && s.models?.aifs !== null ? s.models.aifs.toFixed(1) : "—"}
                     </td>
                     <td className="p-2.5 text-text-muted">
-                      {s.spread.toFixed(1)}
+                      {s.spread != null ? s.spread.toFixed(1) : "—"}
                     </td>
                     <td className="p-2.5">
-                      {s.models_over_threshold > 0 ? (
+                      {(s.models_over_threshold || 0) > 0 ? (
                         <span className="text-hazard-advisory font-semibold">
                           {s.models_over_threshold}/4 over threshold
                         </span>

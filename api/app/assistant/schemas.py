@@ -69,7 +69,7 @@ class GetForecastArgs(BaseModel):
 class GetWeightsArgs(BaseModel):
     """Arguments for get_weights tool."""
 
-    variable: str = Field(..., description="Weather variable: rain_mm, tmax_c, wind_max_kmh")
+    variable: str = Field(default="rain_mm", description="Weather variable: rain_mm, tmax_c, wind_max_kmh")
     region: Optional[str] = Field(None, description="Region code (e.g. EAST_NE, SOUTH, CENTRAL, NW, HIMALAYAN)")
     location: Optional[str] = Field(None, description="Location name or slug (resolves to region)")
     season: Optional[str] = Field(None, description="Season: monsoon, post_monsoon, winter, pre_monsoon")
@@ -86,7 +86,10 @@ class GetSkillArgs(BaseModel):
         ..., description="Grouping dimension: lead, region, season, model"
     )
     variable: str = Field(..., description="Weather variable: rain_mm, tmax_c, wind_max_kmh")
-    window_days: int = Field(default=60, ge=1, le=365, description="Evaluation window days (default 60)")
+    scope: Literal["live", "held_out"] = Field(
+        default="live", description="Evaluation scope: 'live' (operational verification) or 'held_out' (fixed 90-day benchmark)"
+    )
+    window_days: int = Field(default=90, ge=1, le=90, description="Evaluation window days (max 90, default 90)")
     region: Optional[str] = Field(None, description="Optional region filter")
     season: Optional[str] = Field(None, description="Optional season filter")
 

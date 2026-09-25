@@ -66,12 +66,14 @@ def resolve_location(query: str) -> Dict[str, Any]:
                 "message": None,
             }
 
-    # 2. Substring match (e.g. "Bhubaneswar district" -> "Bhubaneswar")
+    # 2. Substring match (e.g. "Bhubaneswar district" -> "Bhubaneswar" or "bad" -> Ahmedabad, Hyderabad)
     substring_matches = []
     for loc in locations:
         loc_name_lower = loc["name"].lower()
         loc_slug_lower = loc["slug"].lower()
-        if loc_name_lower in q_clean or loc_slug_lower in q_clean:
+        if (loc_name_lower in q_clean or loc_slug_lower in q_clean) or (
+            len(q_clean) >= 3 and (q_clean in loc_name_lower or q_clean in loc_slug_lower)
+        ):
             substring_matches.append(loc)
 
     if len(substring_matches) == 1:
@@ -136,12 +138,12 @@ def resolve_location(query: str) -> Dict[str, Any]:
             "message": None,
         }
 
-    # No match (< 0.55): Suggest nearest/major regional points
+    # No match (< 0.55): Suggest closest name matches from 40 configured locations
     suggested = [item[1]["name"] for item in scored[:3]]
     return {
         "resolved": False,
         "location": None,
         "ambiguous": False,
         "candidates": suggested,
-        "message": f"Location '{query}' is outside AAGAM's 40 configured locations. Nearest configured points: {', '.join(suggested)}.",
+        "message": f"'{query}' is not one of AAGAM's 40 configured locations. Did you mean one of these configured locations: {', '.join(suggested)}?",
     }

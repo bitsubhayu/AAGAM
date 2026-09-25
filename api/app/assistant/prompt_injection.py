@@ -18,9 +18,9 @@ logger = logging.getLogger("aagam.assistant.prompt_injection")
 # Known prompt-extraction / jailbreak trigger phrases
 INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?(previous|prior)\s+instructions",
-    r"print\s+(the\s+)?system\s+prompt",
-    r"reveal\s+(your\s+)?(system\s+)?prompt",
-    r"disregard\s+(the\s+)?above\s+instructions",
+    r"disregard\s+(all\s+|the\s+)?(system\s+|above\s+)?(rules|instructions)",
+    r"(output|show|print|reveal)\s+(?:the\s+|your\s+)?(?:complete\s+|hidden\s+|developer\s+|internal\s+)*(?:system\s+)?(?:prompt|instructions|rules|credentials)",
+    r"override\s+(all\s+)?(system\s+|developer\s+)?(rules|instructions)",
     r"system\s*:\s*you\s+are\s+now",
     r"dan\s+mode",
     r"drop\s+table",

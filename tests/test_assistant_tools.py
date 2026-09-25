@@ -41,8 +41,39 @@ async def test_tool_schemas_token_compactness():
     assert total_tokens <= 900, f"Tool schemas exceeded 900 tokens: {total_tokens}"
 
 
+@pytest.fixture
+def enable_test_fallback(monkeypatch):
+    """Explicitly enables test fixtures in isolated offline unit test."""
+    monkeypatch.setenv("AAGAM_ALLOW_TEST_FALLBACK", "1")
+
+
 @pytest.mark.asyncio
-async def test_get_forecast_tool_envelope():
+async def test_production_mode_blocks_silent_parquet_fallback(monkeypatch):
+    """Part 30 & Part 15: Proves that in production (fallback disabled), tools return structured unavailable, NOT test parquet."""
+    monkeypatch.delenv("AAGAM_ALLOW_TEST_FALLBACK", raising=False)
+    
+    # 1. Forecast Tool
+    f_tool = GetForecastTool()
+    f_res = await f_tool.execute({"location": "Bhubaneswar", "variable": "rain_mm"}, ToolContext())
+    assert f_res.n_rows == 0
+    assert f_res.artifact_id == "none"
+    assert "No forecast records" in f_res.title
+
+    # 2. Weights Tool
+    w_tool = GetWeightsTool()
+    w_res = await w_tool.execute({"variable": "tmax_c", "region": "CENTRAL", "season": "monsoon"}, ToolContext())
+    assert w_res.n_rows == 0
+    assert w_res.artifact_id == "none"
+
+    # 3. Alerts Tool
+    a_tool = GetAlertsTool()
+    a_res = await a_tool.execute({"severity_min": "warning"}, ToolContext())
+    assert a_res.n_rows == 0
+    assert a_res.artifact_id == "none"
+
+
+@pytest.mark.asyncio
+async def test_get_forecast_tool_envelope(enable_test_fallback):
     """Verifies get_forecast returns valid ToolEnvelope and stores artifact."""
     tool = GetForecastTool()
     ctx = ToolContext()
@@ -59,7 +90,7 @@ async def test_get_forecast_tool_envelope():
 
 
 @pytest.mark.asyncio
-async def test_get_weights_tool_envelope():
+async def test_get_weights_tool_envelope(enable_test_fallback):
     """Verifies get_weights returns model weight matrix and sample sizes."""
     tool = GetWeightsTool()
     ctx = ToolContext()
@@ -72,7 +103,7 @@ async def test_get_weights_tool_envelope():
 
 
 @pytest.mark.asyncio
-async def test_get_skill_tool_envelope():
+async def test_get_skill_tool_envelope(enable_test_fallback):
     """Verifies get_skill returns verification scores table."""
     tool = GetSkillTool()
     ctx = ToolContext()
@@ -84,7 +115,7 @@ async def test_get_skill_tool_envelope():
 
 
 @pytest.mark.asyncio
-async def test_get_alerts_tool_envelope():
+async def test_get_alerts_tool_envelope(enable_test_fallback):
     """Verifies get_alerts returns active alerts with IMD decision-support notice."""
     tool = GetAlertsTool()
     ctx = ToolContext()

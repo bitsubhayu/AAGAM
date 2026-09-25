@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from api.app.assistant.location_resolver import resolve_location
 from api.app.assistant.schemas import GetForecastArgs, ToolEnvelope
@@ -72,38 +72,114 @@ class GetForecastTool(BaseTool):
 
         if context.conn is not None:
             try:
-                # Fetch blended forecasts
-                q_blend = """
-                    SELECT valid_date, lead_days, issue_time, blended, spread, models_over_threshold
-                    FROM blended_forecasts
-                    WHERE location_id = $1 AND variable = $2 AND lead_days <= $3
-                    ORDER BY valid_date ASC
+                # Query strictly the single latest operational cycle
+                q_cycle = """
+                    WITH latest_blend AS (
+                        SELECT MAX(issue_time) AS issue_time
+                        FROM blended_forecasts
+                        WHERE location_id = $1 AND variable = $2
+                    ),
+                    blend_rows AS (
+                        SELECT
+                            b.valid_date,
+                            b.lead_days,
+                            b.blended,
+                            b.spread,
+                            b.models_over_threshold,
+                            b.degraded,
+                            b.issue_time
+                        FROM blended_forecasts b
+                        JOIN latest_blend lb ON b.issue_time = lb.issue_time
+                        WHERE b.location_id = $1 AND b.variable = $2
+                          AND b.lead_days >= 0 AND b.lead_days <= $3
+                    ),
+                    model_rows AS (
+                        SELECT
+                            m.valid_date,
+                            m.lead_days,
+                            m.model,
+                            m.value,
+                            m.issue_time
+                        FROM model_forecasts m
+                        WHERE m.location_id = $1 AND m.variable = $2
+                          AND (
+                              EXISTS (SELECT 1 FROM blend_rows br WHERE br.valid_date = m.valid_date)
+                              OR (NOT EXISTS (SELECT 1 FROM blend_rows) AND m.issue_time = (
+                                  SELECT MAX(issue_time) FROM model_forecasts WHERE location_id = $1 AND variable = $2
+                              ) AND m.lead_days >= 0 AND m.lead_days <= $3)
+                          )
+                    ),
+                    models_agg AS (
+                        SELECT
+                            valid_date,
+                            jsonb_object_agg(model, round(value::numeric, 2)) AS models_json
+                        FROM model_rows
+                        GROUP BY valid_date
+                    ),
+                    merged AS (
+                        SELECT
+                            COALESCE(b.valid_date, m.valid_date) AS valid_date,
+                            COALESCE(b.lead_days, m_lead.lead_days) AS lead_days,
+                            b.blended,
+                            b.spread,
+                            b.models_over_threshold,
+                            b.degraded,
+                            COALESCE(b.issue_time, m_lead.issue_time) AS issue_time,
+                            ma.models_json
+                        FROM blend_rows b
+                        FULL OUTER JOIN (
+                            SELECT DISTINCT valid_date FROM model_rows
+                        ) m ON b.valid_date = m.valid_date
+                        LEFT JOIN (
+                            SELECT valid_date, MIN(lead_days) AS lead_days, MAX(issue_time) AS issue_time
+                            FROM model_rows
+                            GROUP BY valid_date
+                        ) m_lead ON COALESCE(b.valid_date, m.valid_date) = m_lead.valid_date
+                        LEFT JOIN models_agg ma ON COALESCE(b.valid_date, m.valid_date) = ma.valid_date
+                    )
+                    SELECT DISTINCT ON (lead_days)
+                        valid_date,
+                        lead_days,
+                        blended,
+                        spread,
+                        models_over_threshold,
+                        degraded,
+                        issue_time,
+                        models_json
+                    FROM merged
+                    WHERE lead_days >= 0 AND lead_days <= $3
+                    ORDER BY lead_days ASC, valid_date ASC;
                 """
-                blend_rows = await context.conn.fetch(q_blend, location_id, args.variable, args.lead_days_max)
+                rows = await context.conn.fetch(q_cycle, location_id, args.variable, args.lead_days_max)
 
-                # Fetch model forecasts
-                q_models = """
-                    SELECT valid_date, model, value
-                    FROM model_forecasts
-                    WHERE location_id = $1 AND variable = $2 AND lead_days <= $3
-                """
-                model_rows = await context.conn.fetch(q_models, location_id, args.variable, args.lead_days_max)
+                for r in rows:
+                    vd_str = r["valid_date"].isoformat() if hasattr(r["valid_date"], "isoformat") else str(r["valid_date"])
+                    blended_val = round(float(r["blended"]), 2) if r["blended"] is not None else None
 
-                # Map model rows by (valid_date, model)
-                model_map: Dict[tuple[str, str], float] = {}
-                for mr in model_rows:
-                    vd_str = mr["valid_date"].isoformat() if hasattr(mr["valid_date"], "isoformat") else str(mr["valid_date"])
-                    model_map[(vd_str, mr["model"])] = float(mr["value"])
+                    raw_models = r["models_json"]
+                    m_dict: Dict[str, Optional[float]] = {}
+                    if raw_models:
+                        if isinstance(raw_models, str):
+                            import json
+                            m_dict = json.loads(raw_models)
+                        else:
+                            m_dict = dict(raw_models)
 
-                for br in blend_rows:
-                    vd_str = br["valid_date"].isoformat() if hasattr(br["valid_date"], "isoformat") else str(br["valid_date"])
-                    blended_val = round(float(br["blended"]), 2)
-                    gfs_val = model_map.get((vd_str, "gfs"), blended_val)
-                    ifs_val = model_map.get((vd_str, "ecmwf_ifs"), blended_val)
-                    icon_val = model_map.get((vd_str, "icon"), blended_val)
-                    aifs_val = model_map.get((vd_str, "aifs"), blended_val)
-                    spread_val = round(float(br["spread"]), 2) if br["spread"] is not None else round(max(gfs_val, ifs_val, icon_val, aifs_val) - min(gfs_val, ifs_val, icon_val, aifs_val), 2)
-                    over_thresh = int(br["models_over_threshold"] or 0)
+                    # Missing models remain None / null — NEVER substitute blend
+                    gfs_val = round(float(m_dict["gfs"]), 2) if m_dict.get("gfs") is not None else None
+                    ifs_val = round(float(m_dict["ecmwf_ifs"]), 2) if m_dict.get("ecmwf_ifs") is not None else None
+                    icon_val = round(float(m_dict["icon"]), 2) if m_dict.get("icon") is not None else None
+                    aifs_val = round(float(m_dict["aifs"]), 2) if m_dict.get("aifs") is not None else None
+
+                    valid_vals = [v for v in (gfs_val, ifs_val, icon_val, aifs_val) if v is not None]
+                    if r["spread"] is not None:
+                        spread_val = round(float(r["spread"]), 2)
+                    elif len(valid_vals) > 1:
+                        spread_val = round(max(valid_vals) - min(valid_vals), 2)
+                    else:
+                        spread_val = 0.0
+
+                    over_thresh = int(r["models_over_threshold"] or 0)
 
                     full_rows.append({
                         "valid_date": vd_str,
@@ -133,8 +209,9 @@ class GetForecastTool(BaseTool):
                     },
                 )
 
-        # Query authoritative parquet dataset if database rows empty or connection offline
-        if not full_rows:
+        # Isolated test-only mode fallback (STRICTLY GUARDED; NEVER used in production)
+        import os
+        if not full_rows and (getattr(context, "allow_test_fallback", False) or os.getenv("AAGAM_ALLOW_TEST_FALLBACK") == "1"):
             parquet_path = Path(__file__).resolve().parents[4] / "data" / "blended_forecasts_test.parquet"
             if parquet_path.exists():
                 try:
@@ -148,12 +225,12 @@ class GetForecastTool(BaseTool):
                             sub_latest = sub.sort_values(["valid_date", "lead_days"]).head(args.lead_days_max)
                         for _, r in sub_latest.iterrows():
                             vd_str = str(r["valid_date"])
-                            b_val = round(float(r["blended"]), 2)
-                            g_val = round(float(r["f_gfs"]), 2)
-                            i_val = round(float(r["f_ecmwf_ifs"]), 2)
-                            ic_val = round(float(r["f_icon"]), 2)
-                            ai_val = round(float(r["f_aifs"]), 2)
-                            sp_val = round(float(r["spread"]), 2) if pd.notna(r["spread"]) else round(max(g_val, i_val, ic_val, ai_val) - min(g_val, i_val, ic_val, ai_val), 2)
+                            b_val = round(float(r["blended"]), 2) if pd.notna(r["blended"]) else None
+                            g_val = round(float(r["f_gfs"]), 2) if pd.notna(r.get("f_gfs")) else None
+                            i_val = round(float(r["f_ecmwf_ifs"]), 2) if pd.notna(r.get("f_ecmwf_ifs")) else None
+                            ic_val = round(float(r["f_icon"]), 2) if pd.notna(r.get("f_icon")) else None
+                            ai_val = round(float(r["f_aifs"]), 2) if pd.notna(r.get("f_aifs")) else None
+                            sp_val = round(float(r["spread"]), 2) if pd.notna(r["spread"]) else 0.0
                             ot_val = int(r["models_over_threshold"]) if pd.notna(r["models_over_threshold"]) else 0
                             full_rows.append({
                                 "valid_date": vd_str,
@@ -166,7 +243,7 @@ class GetForecastTool(BaseTool):
                                 "models_over_threshold": ot_val,
                             })
                 except Exception as e:
-                    logger.debug(f"Parquet query fallback error: {e}")
+                    logger.debug(f"Guarded test parquet fallback error: {e}")
 
         # Empty result if no records found
         if not full_rows:

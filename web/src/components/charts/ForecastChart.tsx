@@ -16,6 +16,21 @@ interface ForecastChartProps {
   };
 }
 
+function formatShortDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const clean = dateStr.split("T")[0];
+  const parts = clean.split("-");
+  if (parts.length === 3) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const mIdx = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    if (mIdx >= 0 && mIdx < 12 && !isNaN(day)) {
+      return `${months[mIdx]} ${day}`;
+    }
+  }
+  return dateStr;
+}
+
 export const ForecastChart: React.FC<ForecastChartProps> = ({
   series,
   variable,
@@ -29,8 +44,6 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
   },
 }) => {
   const varMeta = VARIABLES[variable];
-
-  const dates = series.map((s) => s.valid_date);
 
   const blendedVals = series.map((s) => s.blended);
   const gfsVals = series.map((s) => s.models?.gfs ?? null);
@@ -125,37 +138,38 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
         if (!params || !params.length) return "";
         const idx = params[0].dataIndex;
         const item = series[idx];
+        if (!item) return "";
         let out = `<div style="padding: 2px 4px;">`;
         out += `<div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid rgba(26,23,18,0.10); padding-bottom: 4px; color: #1A1712;">`;
         out += `${locationName} · ${item.valid_date} (D+${item.lead_days})`;
         out += `</div>`;
         out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 3px 0; color: #E86440; font-weight: bold;">`;
-        out += `<span>AAGAM Blended:</span><span style="font-family: monospace;">${item.blended.toFixed(1)} ${varMeta.shortUnit}</span>`;
+        out += `<span>AAGAM Blended:</span><span style="font-family: monospace;">${item.blended != null ? item.blended.toFixed(1) : "—"} ${varMeta.shortUnit}</span>`;
         out += `</div>`;
 
-        if (item.models?.gfs !== undefined) {
+        if (item.models?.gfs !== undefined && item.models?.gfs !== null) {
           out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #4C7BD9;">`;
           out += `<span>GFS (NOAA):</span><span style="font-family: monospace;">${item.models.gfs.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
-        if (item.models?.ecmwf_ifs !== undefined) {
+        if (item.models?.ecmwf_ifs !== undefined && item.models?.ecmwf_ifs !== null) {
           out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #4FA37A;">`;
           out += `<span>ECMWF IFS:</span><span style="font-family: monospace;">${item.models.ecmwf_ifs.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
-        if (item.models?.icon !== undefined) {
+        if (item.models?.icon !== undefined && item.models?.icon !== null) {
           out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #C98A1E;">`;
           out += `<span>DWD ICON:</span><span style="font-family: monospace;">${item.models.icon.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
-        if (item.models?.aifs !== undefined) {
+        if (item.models?.aifs !== undefined && item.models?.aifs !== null) {
           out += `<div style="display: flex; justify-content: space-between; gap: 16px; margin: 2px 0; color: #8B6FD9;">`;
           out += `<span>ECMWF AIFS (AI):</span><span style="font-family: monospace;">${item.models.aifs.toFixed(1)} ${varMeta.shortUnit}</span>`;
           out += `</div>`;
         }
 
         out += `<div style="border-top: 1px solid rgba(26,23,18,0.10); margin-top: 4px; pt-2; display: flex; justify-content: space-between; font-size: 11px; color: #A09890;">`;
-        out += `<span>Model Spread (σ):</span><span style="font-family: monospace;">${item.spread.toFixed(1)} ${varMeta.shortUnit}</span>`;
+        out += `<span>Model Spread (σ):</span><span style="font-family: monospace;">${item.spread != null ? item.spread.toFixed(1) : "—"} ${varMeta.shortUnit}</span>`;
         out += `</div>`;
         out += `</div>`;
         return out;
@@ -176,10 +190,14 @@ export const ForecastChart: React.FC<ForecastChartProps> = ({
     },
     xAxis: {
       type: "category",
-      data: dates.map((d, i) => `${d}\n(D+${series[i].lead_days})`),
+      data: series.map((s) => `${formatShortDate(s.valid_date)}\nD+${s.lead_days}`),
       boundaryGap: false,
       axisLine: { lineStyle: { color: "rgba(26,23,18,0.15)" } },
-      axisLabel: { color: "#A09890", fontSize: 11, interval: 0 },
+      axisLabel: {
+        color: "#A09890",
+        fontSize: 11,
+        hideOverlap: true,
+      },
     },
     yAxis: {
       type: "value",

@@ -103,8 +103,10 @@ class GetAlertsTool(BaseTool):
                     meta={"status": args.status, "error": str(e)},
                 )
 
-        # Fallback to authoritative historical_alerts_replay.parquet dataset if DB is offline or returned empty
-        if not full_rows:
+        # Fallback to test dataset ONLY in explicit test mode (AAGAM_ALLOW_TEST_FALLBACK=1)
+        import os
+        allow_test_fallback = os.environ.get("AAGAM_ALLOW_TEST_FALLBACK", "0") == "1"
+        if not full_rows and allow_test_fallback:
             from pathlib import Path
 
             import pandas as pd

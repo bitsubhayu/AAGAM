@@ -27,6 +27,7 @@ import asyncpg
 from api.app.assistant.audit import record_chat_audit
 from api.app.assistant.cache import get_cached_response, set_cached_response
 from api.app.assistant.client import call_groq_completion
+from api.app.assistant.knowledge import find_relevant_knowledge, format_knowledge_context
 from api.app.assistant.number_guard import verify_answer_numbers
 from api.app.assistant.prompt_injection import detect_injection_attempt, sanitize_output, wrap_tool_output_as_data
 from api.app.assistant.rate_limiter import check_user_rate_limit, record_user_request
@@ -112,7 +113,9 @@ async def run_assistant_stream(
 
     # 4. Initialize agent execution context
     tool_context = ToolContext(conn=conn, current_user=current_user)
-    system_prompt = get_system_prompt(mode)
+    relevant_knowledge = find_relevant_knowledge(request.message, max_entries=3)
+    knowledge_context = format_knowledge_context(relevant_knowledge)
+    system_prompt = get_system_prompt(mode, knowledge_context=knowledge_context)
     tools_schema = get_openai_tools_schema()
 
     # Build initial message list

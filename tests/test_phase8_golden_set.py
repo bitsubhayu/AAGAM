@@ -29,6 +29,12 @@ from api.app.assistant.tools import get_tool
 from api.app.assistant.tools.base import ToolContext
 
 
+@pytest.fixture(autouse=True)
+def enable_test_fixtures(monkeypatch):
+    """Explicitly enables test fixtures in isolated Phase 8 offline evaluation."""
+    monkeypatch.setenv("AAGAM_ALLOW_TEST_FALLBACK", "1")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", GOLDEN_EVALUATION_SET, ids=[c.id for c in GOLDEN_EVALUATION_SET])
 async def test_golden_set_item(case: GoldenTestCase):
@@ -73,7 +79,10 @@ async def test_golden_set_item(case: GoldenTestCase):
         dominant = envelope.stats.get("dominant_model", "ecmwf_ifs")
         sample_answer = f"For region {envelope.stats.get('region', 'EAST_NE')}, the dominant model is {dominant} with average margin {envelope.stats.get('average_dominant_margin', '15%')}."
     elif case.expected_tool == "get_skill":
-        sample_answer = f"The {envelope.stats.get('metric', 'MAE')} for {envelope.stats.get('variable', 'rain_mm')} averages {envelope.stats.get('blend_average', 14.5)} {envelope.stats.get('unit', 'mm')}."
+        if envelope.stats.get("blend_average") is not None:
+            sample_answer = f"The {envelope.stats.get('metric', 'MAE')} for {envelope.stats.get('variable', 'rain_mm')} averages {envelope.stats.get('blend_average')} {envelope.stats.get('unit', 'mm')}."
+        else:
+            sample_answer = f"The {envelope.stats.get('metric', 'MAE')} skill scores for {envelope.stats.get('variable', 'rain_mm')} are currently unavailable."
     elif case.expected_tool == "get_alerts":
         sample_answer = f"There are {envelope.stats.get('total_alerts', 2)} active alerts. This is decision support, not an official IMD warning."
     elif case.expected_tool == "export_data":

@@ -89,38 +89,84 @@ async def get_forecast(
     model_version_str = active_version.get("version_str", "v2026-09-21")
     active_ver_id = active_version.get("id", 2)
 
-    # Single unified CTE query combining blended_forecasts and model_forecasts (1 round trip)
+    # Single unified query isolating exactly ONE latest operational issue cycle
+    # Guarantees unique lead_days 0..7 without historical cycle leakage (PRD §12)
     query_forecast = """
-        WITH blend_data AS (
-            SELECT valid_date, lead_days, blended, spread, models_over_threshold, degraded, issue_time
+        WITH latest_blend AS (
+            SELECT MAX(issue_time) AS issue_time
             FROM blended_forecasts
             WHERE location_id = $1 AND variable = $2
         ),
-        model_data AS (
-            SELECT valid_date, lead_days, model, value, issue_time
-            FROM model_forecasts
-            WHERE location_id = $1 AND variable = $2
-        )
-        SELECT
-            COALESCE(b.valid_date, m.valid_date) AS valid_date,
-            COALESCE(b.lead_days, m.lead_days) AS lead_days,
-            b.blended,
-            b.spread,
-            b.models_over_threshold,
-            b.degraded,
-            COALESCE(b.issue_time, m.issue_time) AS issue_time,
-            m.models_json
-        FROM blend_data b
-        FULL OUTER JOIN (
+        blend_rows AS (
+            SELECT
+                b.valid_date,
+                b.lead_days,
+                b.blended,
+                b.spread,
+                b.models_over_threshold,
+                b.degraded,
+                b.issue_time
+            FROM blended_forecasts b
+            JOIN latest_blend lb ON b.issue_time = lb.issue_time
+            WHERE b.location_id = $1 AND b.variable = $2
+              AND b.lead_days >= 0 AND b.lead_days <= 7
+        ),
+        model_rows AS (
+            SELECT
+                m.valid_date,
+                m.lead_days,
+                m.model,
+                m.value,
+                m.issue_time
+            FROM model_forecasts m
+            WHERE m.location_id = $1 AND m.variable = $2
+              AND (
+                  EXISTS (SELECT 1 FROM blend_rows br WHERE br.valid_date = m.valid_date)
+                  OR (NOT EXISTS (SELECT 1 FROM blend_rows) AND m.issue_time = (
+                      SELECT MAX(issue_time) FROM model_forecasts WHERE location_id = $1 AND variable = $2
+                  ) AND m.lead_days >= 0 AND m.lead_days <= 7)
+              )
+        ),
+        models_agg AS (
             SELECT
                 valid_date,
-                lead_days,
-                MAX(issue_time) AS issue_time,
                 jsonb_object_agg(model, round(value::numeric, 2)) AS models_json
-            FROM model_data
-            GROUP BY valid_date, lead_days
-        ) m ON b.valid_date = m.valid_date
-        ORDER BY valid_date ASC;
+            FROM model_rows
+            GROUP BY valid_date
+        ),
+        merged AS (
+            SELECT
+                COALESCE(b.valid_date, m.valid_date) AS valid_date,
+                COALESCE(b.lead_days, m_lead.lead_days) AS lead_days,
+                b.blended,
+                b.spread,
+                b.models_over_threshold,
+                b.degraded,
+                COALESCE(b.issue_time, m_lead.issue_time) AS issue_time,
+                ma.models_json
+            FROM blend_rows b
+            FULL OUTER JOIN (
+                SELECT DISTINCT valid_date FROM model_rows
+            ) m ON b.valid_date = m.valid_date
+            LEFT JOIN (
+                SELECT valid_date, MIN(lead_days) AS lead_days, MAX(issue_time) AS issue_time
+                FROM model_rows
+                GROUP BY valid_date
+            ) m_lead ON COALESCE(b.valid_date, m.valid_date) = m_lead.valid_date
+            LEFT JOIN models_agg ma ON COALESCE(b.valid_date, m.valid_date) = ma.valid_date
+        )
+        SELECT DISTINCT ON (lead_days)
+            valid_date,
+            lead_days,
+            blended,
+            spread,
+            models_over_threshold,
+            degraded,
+            issue_time,
+            models_json
+        FROM merged
+        WHERE lead_days >= 0 AND lead_days <= 7
+        ORDER BY lead_days ASC, valid_date ASC;
     """
     rows = await conn.fetch(query_forecast, target_loc_id, variable)
 
@@ -134,14 +180,14 @@ async def get_forecast(
 
     for r in rows:
         v_date = r["valid_date"].isoformat() if r["valid_date"] else ""
-        lead = r["lead_days"] or 1
+        lead = int(r["lead_days"]) if r["lead_days"] is not None else 0
         raw_models = r["models_json"]
         m_dict: Dict[str, Optional[float]] = {}
         if raw_models:
             if isinstance(raw_models, str):
                 m_dict = json.loads(raw_models)
             else:
-                m_dict = raw_models
+                m_dict = dict(raw_models)
 
         if r["issue_time"] and (latest_issue is None or r["issue_time"] > latest_issue):
             latest_issue = r["issue_time"]
