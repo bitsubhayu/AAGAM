@@ -380,9 +380,14 @@ class TestSkillAPIScopesAndMetadata:
 
         assert data["evaluation_scope"] == "held_out"
         assert data["effective_window_days"] == 90
+        assert data["verified_days_count"] == 90
+        assert data["window_start"] == "2026-06-21"
+        assert data["window_end"] == "2026-09-18"
+        assert data["latest_verified_date"] == "2026-09-18"
         assert data["data_status"] == "HELD-OUT 90-DAY TEST"
         for s in data["scores"]:
             assert s["evaluation_scope"] == "held_out"
+
 
     def test_23_live_90_day_request_does_not_require_90_days(self):
         """23. Requesting window_days=90 in live mode returns early days gracefully."""

@@ -175,7 +175,7 @@ async def get_skill_scores(
                     cand = CANDIDATE_MAP.get(r["candidate"], r["candidate"].lower())
                     items.append(
                         SkillScoreItem(
-                            computed_at="2026-09-01T00:00:00Z",
+                            computed_at="2026-09-19T00:00:00Z",
                             window_days=90,
                             variable=r["variable"],
                             region=row_reg,
@@ -203,13 +203,14 @@ async def get_skill_scores(
             evaluation_scope="held_out",
             effective_window_days=90,
             verified_days_count=90,
-            window_start="2026-06-01",
-            window_end="2026-08-31",
-            latest_verified_date="2026-08-31",
+            window_start="2026-06-21",
+            window_end="2026-09-18",
+            latest_verified_date="2026-09-18",
             data_status="HELD-OUT 90-DAY TEST",
             truth_source="IMD 0.25° Gridded Rainfall & ERA5 Climatology (Held-Out Test Block)",
             scores=items,
         )
+
 
     # =========================================================================
     # 2. OPERATIONAL LIVE VERIFICATION

@@ -357,7 +357,8 @@ class VerificationRunner:
 
                 df_base = pd.read_parquet(BASELINE_COMPARISONS_PARQUET)
                 records = []
-                computed_at = datetime(2026, 9, 1, 0, 0, 0, tzinfo=timezone.utc)
+                computed_at = datetime(2026, 9, 19, 0, 0, 0, tzinfo=timezone.utc)
+
 
                 for _, row in df_base.iterrows():
                     cand = CANDIDATE_MAP.get(row["candidate"], row["candidate"].lower())
