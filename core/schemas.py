@@ -206,11 +206,24 @@ class SkillScoreItem(BaseModel):
     csi: Optional[float] = None
     threshold_mm: float = 0.0
     is_weekly: bool = False
+    evaluation_scope: str = "live"
+    hits: Optional[int] = None
+    false_alarms: Optional[int] = None
+    misses: Optional[int] = None
+    correct_negatives: Optional[int] = None
 
 
 class SkillQueryResponse(BaseModel):
     group_by: str
     variable: Optional[str] = None
+    evaluation_scope: str = "live"
+    effective_window_days: int = 0
+    verified_days_count: int = 0
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    latest_verified_date: Optional[str] = None
+    data_status: str = "NO VERIFICATION DATA"
+    truth_source: Optional[str] = None
     scores: List[SkillScoreItem]
 
 

@@ -344,11 +344,24 @@ export interface SkillScoreItem {
   csi?: number | null;
   threshold_mm: number;
   is_weekly: boolean;
+  evaluation_scope?: "live" | "held_out" | string;
+  hits?: number | null;
+  false_alarms?: number | null;
+  misses?: number | null;
+  correct_negatives?: number | null;
 }
 
 export interface SkillQueryResponse {
   group_by: string;
   variable?: string;
+  evaluation_scope: "live" | "held_out" | string;
+  effective_window_days: number;
+  verified_days_count: number;
+  window_start?: string | null;
+  window_end?: string | null;
+  latest_verified_date?: string | null;
+  data_status: string;
+  truth_source?: string | null;
   scores: SkillScoreItem[];
 }
 

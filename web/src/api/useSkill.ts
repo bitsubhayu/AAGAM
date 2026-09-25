@@ -3,6 +3,7 @@ import { apiFetch } from "./client";
 import type { SkillQueryResponse } from "./types";
 
 interface UseSkillParams {
+  scope?: "live" | "held_out";
   groupBy?: string;
   variable?: string;
   windowDays?: number;
@@ -12,11 +13,12 @@ interface UseSkillParams {
 
 export function useSkill(params: UseSkillParams = {}) {
   const queryParams = new URLSearchParams();
+  queryParams.set("scope", params.scope || "live");
   if (params.groupBy) queryParams.set("group_by", params.groupBy);
   if (params.variable) queryParams.set("variable", params.variable);
   if (params.windowDays) queryParams.set("window_days", params.windowDays.toString());
-  if (params.region && params.region !== "ALL") queryParams.set("region", params.region);
-  if (params.season && params.season !== "all") queryParams.set("season", params.season);
+  queryParams.set("region", params.region || "ALL");
+  queryParams.set("season", params.season || "ALL");
 
   const qs = queryParams.toString();
   const endpoint = `/skill${qs ? `?${qs}` : ""}`;

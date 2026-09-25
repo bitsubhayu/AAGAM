@@ -40,7 +40,7 @@ def ingest_live_cmd(
 
 @app.command("verify")
 def verify_cmd(
-    window_days: int = typer.Option(60, "--window-days", "-w", help="Trailing verification evaluation window"),
+    window_days: int = typer.Option(90, "--window-days", "-w", help="Trailing verification evaluation window (maximum 90 days)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run verification without writing to DB"),
 ):
     """Run daily verification of model and blended forecasts against ground truth."""
