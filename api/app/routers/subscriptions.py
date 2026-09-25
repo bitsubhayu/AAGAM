@@ -79,6 +79,16 @@ async def get_my_subscription(
 ) -> SubscriptionResponse:
     """Retrieves the authenticated subscriber's current alert preferences."""
     email = current_user.email or "user@example.com"
+    if current_user.user_id in DEMO_UIDS:
+        await conn.execute(
+            """
+            INSERT INTO auth.users (id, email)
+            VALUES ($1::uuid, $2)
+            ON CONFLICT (id) DO NOTHING;
+            """,
+            current_user.user_id,
+            email,
+        )
     async with conn.transaction():
         await set_rls_claims(conn, current_user.user_id, role="authenticated")
         row = await conn.fetchrow(
@@ -151,6 +161,16 @@ async def update_my_subscription(
         )
 
     email = current_user.email or "user@example.com"
+    if current_user.user_id in DEMO_UIDS:
+        await conn.execute(
+            """
+            INSERT INTO auth.users (id, email)
+            VALUES ($1::uuid, $2)
+            ON CONFLICT (id) DO NOTHING;
+            """,
+            current_user.user_id,
+            email,
+        )
     async with conn.transaction():
         await set_rls_claims(conn, current_user.user_id, role="authenticated")
         row = await conn.fetchrow(
