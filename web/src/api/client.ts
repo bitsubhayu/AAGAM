@@ -70,7 +70,11 @@ export async function apiFetch<T>(
   }, timeoutMs);
 
   if (options.signal) {
-    options.signal.addEventListener("abort", () => controller.abort(options.signal?.reason));
+    if (options.signal.aborted) {
+      controller.abort(options.signal.reason);
+    } else {
+      options.signal.addEventListener("abort", () => controller.abort(options.signal?.reason), { once: true });
+    }
   }
 
   try {
@@ -169,21 +173,39 @@ export async function verifyOtp(email: string, token: string): Promise<OtpVerify
   return resp;
 }
 
-export async function fetchMySubscription(): Promise<Subscription> {
-  return apiFetch<Subscription>("/subscriptions/me", { timeoutMs: 10000 });
+export interface SubscriptionRequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
-export async function updateMySubscription(payload: SubscriptionUpdate): Promise<Subscription> {
+export async function fetchMySubscription(
+  options?: SubscriptionRequestOptions
+): Promise<Subscription> {
   return apiFetch<Subscription>("/subscriptions/me", {
-    method: "PUT",
-    body: JSON.stringify(payload),
-    timeoutMs: 10000,
+    timeoutMs: options?.timeoutMs ?? 10000,
+    signal: options?.signal,
   });
 }
 
-export async function unsubscribeMySubscription(): Promise<UnsubscribeResponse> {
+export async function updateMySubscription(
+  payload: SubscriptionUpdate,
+  options?: SubscriptionRequestOptions
+): Promise<Subscription> {
+  return apiFetch<Subscription>("/subscriptions/me", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+    timeoutMs: options?.timeoutMs ?? 10000,
+    signal: options?.signal,
+  });
+}
+
+export async function unsubscribeMySubscription(
+  options?: SubscriptionRequestOptions
+): Promise<UnsubscribeResponse> {
   return apiFetch<UnsubscribeResponse>("/subscriptions/me", {
     method: "DELETE",
+    timeoutMs: options?.timeoutMs ?? 10000,
+    signal: options?.signal,
   });
 }
 

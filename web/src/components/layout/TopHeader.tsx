@@ -160,7 +160,31 @@ export const TopHeader: React.FC = () => {
         </div>
 
         {/* Role Presentation (Part 15: Public, Forecaster, Forecaster Coordinator) */}
-        {role === "coordinator" ? (
+        {typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? (
+          <select
+            value={role}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === "forecaster") {
+                localStorage.setItem("aagam_auth_token", "demo-forecaster-token");
+                localStorage.setItem("aagam_user_email", "forecaster@aagam.gov.in");
+              } else if (val === "coordinator") {
+                localStorage.setItem("aagam_auth_token", "demo-coordinator-token");
+                localStorage.setItem("aagam_user_email", "coordinator@aagam.gov.in");
+              } else {
+                localStorage.removeItem("aagam_auth_token");
+                localStorage.removeItem("aagam_user_email");
+              }
+              window.location.reload();
+            }}
+            className="px-2.5 py-1 text-xs font-semibold bg-[#F0EDE7] border border-[rgba(26,23,18,0.15)] rounded-full text-text-primary focus:outline-none cursor-pointer"
+            title="Local Role Switcher"
+          >
+            <option value="public">Role: Public</option>
+            <option value="forecaster">Role: Forecaster</option>
+            <option value="coordinator">Role: Coordinator</option>
+          </select>
+        ) : role === "coordinator" ? (
           <div
             title="Authenticated Forecaster Coordinator"
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F0EDE7] rounded-full border border-accent/40 text-xs font-semibold text-accent"

@@ -91,9 +91,16 @@ def db_conn():
             )
     yield conn
     with conn.cursor() as cur:
-        for uid, _, _, _ in demo_users:
-            cur.execute("DELETE FROM profiles WHERE user_id = %s;", (uid,))
-            cur.execute("DELETE FROM auth.users WHERE id = %s;", (uid,))
+        for uid, email, role, dname in demo_users:
+            cur.execute("INSERT INTO auth.users (id, email) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING;", (uid, email))
+            cur.execute(
+                """
+                INSERT INTO profiles (user_id, display_name, role)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET role = EXCLUDED.role, display_name = EXCLUDED.display_name;
+                """,
+                (uid, dname, role),
+            )
     conn.close()
 
 

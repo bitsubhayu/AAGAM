@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   X,
   AlertTriangle,
@@ -18,10 +18,12 @@ import {
   Send,
   Sparkles,
   XCircle,
+  Loader2,
 } from "lucide-react";
 import { useAlertEvent, useAcknowledgeAlertEvent, useCancelAlertEvent } from "@/api/useAlerts";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { useAuthStore } from "@/auth/authStore";
 import { toast } from "sonner";
 
@@ -40,6 +42,7 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
   const { data, isLoading, error } = useAlertEvent(isOpen ? eventId : null);
   const ackMutation = useAcknowledgeAlertEvent();
   const cancelEventMutation = useCancelAlertEvent();
+  const [ackConfirmOpen, setAckConfirmOpen] = useState(false);
 
   const formatIST = (isoString?: string | null) => {
     if (!isoString) return "";
@@ -114,13 +117,19 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
     return "advisory";
   };
 
-  const handleAcknowledge = async () => {
+  const handleAcknowledgeClick = () => {
     if (!eventId || !canAck) return;
+    setAckConfirmOpen(true);
+  };
+
+  const handleConfirmAcknowledge = async () => {
+    if (!eventId || !canAck || ackMutation.isPending) return;
     try {
       await ackMutation.mutateAsync(eventId);
+      setAckConfirmOpen(false);
       toast.success(`Alert Event #${eventId} acknowledged.`);
     } catch (err: any) {
-      toast.error(`Failed to acknowledge event: ${err.message}`);
+      toast.error(`Failed to acknowledge event: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -571,12 +580,12 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={handleAcknowledge}
+                onClick={handleAcknowledgeClick}
                 disabled={ackMutation.isPending}
                 className="text-xs text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/10"
               >
                 <Check className="w-3.5 h-3.5 mr-1" />
-                <span>{ackMutation.isPending ? "Acknowledging..." : "Acknowledge Event"}</span>
+                <span>Acknowledge Event</span>
               </Button>
             )}
             {canCancel && (
@@ -598,6 +607,80 @@ export const AlertEventDetailDrawer: React.FC<AlertEventDetailDrawerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Two-step Operational Acknowledge Confirmation Dialog */}
+      <Modal
+        isOpen={ackConfirmOpen}
+        onClose={() => {
+          if (!ackMutation.isPending) setAckConfirmOpen(false);
+        }}
+        title="Confirm acknowledgement"
+        maxWidth="md"
+      >
+        <div className="space-y-4 text-text-primary">
+          <p className="text-sm font-semibold text-text-primary">
+            Are you sure you want to acknowledge this weather alert event?
+          </p>
+          <p className="text-xs text-text-muted leading-relaxed">
+            This records that you have reviewed Alert Event #{eventId} for{" "}
+            <strong className="text-text-primary font-semibold">{event?.location_name || "the location"}</strong>.
+          </p>
+          <div className="p-3 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-lg text-xs space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">Event ID:</span>
+              <span className="font-mono font-medium text-text-primary">#{eventId}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">Location:</span>
+              <span className="font-medium text-text-primary">{event?.location_name} ({event?.region})</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">Hazard:</span>
+              <span className="font-medium text-text-primary capitalize">{event?.hazard.replace(/_/g, " ")}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">Peak Severity:</span>
+              <Badge variant={getSeverityVariant(event?.severity_peak)} className="capitalize">
+                {event?.severity_peak}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-text-muted">Valid Window:</span>
+              <span className="font-mono font-medium text-text-primary">{event?.start_date} to {event?.end_date}</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[rgba(26,23,18,0.07)]">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setAckConfirmOpen(false)}
+              disabled={ackMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleConfirmAcknowledge}
+              disabled={ackMutation.isPending}
+              className="bg-accent text-surface-dark hover:bg-accent/90 font-medium min-w-[160px] flex items-center justify-center gap-1.5"
+            >
+              {ackMutation.isPending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Acknowledging...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Confirm Acknowledge</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

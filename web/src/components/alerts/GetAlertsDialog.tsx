@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   X,
   Bell,
@@ -46,10 +46,22 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
   });
   const [otpToken, setOtpToken] = useState("");
-  type ActionLoading = "load" | "sendOtp" | "verifyOtp" | "save" | "unsubscribe" | null;
-  const [actionLoading, setActionLoading] = useState<ActionLoading>(null);
 
-  // Subscription state
+  // Independent mutation states (Part 1B, 1E)
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isLoadingSub, setIsLoadingSub] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUnsubscribing, setIsUnsubscribing] = useState(false);
+
+  // Guard refs to prevent rapid double-clicks and manage abort controllers
+  const isSavingRef = useRef(false);
+  const isUnsubscribingRef = useRef(false);
+  const saveAbortControllerRef = useRef<AbortController | null>(null);
+  const unsubAbortControllerRef = useRef<AbortController | null>(null);
+  const loadAbortControllerRef = useRef<AbortController | null>(null);
+
+  // Authoritative subscription snapshot from backend
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [selectedLocations, setSelectedLocations] = useState<number[]>([]);
   const [selectedHazards, setSelectedHazards] = useState<string[]>([
@@ -63,10 +75,18 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
   const [lifecycleEmails, setLifecycleEmails] = useState(true);
   const [isActive, setIsActive] = useState(true);
 
+  // Stable callback ref to prevent unnecessary effect triggers
+  const onSubscriptionUpdatedRef = React.useRef(onSubscriptionUpdated);
+  useEffect(() => {
+    onSubscriptionUpdatedRef.current = onSubscriptionUpdated;
+  }, [onSubscriptionUpdated]);
+
   const loadSubscription = useCallback(async () => {
+    const controller = new AbortController();
+    loadAbortControllerRef.current = controller;
     try {
-      setActionLoading("load");
-      const sub = await fetchMySubscription();
+      setIsLoadingSub(true);
+      const sub = await fetchMySubscription({ signal: controller.signal, timeoutMs: 10000 });
       setSubscription(sub);
       if (sub.email) {
         setEmail(sub.email);
@@ -79,19 +99,48 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
       setLifecycleEmails(sub.lifecycle_emails);
       setIsActive(sub.active);
       setStep("manage");
-      onSubscriptionUpdated?.(sub);
+      onSubscriptionUpdatedRef.current?.(sub);
     } catch {
-      // If fetching fails, user might need to re-auth
+      if (controller.signal.aborted) return;
       setStep("email");
     } finally {
-      setActionLoading(null);
+      loadAbortControllerRef.current = null;
+      setIsLoadingSub(false);
     }
-  }, [onSubscriptionUpdated]);
+  }, []);
+
+  const handleCancel = useCallback(() => {
+    // 1. Abort any in-flight requests
+    if (saveAbortControllerRef.current) {
+      saveAbortControllerRef.current.abort();
+      saveAbortControllerRef.current = null;
+    }
+    if (unsubAbortControllerRef.current) {
+      unsubAbortControllerRef.current.abort();
+      unsubAbortControllerRef.current = null;
+    }
+    isSavingRef.current = false;
+    isUnsubscribingRef.current = false;
+    setIsSaving(false);
+    setIsUnsubscribing(false);
+
+    // 2. Revert unsaved form changes to the last persisted subscription state
+    if (subscription) {
+      setSelectedLocations(subscription.location_ids || []);
+      setSelectedHazards(subscription.hazards || []);
+      setMinSeverity(subscription.min_severity || "watch");
+      setDailySummary(subscription.daily_summary);
+      setLifecycleEmails(subscription.lifecycle_emails);
+      setIsActive(subscription.active);
+    }
+    // 3. Close dialog
+    onClose();
+  }, [subscription, onClose]);
 
   // Escape key and body scroll lock
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleCancel();
     };
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -101,25 +150,36 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
       document.body.style.overflow = "unset";
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, handleCancel]);
 
-  // Check if token exists on open and load authoritative subscription from backend
+  // Load authoritative subscription when dialog opens
+  const wasOpenRef = React.useRef(false);
   useEffect(() => {
-    if (!isOpen) return;
+    if (isOpen && !wasOpenRef.current) {
+      const token = getAuthToken();
+      const storeUser = useAuthStore.getState().user;
+      const savedEmail = localStorage.getItem("aagam_user_email") || storeUser?.email;
 
-    const token = getAuthToken();
-    const storeUser = useAuthStore.getState().user;
-    const savedEmail = localStorage.getItem("aagam_user_email") || storeUser?.email;
-
-    if (token) {
-      if (savedEmail) {
-        setEmail(savedEmail);
+      if (token) {
+        if (savedEmail) {
+          setEmail(savedEmail);
+        }
+        loadSubscription();
+      } else {
+        setStep("email");
       }
-      loadSubscription();
-    } else {
-      setStep("email");
     }
+    wasOpenRef.current = isOpen;
   }, [isOpen, loadSubscription]);
+
+  // Cleanup abort controllers on unmount
+  useEffect(() => {
+    return () => {
+      saveAbortControllerRef.current?.abort();
+      unsubAbortControllerRef.current?.abort();
+      loadAbortControllerRef.current?.abort();
+    };
+  }, []);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,14 +189,14 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
 
     try {
-      setActionLoading("sendOtp");
+      setIsSendingOtp(true);
       await requestOtp(email);
       toast.success("Verification code sent! Check your inbox.");
       setStep("otp");
     } catch (err: any) {
       toast.error(err.message || "Failed to send OTP code.");
     } finally {
-      setActionLoading(null);
+      setIsSendingOtp(false);
     }
   };
 
@@ -157,7 +217,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     }
 
     try {
-      setActionLoading("verifyOtp");
+      setIsVerifyingOtp(true);
       const resp = await verifyOtp(email.trim(), token);
       toast.success("Authentication successful!");
       localStorage.setItem("aagam_user_email", email);
@@ -181,47 +241,82 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
     } catch (err: any) {
       toast.error(err.message || "Invalid or expired verification code.");
     } finally {
-      setActionLoading(null);
+      setIsVerifyingOtp(false);
     }
   };
 
   const handleSavePreferences = async () => {
+    // Prevent duplicate submission if already in-flight
+    if (isSavingRef.current || isSaving) return;
+
+    isSavingRef.current = true;
+    setIsSaving(true);
+
+    const controller = new AbortController();
+    saveAbortControllerRef.current = controller;
+
     try {
-      setActionLoading("save");
-      const updated = await updateMySubscription({
-        location_ids: selectedLocations,
-        hazards: selectedHazards,
-        min_severity: minSeverity,
-        daily_summary: dailySummary,
-        lifecycle_emails: lifecycleEmails,
-        active: isActive,
-      });
+      const updated = await updateMySubscription(
+        {
+          location_ids: selectedLocations,
+          hazards: selectedHazards,
+          min_severity: minSeverity,
+          daily_summary: dailySummary,
+          lifecycle_emails: lifecycleEmails,
+          active: isActive,
+        },
+        { signal: controller.signal, timeoutMs: 10000 }
+      );
+
+      // Deterministic state update on success:
+      // Update local state to reflect persisted backend values immediately
       setSubscription(updated);
+      setSelectedLocations(updated.location_ids || []);
+      setSelectedHazards(updated.hazards || []);
+      setMinSeverity(updated.min_severity || "watch");
+      setDailySummary(updated.daily_summary);
+      setLifecycleEmails(updated.lifecycle_emails);
+      setIsActive(updated.active);
+
       toast.success("Alert preferences saved successfully!");
-      onSubscriptionUpdated?.(updated);
-      onClose();
+      onSubscriptionUpdatedRef.current?.(updated);
     } catch (err: any) {
+      if (controller.signal.aborted) return;
+      // Retain the user's current form selections so they can retry without losing edits
       toast.error(err.message || "Failed to update alert preferences. Please try again.");
     } finally {
-      setActionLoading(null);
+      saveAbortControllerRef.current = null;
+      isSavingRef.current = false;
+      setIsSaving(false);
     }
   };
 
   const handleUnsubscribe = async () => {
+    if (isUnsubscribingRef.current || isUnsubscribing) return;
     if (!confirm("Are you sure you want to pause all email notifications?")) return;
+
+    isUnsubscribingRef.current = true;
+    setIsUnsubscribing(true);
+
+    const controller = new AbortController();
+    unsubAbortControllerRef.current = controller;
+
     try {
-      setActionLoading("unsubscribe");
-      await unsubscribeMySubscription();
+      await unsubscribeMySubscription({ signal: controller.signal, timeoutMs: 10000 });
       setIsActive(false);
-      toast.success("Unsubscribed from alert emails.");
       if (subscription) {
-        onSubscriptionUpdated?.({ ...subscription, active: false });
+        const updated = { ...subscription, active: false };
+        setSubscription(updated);
+        onSubscriptionUpdatedRef.current?.(updated);
       }
-      onClose();
+      toast.success("Unsubscribed from alert emails.");
     } catch (err: any) {
+      if (controller.signal.aborted) return;
       toast.error(err.message || "Failed to unsubscribe.");
     } finally {
-      setActionLoading(null);
+      unsubAbortControllerRef.current = null;
+      isUnsubscribingRef.current = false;
+      setIsUnsubscribing(false);
     }
   };
 
@@ -260,7 +355,7 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleCancel}
             className="p-1.5 text-text-muted hover:text-text-primary rounded-md hover:bg-[rgba(26,23,18,0.08)] transition-colors"
           >
             <X className="w-4 h-4" />
@@ -298,8 +393,8 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 </div>
               </div>
 
-              <Button type="submit" disabled={actionLoading === "sendOtp"} className="w-full bg-accent text-surface-dark hover:bg-accent/90 font-medium">
-                {actionLoading === "sendOtp" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send 6-Digit Code"}
+              <Button type="submit" disabled={isSendingOtp} className="w-full bg-accent text-surface-dark hover:bg-accent/90 font-medium">
+                {isSendingOtp ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send 6-Digit Code"}
               </Button>
             </form>
           )}
@@ -347,8 +442,8 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
                 >
                   Back
                 </Button>
-                <Button type="submit" disabled={actionLoading === "verifyOtp"} className="flex-1 bg-accent text-surface-dark hover:bg-accent/90">
-                  {actionLoading === "verifyOtp" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
+                <Button type="submit" disabled={isVerifyingOtp} className="flex-1 bg-accent text-surface-dark hover:bg-accent/90">
+                  {isVerifyingOtp ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Continue"}
                 </Button>
               </div>
             </form>
@@ -491,10 +586,10 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               variant="outline"
               size="sm"
               onClick={handleUnsubscribe}
-              disabled={actionLoading === "unsubscribe" || actionLoading === "save"}
+              disabled={isUnsubscribing || isSaving || isLoadingSub}
               className="text-red-500 border-red-500/30 hover:bg-red-500/10 text-xs"
             >
-              {actionLoading === "unsubscribe" ? (
+              {isUnsubscribing ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
                   <span>Unsubscribing...</span>
@@ -507,16 +602,16 @@ export const GetAlertsDialog: React.FC<GetAlertsDialogProps> = ({
               )}
             </Button>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={onClose}>
+              <Button variant="outline" size="sm" onClick={handleCancel}>
                 Cancel
               </Button>
               <Button
                 size="sm"
                 onClick={handleSavePreferences}
-                disabled={actionLoading === "save" || actionLoading === "unsubscribe"}
+                disabled={isSaving || isLoadingSub}
                 className="bg-accent text-surface-dark hover:bg-accent/90 font-medium min-w-[140px] flex items-center justify-center gap-1.5"
               >
-                {actionLoading === "save" ? (
+                {isSaving ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Saving...</span>

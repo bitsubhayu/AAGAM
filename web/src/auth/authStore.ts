@@ -83,6 +83,42 @@ export const useAuthStore = create<AuthState>((set, get) => {
           isLoading: false,
         });
       } else {
+        // Check for local demo token before clearing
+        const demoToken = localStorage.getItem("aagam_auth_token");
+        if (demoToken === "demo-forecaster-token") {
+          set({
+            session: null,
+            user: { id: "00000000-0000-0000-0000-000000000002", email: "forecaster@aagam.gov.in" } as any,
+            role: "forecaster",
+            profile: {
+              id: "00000000-0000-0000-0000-000000000002",
+              email: "forecaster@aagam.gov.in",
+              role: "forecaster",
+              display_name: "Demo Forecaster",
+              org: "IMD",
+            },
+            token: "demo-forecaster-token",
+            isLoading: false,
+          });
+          return;
+        } else if (demoToken === "demo-coordinator-token") {
+          set({
+            session: null,
+            user: { id: "00000000-0000-0000-0000-000000000003", email: "coordinator@aagam.gov.in" } as any,
+            role: "coordinator",
+            profile: {
+              id: "00000000-0000-0000-0000-000000000003",
+              email: "coordinator@aagam.gov.in",
+              role: "coordinator",
+              display_name: "Demo Coordinator",
+              org: "IMD",
+            },
+            token: "demo-coordinator-token",
+            isLoading: false,
+          });
+          return;
+        }
+
         localStorage.removeItem("aagam_auth_token");
         set({
           session: null,
@@ -131,13 +167,24 @@ export function initializeAuthSync(): void {
   if (authInitialized) return;
   authInitialized = true;
 
-  // 1. Initial real session resolution
+  // 1. Initial demo token resolution
+  const curToken = typeof window !== "undefined" ? localStorage.getItem("aagam_auth_token") : null;
+  if (curToken?.startsWith("demo-")) {
+    useAuthStore.getState().setSession(null);
+    return;
+  }
+
+  // 2. Initial real session resolution
   supabase.auth.getSession().then(({ data: { session } }) => {
+    const token = localStorage.getItem("aagam_auth_token");
+    if (token?.startsWith("demo-")) return;
     useAuthStore.getState().setSession(session);
   });
 
-  // 2. Real-time auth subscription
+  // 3. Real-time auth subscription
   supabase.auth.onAuthStateChange(async (_event, session) => {
+    const token = localStorage.getItem("aagam_auth_token");
+    if (token?.startsWith("demo-")) return;
     await useAuthStore.getState().setSession(session);
   });
 }

@@ -314,13 +314,16 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onSelectEvent }) =>
             setAckConfirmOpen(false);
           }
         }}
-        title="Acknowledge Alert?"
+        title="Confirm acknowledgement"
         maxWidth="md"
       >
         <div className="space-y-4 text-text-primary">
-          <p className="text-xs text-text-secondary leading-relaxed">
-            Are you sure you want to acknowledge the alert for{" "}
-            <strong className="text-text-primary font-semibold">{alert.location_name}</strong>?
+          <p className="text-sm font-semibold text-text-primary">
+            Are you sure you want to acknowledge this weather alert?
+          </p>
+          <p className="text-xs text-text-muted leading-relaxed">
+            This records that you have reviewed the alert for{" "}
+            <strong className="text-text-primary font-semibold">{alert.location_name}</strong>.
           </p>
 
           <div className="p-3 bg-[#F0EDE7] border border-[rgba(26,23,18,0.10)] rounded-lg text-xs space-y-2">
