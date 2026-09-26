@@ -715,12 +715,13 @@ def test_skill_score_retention_prd_alignment():
                 ON CONFLICT (computed_at, window_days, variable, region, season, lead_days, model, threshold_mm, is_weekly) DO NOTHING;
             """)
 
-            # Query the purge criteria
+            # Query the purge criteria for test model and regions
             cur.execute("""
                 SELECT variable, region, is_weekly
                 FROM skill_scores
-                WHERE (is_weekly = false AND (computed_at AT TIME ZONE 'UTC')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
-                   OR (is_weekly = true AND computed_at < CURRENT_DATE - INTERVAL '26 weeks');
+                WHERE model = 'blend' AND region IN ('NW', 'S')
+                  AND ((is_weekly = false AND (computed_at AT TIME ZONE 'UTC')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
+                       OR (is_weekly = true AND computed_at < CURRENT_DATE - INTERVAL '26 weeks'));
             """)
             purged = cur.fetchall()
             purged_items = {(r[0], r[1], r[2]) for r in purged}
@@ -733,12 +734,13 @@ def test_skill_score_retention_prd_alignment():
             # Execute delete
             cur.execute("""
                 DELETE FROM skill_scores
-                WHERE (is_weekly = false AND (computed_at AT TIME ZONE 'UTC')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
-                   OR (is_weekly = true AND computed_at < CURRENT_DATE - INTERVAL '26 weeks');
+                WHERE model = 'blend' AND region IN ('NW', 'S')
+                  AND ((is_weekly = false AND (computed_at AT TIME ZONE 'UTC')::date < (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
+                       OR (is_weekly = true AND computed_at < CURRENT_DATE - INTERVAL '26 weeks'));
             """)
 
             # Verify remaining records
-            cur.execute("SELECT variable, is_weekly FROM skill_scores WHERE variable IN ('tmax_c', 'wind_max_kmh');")
+            cur.execute("SELECT variable, is_weekly FROM skill_scores WHERE model = 'blend' AND region IN ('NW', 'S') AND variable IN ('tmax_c', 'wind_max_kmh');")
             remaining = cur.fetchall()
             rem_vars = {r[0] for r in remaining}
             assert 'tmax_c' in rem_vars, "Today's non-weekly snapshot must remain"
