@@ -59,7 +59,7 @@ export const WeightMapsPage: React.FC = () => {
 
   return (
     <ErrorBoundary
-      fallbackTitle="Weight Maps Error"
+      fallbackTitle="Unable to render Weight Maps"
       fallbackMessage="An unexpected error occurred while rendering the Weight Maps view."
     >
       <div className="space-y-4 font-sans">
@@ -205,73 +205,84 @@ export const WeightMapsPage: React.FC = () => {
         )}
 
         {/* Active Overrides Audit Trail (PRD §10.4 FR-UI-3) */}
-        <Card className="p-4">
-          <CardHeader className="pb-2 mb-2">
-            <div>
-              <CardTitle>
-                <History className="w-4 h-4 text-brand-orange" />
-                <span>Audited Forecaster Overrides Trail</span>
-              </CardTitle>
-              <CardDescription>
-                Logged adjustments applied to multi-model blending formulas
-              </CardDescription>
-            </div>
-          </CardHeader>
+        <ErrorBoundary
+          fallbackTitle="Unable to render Override History"
+          fallbackMessage="An unexpected error occurred while rendering the overrides audit trail. Matrix and spatial maps remain functional."
+        >
+          <Card className="p-4">
+            <CardHeader className="pb-2 mb-2">
+              <div>
+                <CardTitle>
+                  <History className="w-4 h-4 text-brand-orange" />
+                  <span>Audited Forecaster Overrides Trail</span>
+                </CardTitle>
+                <CardDescription>
+                  Logged adjustments applied to multi-model blending formulas
+                </CardDescription>
+              </div>
+            </CardHeader>
 
-          {isOverridesError ? (
-            <div className="p-4 bg-surface border border-hazard-alert/30 rounded text-center text-xs text-hazard-alert flex items-center justify-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              <span>Unable to load override history: {(overridesError as Error)?.message || "Network error"}</span>
-            </div>
-          ) : overridesLoading ? (
-            <div className="py-4">
-              <Skeleton className="h-16 w-full" />
-            </div>
-          ) : !overrides || overrides.length === 0 ? (
-            <div className="p-4 bg-[#F0EDE7] rounded text-center text-xs text-text-muted">
-              No active forecaster weight overrides currently in effect. Baseline model matrix active.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted font-mono">
-                    <th className="p-2.5">Region</th>
-                    <th className="p-2.5">Lead</th>
-                    <th className="p-2.5">Adjusted Weights</th>
-                    <th className="p-2.5">Audit Justification</th>
-                    <th className="p-2.5">Status</th>
-                    <th className="p-2.5">Expires</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {overrides.map((ov) => (
-                    <tr key={ov.id} className="hover:bg-[#F0EDE7]/50">
-                      <td className="p-2.5 font-bold">{ov.region}</td>
-                      <td className="p-2.5 font-mono">+{ov.lead_days}d</td>
-                      <td className="p-2.5 font-mono text-[11px]">
-                        {Object.entries(ov.weights || {})
-                          .map(([m, w]) => `${m}: ${Math.round((w as number) * 100)}%`)
-                          .join(", ")}
-                      </td>
-                      <td className="p-2.5 max-w-sm truncate text-text-secondary" title={ov.reason}>
-                        {ov.reason}
-                      </td>
-                      <td className="p-2.5">
-                        <Badge variant={ov.active ? "watch" : "outline"}>
-                          {ov.active ? "ACTIVE" : "EXPIRED"}
-                        </Badge>
-                      </td>
-                      <td className="p-2.5 font-mono text-text-muted text-[11px]">
-                        {ov.expires_at ? new Date(ov.expires_at).toLocaleString() : "—"}
-                      </td>
+            {isOverridesError ? (
+              <div className="p-4 bg-surface border border-hazard-alert/30 rounded text-center text-xs text-hazard-alert flex items-center justify-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                <span>Unable to load override history: {(overridesError as Error)?.message || "Network error"}</span>
+              </div>
+            ) : overridesLoading ? (
+              <div className="py-4">
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ) : !Array.isArray(overrides) || overrides.length === 0 ? (
+              <div className="p-4 bg-[#F0EDE7] rounded text-center text-xs text-text-muted">
+                No active forecaster weight overrides currently in effect. Baseline model matrix active.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[rgba(26,23,18,0.10)] bg-surface text-text-muted font-mono">
+                      <th className="p-2.5">Region</th>
+                      <th className="p-2.5">Lead</th>
+                      <th className="p-2.5">Adjusted Weights</th>
+                      <th className="p-2.5">Audit Justification</th>
+                      <th className="p-2.5">Status</th>
+                      <th className="p-2.5">Expires</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {overrides.map((ov, idx) => {
+                      if (!ov || typeof ov !== "object") return null;
+                      const weightsMap = (ov.weights && typeof ov.weights === "object") ? ov.weights : {};
+                      const weightsFormatted = Object.entries(weightsMap)
+                        .map(([m, w]) => `${m}: ${Math.round((Number(w) || 0) * 100)}%`)
+                        .join(", ");
+
+                      return (
+                        <tr key={ov.id ?? idx} className="hover:bg-[#F0EDE7]/50">
+                          <td className="p-2.5 font-bold">{ov.region || "—"}</td>
+                          <td className="p-2.5 font-mono">+{ov.lead_days ?? 0}d</td>
+                          <td className="p-2.5 font-mono text-[11px]">
+                            {weightsFormatted || "—"}
+                          </td>
+                          <td className="p-2.5 max-w-sm truncate text-text-secondary" title={ov.reason || ""}>
+                            {ov.reason || "—"}
+                          </td>
+                          <td className="p-2.5">
+                            <Badge variant={ov.active ? "watch" : "outline"}>
+                              {ov.active ? "ACTIVE" : "EXPIRED"}
+                            </Badge>
+                          </td>
+                          <td className="p-2.5 font-mono text-text-muted text-[11px]">
+                            {ov.expires_at ? new Date(ov.expires_at).toLocaleString() : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </ErrorBoundary>
 
         {/* Override Modal */}
         {selectedCell && (

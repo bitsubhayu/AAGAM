@@ -381,3 +381,108 @@ class TestWeightsOverridesListingAndOperationalBlend:
             assert override_id > 0
             cur.execute("ROLLBACK;")
 
+
+class TestWeightMapsContractAndFrontendIntegrity:
+    """Phase 9 Regression Tests: Weight Maps frontend-backend contract immunity."""
+
+    def test_static_frontend_regression_no_status_uppercase(self):
+        """Regression test Requirement 54:
+        Proves that 'ov.status.toUpperCase()', 'ov.status', 'overridden_weights',
+        and 'original_weights' cannot return in WeightMapsPage.tsx.
+        """
+        import pathlib
+
+        page_path = pathlib.Path("web/src/pages/WeightMapsPage.tsx")
+        assert page_path.exists(), "WeightMapsPage.tsx must exist"
+        content = page_path.read_text(encoding="utf-8")
+
+        # Banned patterns that caused the production white-screen crash
+        assert "ov.status" not in content, "Obsolete 'ov.status' reference detected in WeightMapsPage.tsx"
+        assert ".status.toUpperCase()" not in content, (
+            "Banned '.status.toUpperCase()' detected in WeightMapsPage.tsx"
+        )
+        assert "overridden_weights" not in content, (
+            "Obsolete 'overridden_weights' detected in WeightMapsPage.tsx"
+        )
+        assert "original_weights" not in content, (
+            "Obsolete 'original_weights' detected in WeightMapsPage.tsx"
+        )
+
+        # Required patterns for stability and white-screen protection
+        assert "ov.active" in content, "Must use 'ov.active' boolean"
+        assert "ov.weights" in content, "Must use 'ov.weights' dictionary"
+        assert "Unable to render Weight Maps" in content, "Must contain ErrorBoundary with title"
+        assert "Unable to render Override History" in content, (
+            "Must wrap overrides table in independent ErrorBoundary"
+        )
+
+    def test_scenario_a_active_override_contract(self, client, db_conn):
+        """Requirement 53.A: Override with active: true, weights: {...} complies with schema."""
+        token = create_token("00000000-0000-0000-0000-000000000002", "forecaster@aagam.gov.in", "forecaster")
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "variable": "rain_mm",
+            "region": "NW",
+            "season": "monsoon",
+            "lead_days": 2,
+            "weights": VALID_WEIGHTS,
+            "reason": "Test override active contract verification",
+            "expires_hours": 24,
+        }
+        res = client.post("/api/v1/weights/override", json=payload, headers=headers)
+        assert res.status_code == 201
+        data = res.json()
+        assert data["active"] is True
+        assert data["weights"] == VALID_WEIGHTS
+        assert "status" not in data, "Contract must not contain obsolete 'status' field"
+        assert "overridden_weights" not in data, "Contract must not contain obsolete 'overridden_weights'"
+
+    def test_scenario_b_expired_override_contract(self, client, db_conn):
+        """Requirement 53.B: Expired override record returns active=False."""
+        token = create_token("00000000-0000-0000-0000-000000000002", "forecaster@aagam.gov.in", "forecaster")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Insert an expired record directly into db
+        with db_conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO weight_overrides (
+                    created_by, variable, region, season, lead_days, weights, reason, expires_at, active
+                ) VALUES (
+                    '00000000-0000-0000-0000-000000000002'::uuid,
+                    'tmax_c', 'SOUTH', 'winter', 4,
+                    '{"gfs": 0.25, "ecmwf_ifs": 0.25, "icon": 0.25, "aifs": 0.25}'::jsonb,
+                    'Test override expired scenario B',
+                    NOW() - INTERVAL '2 hours',
+                    false
+                ) RETURNING id;
+                """
+            )
+            expired_id = cur.fetchone()[0]
+
+        res = client.get("/api/v1/weights/overrides?active_only=false", headers=headers)
+        assert res.status_code == 200
+        overrides = res.json()
+        expired_ov = next((ov for ov in overrides if ov["id"] == expired_id), None)
+        assert expired_ov is not None
+        assert expired_ov["active"] is False
+        assert expired_ov["weights"] is not None
+
+    def test_scenario_c_empty_overrides_list(self, client, db_conn):
+        """Requirement 53.C: Overrides endpoint returns a valid list even when empty."""
+        token = create_token("00000000-0000-0000-0000-000000000001", "public@aagam.gov.in", "public")
+        headers = {"Authorization": f"Bearer {token}"}
+        res = client.get("/api/v1/weights/overrides?active_only=true", headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert isinstance(data, list)
+
+    def test_scenario_d_api_error_handling(self, client):
+        """Requirement 53.D: API error responses are well-structured JSON."""
+        # Validation error for invalid parameter
+        res = client.get("/api/v1/weights?lead_days=99")
+        assert res.status_code == 422
+        data = res.json()
+        assert "error" in data or "detail" in data
+
+

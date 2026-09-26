@@ -21,7 +21,9 @@ export const WeightHeatmap: React.FC<WeightHeatmapProps> = ({
   // Aggregate weights by [region, lead_days]
   const cellMap = new Map<string, WeightMatrixItem[]>();
 
-  weights.forEach((w) => {
+  const safeWeights = Array.isArray(weights) ? weights : [];
+  safeWeights.forEach((w) => {
+    if (!w || typeof w !== "object" || !w.region) return;
     const key = `${w.region}_${w.lead_days}`;
     if (!cellMap.has(key)) {
       cellMap.set(key, []);
