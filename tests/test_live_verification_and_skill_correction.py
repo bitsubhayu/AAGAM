@@ -18,13 +18,32 @@ from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 from api.app.main import app
 from pipeline.live.verification_runner import (
+    VerificationRunner,
     calculate_live_window,
     determine_truth_source,
 )
+
+
+@pytest.fixture(autouse=True, scope="module")
+def ensure_live_verification_data():
+    """Ensures live verification snapshot data exists for live skill API tests."""
+    from pipeline.db.connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM skill_scores WHERE evaluation_scope = 'live';")
+            count = cur.fetchone()[0]
+            if count == 0:
+                runner = VerificationRunner()
+                runner.run_daily_verification(dry_run=False, use_test_fallback=True)
+    finally:
+        conn.close()
+
 
 # ==============================================================================
 # SECTION 1-8: LIVE WINDOW CALCULATION & OPERATIONAL ANCHORING
