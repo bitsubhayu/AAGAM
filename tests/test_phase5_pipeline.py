@@ -695,6 +695,9 @@ def test_skill_score_retention_prd_alignment():
     conn.autocommit = False
     try:
         with conn.cursor() as cur:
+            # Clean up any existing records for these regions and model within the transaction
+            cur.execute("DELETE FROM skill_scores WHERE region IN ('NW', 'S') AND model = 'blend';")
+
             # Insert 4 test records for each retention category
             # A: old non-weekly (purged)
             # B: today's non-weekly (retained)
@@ -971,6 +974,8 @@ def test_verification_season_derived_from_valid_date():
     assert seasons_produced == {"winter", "pre_monsoon", "monsoon", "post_monsoon"}, (
         f"All 4 canonical seasons must be distinguished, got: {seasons_produced}"
     )
+    assert "ALL" not in seasons_produced, "Verification records must never get season == 'ALL'"
+
 
     # Test winter and pre-monsoon isolated: monsoon must NOT appear
     isolated_df = _build_test_verification_fixture(dates_list=[winter_date, pre_monsoon_date])

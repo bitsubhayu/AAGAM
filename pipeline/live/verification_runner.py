@@ -458,6 +458,9 @@ class VerificationRunner:
 
         conn = self.get_connection()
         try:
+            # Base contract fields
+            is_sunday = (target_date.weekday() == 6) if target_date is not None else (datetime.now(timezone.utc).weekday() == 6)
+
             # 1. Query all operational blended forecasts from database (anchored dataset)
             with conn.cursor() as cur:
                 cur.execute(
@@ -471,18 +474,8 @@ class VerificationRunner:
                 )
                 blended_rows = cur.fetchall()
 
-            if not blended_rows:
-                if not use_test_fallback:
-                    msg = "No operational blended forecasts found in database for verification."
-                    logger.warning(f"Production verification halted: {msg}")
-                    return {"status": "NO_DATA", "rows_written": 0, "message": msg}
-
-                test_parquet = Path("data/blended_forecasts_test.parquet")
-                if test_parquet.exists():
-                    df_fcst = pd.read_parquet(test_parquet)
-                else:
-                    return {"status": "NO_DATA", "rows_written": 0, "message": "No forecast data available."}
-            else:
+            df_blended = pd.DataFrame()
+            if blended_rows:
                 df_blended = pd.DataFrame(
                     blended_rows,
                     columns=[
@@ -505,29 +498,48 @@ class VerificationRunner:
                 if target_date is not None:
                     df_blended = df_blended[df_blended["valid_date"] <= target_date]
 
+            if df_blended.empty:
+                if not use_test_fallback:
+                    msg = "No operational blended forecasts found in database for verification."
+                    logger.warning(f"Production verification halted: {msg}")
+                    return {
+                        "status": "NO_DATA",
+                        "rows_written": 0,
+                        "skill_scores_written": 0,
+                        "matched_observations": 0,
+                        "is_sunday": is_sunday,
+                        "candidate_models": [],
+                        "seasons_evaluated": [],
+                        "lead_days_evaluated": [],
+                        "message": msg,
+                    }
+
             # 2. Load ground truth
+            truth_melted = pd.DataFrame()
             if TRUTH_PARQUET.exists():
                 df_truth = pd.read_parquet(TRUTH_PARQUET)
                 df_truth["valid_date"] = pd.to_datetime(df_truth["valid_date"]).dt.date
 
                 # Pre-filter truth to operational dates
-                blended_dates_set = set(df_blended["valid_date"].unique())
-                df_truth_sub = df_truth[df_truth["valid_date"].isin(blended_dates_set)].copy()
+                if not df_blended.empty:
+                    blended_dates_set = set(df_blended["valid_date"].unique())
+                    df_truth_sub = df_truth[df_truth["valid_date"].isin(blended_dates_set)].copy()
+                else:
+                    df_truth_sub = df_truth.copy()
 
                 value_vars = [c for c in ["rain_truth", "tmax_truth", "wind_max_truth"] if c in df_truth_sub.columns]
-                truth_melted = df_truth_sub.melt(
-                    id_vars=["location_id", "valid_date"],
-                    value_vars=value_vars,
-                    var_name="var_truth",
-                    value_name="truth",
-                )
-                truth_melted["variable"] = truth_melted["var_truth"].map({
-                    "rain_truth": "rain_mm",
-                    "tmax_truth": "tmax_c",
-                    "wind_max_truth": "wind_max_kmh",
-                })
-            else:
-                truth_melted = pd.DataFrame()
+                if value_vars:
+                    truth_melted = df_truth_sub.melt(
+                        id_vars=["location_id", "valid_date"],
+                        value_vars=value_vars,
+                        var_name="var_truth",
+                        value_name="truth",
+                    )
+                    truth_melted["variable"] = truth_melted["var_truth"].map({
+                        "rain_truth": "rain_mm",
+                        "tmax_truth": "tmax_c",
+                        "wind_max_truth": "wind_max_kmh",
+                    })
 
             # 3. Determine verified dates and effective live window
             if not truth_melted.empty and not df_blended.empty:
@@ -550,6 +562,12 @@ class VerificationRunner:
                     return {
                         "status": "NO_OVERLAP",
                         "rows_written": 0,
+                        "skill_scores_written": 0,
+                        "matched_observations": 0,
+                        "is_sunday": is_sunday,
+                        "candidate_models": [],
+                        "seasons_evaluated": [],
+                        "lead_days_evaluated": [],
                         "message": "No overlapping observations with truth.",
                         "window_info": window_info,
                     }
@@ -558,7 +576,7 @@ class VerificationRunner:
             start_eval_date = window_info["earliest_allowed_date"]
             eval_date = window_info["latest_verified_date"]
 
-            if start_eval_date is not None and eval_date is not None:
+            if start_eval_date is not None and eval_date is not None and not df_blended.empty:
                 df_blended_window = df_blended[
                     (df_blended["valid_date"] >= start_eval_date) & (df_blended["valid_date"] <= eval_date)
                 ].copy()
@@ -570,15 +588,30 @@ class VerificationRunner:
                 keep="last",
             )
 
-            # 5. Recover raw model forecasts
-            df_raw = self.load_operational_raw_forecasts(
-                start_date=start_eval_date or date.today() - timedelta(days=90),
-                end_date=eval_date or date.today(),
-                conn=conn,
+            # 5. Retrieve historical raw model forecasts from canonical store (PRD §11 line 545)
+            df_raw = self.load_historical_raw_forecasts(
+                start_date=start_eval_date or (target_date or date.today()) - timedelta(days=window_days),
+                end_date=eval_date or (target_date or date.today()),
             )
 
+            if df_raw.empty and not use_test_fallback:
+                msg = "Missing historical operational raw model forecast data for verification window."
+                logger.warning(f"Production verification halted: {msg}")
+                return {
+                    "status": "NO_DATA",
+                    "rows_written": 0,
+                    "skill_scores_written": 0,
+                    "matched_observations": 0,
+                    "is_sunday": is_sunday,
+                    "candidate_models": [],
+                    "seasons_evaluated": [],
+                    "lead_days_evaluated": [],
+                    "message": msg,
+                    "window_info": window_info,
+                }
+
             # Attempt 1: Exact join on [location_id, variable, valid_date, lead_days]
-            if not df_raw.empty:
+            if not df_raw.empty and not df_blended_dedup.empty:
                 df_fcst = pd.merge(
                     df_blended_dedup,
                     df_raw,
@@ -613,28 +646,61 @@ class VerificationRunner:
                     df_fcst[m] = np.nan
 
             # 6. Join forecasts with ground truth
-            if "truth" in df_fcst.columns:
+            if "truth" in df_fcst.columns and not df_fcst.empty:
                 joined = df_fcst.copy()
-            else:
+            elif not df_fcst.empty and not truth_melted.empty:
                 joined = pd.merge(
                     df_fcst,
                     truth_melted[["location_id", "variable", "valid_date", "truth"]],
                     on=["location_id", "variable", "valid_date"],
                     how="inner",
                 )
+            else:
+                joined = pd.DataFrame()
+
+            # Fallback to test dataset if joined is empty and use_test_fallback is enabled
+            if joined.empty and use_test_fallback:
+                logger.info("Test fallback enabled. Loading synthetic test dataset for isolated test mode.")
+                test_parquet = Path("data/blended_forecasts_test.parquet")
+                if test_parquet.exists():
+                    df_test = pd.read_parquet(test_parquet)
+                    rename_map = {
+                        "f_gfs": "gfs",
+                        "f_ecmwf_ifs": "ecmwf_ifs",
+                        "f_icon": "icon",
+                        "f_aifs": "aifs",
+                        "blended": "blend",
+                    }
+                    df_test = df_test.rename(columns={k: v for k, v in rename_map.items() if k in df_test.columns})
+                    if "blend" not in df_test.columns and "blended" in df_test.columns:
+                        df_test["blend"] = df_test["blended"]
+                    df_test["valid_date"] = pd.to_datetime(df_test["valid_date"]).dt.date
+                    joined = df_test
+                    matched_dates = sorted(list(joined["valid_date"].unique()))
+                    window_info = self.calculate_live_window(matched_dates, max_window_days=window_days)
 
             if joined.empty:
                 logger.warning("No overlapping observations between forecasts and ground truth in window.")
                 return {
                     "status": "NO_OVERLAP",
                     "rows_written": 0,
+                    "skill_scores_written": 0,
+                    "matched_observations": 0,
+                    "is_sunday": is_sunday,
+                    "candidate_models": [],
+                    "seasons_evaluated": [],
+                    "lead_days_evaluated": [],
                     "message": "No overlapping observations with truth in window.",
                     "window_info": window_info,
                 }
 
+            # Derive canonical meteorological season dynamically from valid_date
+            if "valid_date" in joined.columns:
+                joined["season"] = [get_season(d) for d in pd.to_datetime(joined["valid_date"]).dt.date]
+
             # 7. Compute skill records (observation-level domain aggregation)
             computed_at = datetime.now(timezone.utc)
-            effective_window_days = window_info["effective_calendar_window_days"] or len(matched_dates) or 1
+            effective_window_days = window_info.get("effective_calendar_window_days") or len(matched_dates) or 1
 
             skill_records = self.compute_skill_records(
                 joined=joined,
@@ -644,7 +710,14 @@ class VerificationRunner:
             )
 
             # Check if Sunday (weekly copy)
-            is_sunday = (eval_date.weekday() == 6) if eval_date else (computed_at.weekday() == 6)
+            # Derived strictly from target_date if specified, else eval_date / computed_at
+            if target_date is not None:
+                is_sunday = (target_date.weekday() == 6)
+            elif eval_date is not None:
+                is_sunday = (eval_date.weekday() == 6)
+            else:
+                is_sunday = (computed_at.weekday() == 6)
+
             records_to_insert = list(skill_records)
             if is_sunday:
                 weekly_copy = [rec[:15] + (True,) + rec[16:] for rec in skill_records]
@@ -700,7 +773,7 @@ class VerificationRunner:
                                 "SUCCESS",
                                 len(records_to_insert),
                                 0,
-                                f"Daily verification evaluated {len(joined)} matched observations across {window_info['verified_days_count']} verified days ({window_info['window_start']} to {window_info['window_end']}, effective window: {effective_window_days}d). Replaced daily snapshot with {len(skill_records)} rows (Sunday weekly copy: {is_sunday}) in {duration_sec:.2f}s.",
+                                f"Daily verification evaluated {len(joined)} matched observations across {window_info.get('verified_days_count', 0)} verified days ({window_info.get('window_start')} to {window_info.get('window_end')}, effective window: {effective_window_days}d). Replaced daily snapshot with {len(skill_records)} rows (Sunday weekly copy: {is_sunday}) in {duration_sec:.2f}s.",
                             ),
                         )
                     conn.commit()
@@ -712,11 +785,16 @@ class VerificationRunner:
 
             finished_at = datetime.now(timezone.utc)
             duration_sec = (finished_at - started_at).total_seconds()
+            candidates = [c for c in CANDIDATE_MODELS if c in joined.columns]
+
             return {
                 "status": "SUCCESS",
                 "matched_observations": len(joined),
                 "skill_scores_written": len(records_to_insert),
                 "is_sunday": is_sunday,
+                "candidate_models": candidates,
+                "seasons_evaluated": sorted(list(joined["season"].unique())) if "season" in joined.columns else [],
+                "lead_days_evaluated": sorted([int(x) for x in joined["lead_days"].unique()]) if "lead_days" in joined.columns else [],
                 "window_info": window_info,
                 "duration_seconds": duration_sec,
             }
@@ -735,7 +813,7 @@ class VerificationRunner:
         Correctly computes metrics across:
         - All-India ('ALL') domain from all matching observations
         - Individual regional domains from region-specific observations
-        - All-season ('ALL') domain and individual seasons
+        - Canonical Indian meteorological seasons (winter, pre_monsoon, monsoon, post_monsoon)
         - Lead days preserved without collapsing or shifting
         """
         if computed_at is None:
@@ -746,7 +824,10 @@ class VerificationRunner:
         if "valid_date" in df.columns:
             df["season"] = [get_season(d) for d in pd.to_datetime(df["valid_date"]).dt.date]
         elif "season" not in df.columns:
-            df["season"] = "Monsoon"
+            raise ValueError(
+                "Verification dataset must contain 'valid_date' (to derive canonical season) "
+                "or an explicit 'season' column; refusing to invent or hardcode a season fallback."
+            )
 
         skill_records: List[Tuple[Any, ...]] = []
         candidates = [c for c in CANDIDATE_MODELS if c in df.columns]
@@ -755,7 +836,7 @@ class VerificationRunner:
         regions_to_evaluate = ["ALL"] + unique_regions
 
         unique_seasons = sorted(list(df["season"].dropna().unique()))
-        seasons_to_evaluate = ["ALL"] + unique_seasons
+        seasons_to_evaluate = unique_seasons
 
         # 1. Continuous verification metrics
         for var in df["variable"].unique():

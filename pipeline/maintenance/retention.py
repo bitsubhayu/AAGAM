@@ -12,6 +12,7 @@ Implements authoritative PRD retention rules:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -172,20 +173,58 @@ class RetentionEngine:
         export_dir = local_dir or (Path("data/backups") / backup_date)
         export_dir.mkdir(parents=True, exist_ok=True)
 
-        conn = self.get_connection()
         table_stats: Dict[str, int] = {}
         uploaded_files: List[str] = []
         failed_uploads: Dict[str, str] = {}
 
+        def _fetch_table_data(tbl: str):
+            for attempt in range(3):
+                try:
+                    c = self.get_connection()
+                    try:
+                        with c.cursor() as cur:
+                            cur.execute(f"SELECT * FROM {tbl};")
+                            r = cur.fetchall()
+                            cols = [desc[0] for desc in cur.description] if cur.description else []
+                            return r, cols
+                    finally:
+                        c.close()
+                except psycopg2.OperationalError as oe:
+                    if attempt == 2:
+                        raise
+                    logger.warning(f"Connection dropped while querying {tbl}, retrying ({attempt+1}/3): {oe}")
+                    time.sleep(1)
+
+        def _log_pipeline_run(status: str, rows: int, msg: str):
+            try:
+                c = self.get_connection()
+                try:
+                    with c.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s);
+                            """,
+                            (
+                                "backup_nightly",
+                                started_at,
+                                finished_at,
+                                status,
+                                rows,
+                                0,
+                                msg,
+                            ),
+                        )
+                finally:
+                    c.close()
+            except Exception as e:
+                logger.error(f"Failed to record pipeline_runs telemetry: {e}")
+
         try:
             for table in BACKUP_TABLES:
                 logger.info(f"Exporting table '{table}' to Parquet...")
-                query = f"SELECT * FROM {table};"
-                with conn.cursor() as cur:
-                    cur.execute(query)
-                    rows = cur.fetchall()
-                    cols = [desc[0] for desc in cur.description] if cur.description else []
-                    df = pd.DataFrame(rows, columns=cols)
+                rows, cols = _fetch_table_data(table)
+                df = pd.DataFrame(rows, columns=cols)
                 table_stats[table] = len(df)
 
                 parquet_path = export_dir / f"{table}.parquet"
@@ -219,22 +258,7 @@ class RetentionEngine:
                     f"Exported {total_rows_backed_up} rows across {len(BACKUP_TABLES)} tables in {duration_sec:.2f}s."
                 )
                 logger.error(failed_msg)
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s);
-                        """,
-                        (
-                            "backup_nightly",
-                            started_at,
-                            finished_at,
-                            "FAILED",
-                            total_rows_backed_up,
-                            0,
-                            failed_msg,
-                        ),
-                    )
+                _log_pipeline_run("FAILED", total_rows_backed_up, failed_msg)
                 return {
                     "status": "FAILED",
                     "backup_date": backup_date,
@@ -254,22 +278,11 @@ class RetentionEngine:
             duration_sec = (finished_at - started_at).total_seconds()
 
             if not dry_run:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO pipeline_runs (job, started_at, finished_at, status, rows_written, api_calls_est, message)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s);
-                        """,
-                        (
-                            "backup_nightly",
-                            started_at,
-                            finished_at,
-                            "SUCCESS",
-                            total_rows_backed_up,
-                            0,
-                            f"Nightly backup exported {total_rows_backed_up} rows across {len(BACKUP_TABLES)} tables in {duration_sec:.2f}s. Uploaded {len(uploaded_files)} files to storage.",
-                        ),
-                    )
+                _log_pipeline_run(
+                    "SUCCESS",
+                    total_rows_backed_up,
+                    f"Nightly backup exported {total_rows_backed_up} rows across {len(BACKUP_TABLES)} tables in {duration_sec:.2f}s. Uploaded {len(uploaded_files)} files to storage.",
+                )
 
             return {
                 "status": "SUCCESS",
@@ -280,8 +293,9 @@ class RetentionEngine:
                 "cleanup_stats": cleanup_stats,
                 "duration_seconds": duration_sec,
             }
-        finally:
-            conn.close()
+        except Exception as exc:
+            logger.error(f"export_and_backup_tables encountered error: {exc}")
+            raise
 
 
 # Global singleton
